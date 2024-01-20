@@ -32,6 +32,17 @@ class User(AbstractUser):
     mobile_number = models.CharField(max_length=12,blank=True)
     profile = models.FileField(upload_to='accounts/profile/',null=True,blank=True)
 
+    company_name = models.CharField(max_length=30, blank=True, null=True)
+    company_address = models.CharField(max_length=30, blank=True, null=True)
+    company_gst_number = models.CharField(max_length=30, blank=True, null=True)
+    state = models.CharField(max_length=30, blank=True, null=True)
+    state_code = models.IntegerField(null=True, blank=True)
+    company_email_id = models.EmailField(max_length=30, blank=True, null=True)
+    company_logo = models.ImageField(upload_to='accounts')
+    bank_name = models.CharField(max_length=30, blank=True, null=True)
+    account_number = models.CharField(max_length=30, blank=True, null=True)
+    branch = models.CharField(max_length=30, blank=True, null=True)
+    ifsc_code = models.CharField(max_length=30, blank=True, null=True)
     def __str__(self):
         return self.name()
 
