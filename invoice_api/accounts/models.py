@@ -23,7 +23,22 @@ class User_manager(BaseUserManager):
         user.is_active = True
         user.save(using=self._db)
         return user
+    def create_user(self, username, email='', password=None, **extra_fields):
+        if not username:
+            raise ValueError("User must have an email")
+        if not password:
+            raise ValueError("User must have a password")
+        user = self.model(
+            username=username
+        )
+        user.set_password(password)
 
+        user.email = email
+
+
+        user.is_active = True
+        user.save(using=self._db)
+        return user
 
 class User(AbstractUser):
     gender = models.CharField(max_length=20, choices=(('Male', 'Male'), ('Female', 'Female')),blank=True)

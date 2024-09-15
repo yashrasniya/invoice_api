@@ -3,9 +3,11 @@ from .models import Companies
 
 
 class CompanySerializer(serializers.ModelSerializer):
+    user=serializers.SerializerMethodField()
     class Meta:
         model = Companies
         fields = (
+            'id',
             'name',
             'user',
             'address',
@@ -13,3 +15,6 @@ class CompanySerializer(serializers.ModelSerializer):
             'state',
             'state_code'
         )
+        extra_kwargs = {"name": {"required": True, "allow_null": False}}
+    def get_user(self, obj):
+        return obj.user.username

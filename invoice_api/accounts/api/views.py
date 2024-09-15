@@ -21,11 +21,9 @@ class Login(APIView):
     def post(self,request):
         username=request.data.get('username','')
         password=request.data.get('password','')
-        print(username,password,'hjg',request.POST)
         if not (username and password):
             return Response({'error':'password is wrong!','status':400},status=400)
         user=authenticate(username=username, password=password)
-        print(user)
         if user:
             return Response(user_detail(user).data)
         return Response({'error':'password is wrong!','status':400},status=400)

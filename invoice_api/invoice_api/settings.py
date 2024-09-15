@@ -29,9 +29,9 @@ CORS_URLS_REGEX = r'^/api/.*$'
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_ALL_ORIGINS = True
 ALLOWED_HOSTS = ['*']
-CORS_ALLOWED_ORIGINS = ['http://127.0.0.1:5500','http://localhost:5173','http://192.168.56.1:3000','https://zymsi.netlify.app']
+CORS_ALLOWED_ORIGINS = ['http://localhost:3000','http://localhost:5173','http://192.168.56.1:3000','https://zymsi.netlify.app']
 
-STATIC_ROOT='static'
+STATIC_ROOT=os.path.join(BASE_DIR, 'static')
 STATIC='/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
@@ -57,6 +57,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -71,7 +72,7 @@ ROOT_URLCONF = 'invoice_api.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / "templates"],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -139,7 +140,7 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'accounts.User'
-
+APPEND_SLASH=False
 from datetime import timedelta
 
 
@@ -152,7 +153,9 @@ SIMPLE_JWT = {
 }
 
 REST_FRAMEWORK = {
-
+    # 'DEFAULT_PAGINATION_CLASS': ['rest_framework.pagination.PageNumberPagination'],
+    'PAGE_SIZE':10,
+    'SEARCH_PARAM': 's',
     'DEFAULT_AUTHENTICATION_CLASSES': (
 
         'rest_framework_simplejwt.authentication.JWTAuthentication',
@@ -169,7 +172,7 @@ REST_FRAMEWORK = {
 
         'anon': '5/min',
 
-        'user': '20/min'
+        'user': '50/min'
 
     }
 

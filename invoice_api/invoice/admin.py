@@ -3,11 +3,11 @@ from .models import Invoice, Product, Product_properties, new_product_in_fronten
 
 
 class InvoiceAdmin(admin.ModelAdmin):
-    list_display = ('user', 'invoice_number', 'receiver', 'date', 'products', 'gst_final_amount', 'total_final_amount')
+    list_display = ('user', 'invoice_number', 'receiver', 'date', 'gst_final_amount', 'total_final_amount')
 
 
 class ProductAdmin(admin.ModelAdmin):
-    list_display = ('product_properties', 'gst_amount', 'total_amount', 'new_product_in_frontend', 'value')
+    list_display = ('id','gst_amount', 'total_amount')
 
 
 class Product_propertiesAdmin(admin.ModelAdmin):
