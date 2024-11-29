@@ -29,7 +29,7 @@ CORS_URLS_REGEX = r'^/api/.*$'
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_ALL_ORIGINS = True
 ALLOWED_HOSTS = ['*']
-CORS_ALLOWED_ORIGINS = ['http://localhost:3000','http://localhost:5173','http://192.168.56.1:3000','https://zymsi.netlify.app']
+CORS_ALLOWED_ORIGINS = ['http://localhost:3000','http://localhost:5173','http://192.168.29.29:3000','https://zymsi.netlify.app']
 
 STATIC_ROOT=os.path.join(BASE_DIR, 'static')
 STATIC='/static/'
@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'accounts',
     'adminconfig',
+    'pdf_builder',
     'companies',
     'invoice',
     'rest_framework',
@@ -172,7 +173,7 @@ REST_FRAMEWORK = {
 
         'anon': '5/min',
 
-        'user': '50/min'
+        'user': '200/min'
 
     }
 

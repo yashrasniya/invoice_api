@@ -1,13 +1,16 @@
-from datetime import datetime
-
-from django.forms import renderers
+import io
+from django.http import FileResponse
 from rest_framework import status, viewsets, pagination
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from companies.models import Companies
+from companies.serializers import CompanySerializer
 from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties
+from submit import Submit
+from yaml_reader import YamalReader, FillValue
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
     Product_propertiesSerializer
 
@@ -183,26 +186,21 @@ class ProductPropertiesViewsSet(APIView):
         Product_properties.objects.get(id=self.kwargs.get('id')).delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
-from io import BytesIO
-from django.http import HttpResponse
-from django.template.loader import get_template
 
-from xhtml2pdf import pisa
-def render_to_pdf(template_src, context_dict={}):
-    template = get_template(template_src)
-    html  = template.render(context_dict)
-    result = BytesIO()
-    pdf = pisa.pisaDocument(BytesIO(html.encode("ISO-8859-1")), result)
-    if pdf.err:
-        return HttpResponse("Invalid PDF", status_code=400, content_type='text/plain')
-    return HttpResponse(result.getvalue(), content_type='application/pdf')
 class PDF_maker(APIView):
     permission_classes = [AllowAny]
     def get(self,request,format=None,*args, **kwargs):
-        data = {
-            'today': datetime.today(),
-            'amount': 39.99,
-            'customer_name': 'Cooper Mann',
-            'invoice_number': 1233434,
-        }
-        return render_to_pdf('invoice.html', data)
+        if not request.GET.get("id"):return Response({"status":400},400)
+        obj=Invoice.objects.filter(id=request.GET.get('id'))
+        if not obj:return Response({"status":404},404)
+        obj=obj.first()
+        data = YamalReader("yash_adverting.yaml")
+        ser_obj=InvoiceSerializer(obj)
+        ser_obj.Meta.depth=1
+        fill_obj = FillValue(ser_obj.data, data)
+        pdf_data = Submit(fill_obj.collect_all_data()).draw_header_data()
+        ser_obj.Meta.depth = 0
+        pdf_file = io.BytesIO(pdf_data)
+        pdf_file.seek(0)
+        response = FileResponse(pdf_file, as_attachment=True, filename="document.pdf")
+        return response

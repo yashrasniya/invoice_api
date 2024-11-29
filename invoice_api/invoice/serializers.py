@@ -1,6 +1,9 @@
 from rest_framework import serializers
+from rest_framework.exceptions import ValidationError
 
 from accounts.serializers import User_PublicSerializer
+from companies.models import Companies
+from companies.serializers import CompanySerializer
 from .models import Invoice, Product, Product_properties, new_product_in_frontend
 
 
@@ -53,6 +56,29 @@ class ProductSerializer(serializers.ModelSerializer):
 
 
 class InvoiceSerializer(serializers.ModelSerializer):
+    user = serializers.SerializerMethodField()
+    products = ProductSerializer(many=True,required=False)
+
+    class Meta:
+        model = Invoice
+        fields = (
+            'id',
+            'user',
+            'invoice_number',
+            'receiver',
+            'date',
+            'products',
+            'gst_final_amount',
+            'total_final_amount'
+        )
+        read_only_fields =['gst_final_amount',
+            'total_final_amount','products']
+    def get_user(self, obj):
+        return obj.user.username
+
+
+
+class InvoiceSerializerForPDF(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
 

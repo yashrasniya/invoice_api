@@ -6,17 +6,21 @@ from rest_framework.response import Response
 from companies.models import Companies
 from ..serializers import CompanySerializer
 
+class MyPaginator( pagination.PageNumberPagination):
+    page_size = 10
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
 
 class CompaniesView(ListAPIView):
     serializer_class = CompanySerializer
     permission_classes = [IsAuthenticated]
-    pagination_class = pagination.PageNumberPagination
+    pagination_class = MyPaginator
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
 
 
     def get_queryset(self):
-        return Companies.objects.filter(user=self.request.user).order_by('-id')
+        return Companies.objects.filter(user=self.request.user).order_by('id')
 
     def post(self,request,*args,**kwargs):
         print(request.POST)
