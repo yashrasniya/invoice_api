@@ -147,11 +147,11 @@ class FillValue:
                             i.value=value
                             i.y=start
                             self.products.append(i)
-                if is_calculable:
+                if is_calculable and input_title!="GST":
                     if formula:
                         other_callable_values.append({"formula":formula,value:value})
                     else:
-                        callable_values*=float(value)
+                        callable_values*=float(value if value else 1)
             for i in self.yaml_obj.products:
                 i = copy.copy(i)
                 if i.label=="amount":

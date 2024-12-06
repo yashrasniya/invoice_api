@@ -834,20 +834,3 @@ k = [{'DetectedText': 'Original for Receipient', 'Type': 'LINE', 'Id': 0, 'Confi
                          'Top': 0.4536323547363281},
          'Polygon': [{'X': 0.091796875, 'Y': 0.4536323547363281}, {'X': 0.099609375, 'Y': 0.4536323547363281},
                      {'X': 0.099609375, 'Y': 0.4632987976074219}, {'X': 0.091796875, 'Y': 0.4632987976074219}]}}]
-
-test = {'DetectedText': 'Invoice No.', 'Type': 'LINE', 'Id': 16, 'Confidence': 98.98226928710938, 'Geometry': {
-    'BoundingBox': {'Width': 0.0742187649011612, 'Height': 0.0082855224609375, 'Left': 0.0839843600988388,
-                    'Top': 0.24787521362304688},
-    'Polygon': [{'X': 0.0839843600988388, 'Y': 0.24787521362304688}, {'X': 0.158203125, 'Y': 0.24787521362304688},
-                {'X': 0.158203125, 'Y': 0.2561607360839844}, {'X': 0.0839843600988388, 'Y': 0.2561607360839844}]}}
-invoice_number_text_coordinate=[]
-for i in k:
-    if i.get("DetectedText") == "State":
-        invoice_number_text_coordinate.append((i["Geometry"].get("Polygon")[-1].get("X")*1000,
-                                        i["Geometry"].get("Polygon")[-1].get("Y")*1000))
-
-for i in k:
-    for text in invoice_number_text_coordinate:
-        if text[0]+134>i["Geometry"].get("Polygon")[0].get("X")*1000>text[0] and text[1]+10>=i["Geometry"].get("Polygon")[0].get("Y")*1000>=text[1]-10:
-            print(i.get("DetectedText"),i["Geometry"].get("Polygon")[0].get("X")*1000,i["Geometry"].get("Polygon")[0].get("Y")*1000)
-print(invoice_number_text_coordinate)
