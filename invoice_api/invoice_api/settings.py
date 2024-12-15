@@ -28,8 +28,8 @@ DEBUG = True
 CORS_URLS_REGEX = r'^/api/.*$'
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_ALL_ORIGINS = True
-ALLOWED_HOSTS = ['*']
-CORS_ALLOWED_ORIGINS = ['http://localhost:3000','http://localhost:5173','http://192.168.29.29:3000','https://zymsi.netlify.app']
+ALLOWED_HOSTS = ['*','yashadvertisinggroup.com','api.yashadvertisinggroup.com']
+CORS_ALLOWED_ORIGINS = ['http://localhost:3000','http://localhost:5173','http://192.168.29.29:3000','http://api.yashadvertisinggroup.com/','http://yashadvertisinggroup.com/']
 
 STATIC_ROOT=os.path.join(BASE_DIR, 'static')
 STATIC='/static/'
