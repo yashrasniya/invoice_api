@@ -27,7 +27,7 @@ class Product(models.Model):
 class Product_properties(models.Model):
     new_product_in_frontend = models.ForeignKey('new_product_in_frontend',
                                                 on_delete=models.CASCADE)  # connect to new_product_in_frontend model
-    value = models.CharField(max_length=20,blank=True,null=True)
+    value = models.CharField(max_length=200,blank=True,null=True)
 
 
 class new_product_in_frontend(models.Model):
