@@ -1,4 +1,7 @@
+import datetime
 import io
+import logging
+
 from django.http import FileResponse
 from rest_framework import status, viewsets, pagination
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
@@ -10,9 +13,12 @@ from companies.models import Companies
 from companies.serializers import CompanySerializer
 from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties
 from submit import Submit
+from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
-    Product_propertiesSerializer
+    Product_propertiesSerializer, InvoiceSerializerForPDF
+
+logger = logging.getLogger(__name__)
 
 
 class InvoiceView(ListAPIView):
@@ -49,6 +55,7 @@ class Invoice_update(APIView):
         obj = Invoice.objects.filter(id=id)
         if not obj.exists():
             return Response({'message': 'id not found'}, status=status.HTTP_404_NOT_FOUND)
+        print(request.data)
         serializer = InvoiceSerializer(obj.first(), data=request.data)
 
         if serializer.is_valid():
@@ -194,13 +201,17 @@ class PDF_maker(APIView):
         obj=Invoice.objects.filter(id=request.GET.get('id'))
         if not obj:return Response({"status":404},404)
         obj=obj.first()
-        data = YamalReader("yash_adverting.yaml")
-        ser_obj=InvoiceSerializer(obj)
+        yaml_obj=Yaml.objects.filter(user=request.user)
+        if not yaml_obj:
+            return Response({"message":"configuration not found"},404)
+        data = YamalReader(yaml_obj.first().yaml_file.file)
+        ser_obj=InvoiceSerializerForPDF(obj)
         ser_obj.Meta.depth=1
+        logger.error(ser_obj.data)
         fill_obj = FillValue(ser_obj.data, data)
-        pdf_data = Submit(fill_obj.collect_all_data()).draw_header_data()
+        pdf_data = Submit(fill_obj.collect_all_data(),bill_image=str(yaml_obj.first().pdf_template.file)).draw_header_data()
         ser_obj.Meta.depth = 0
         pdf_file = io.BytesIO(pdf_data)
         pdf_file.seek(0)
-        response = FileResponse(pdf_file, as_attachment=True, filename="document.pdf")
+        response = FileResponse(pdf_file, as_attachment=True, filename=f"{request.user.username}_{datetime.datetime.now().date()}_{obj.receiver.name}.pdf")
         return response

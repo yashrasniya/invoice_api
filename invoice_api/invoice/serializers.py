@@ -72,7 +72,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'total_final_amount'
         )
         read_only_fields =['gst_final_amount',
-            'total_final_amount','products']
+            'products']
     def get_user(self, obj):
         return obj.user.username
 
@@ -80,6 +80,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
 
 class InvoiceSerializerForPDF(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
+    date = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
 
     class Meta:
@@ -98,3 +99,6 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             'total_final_amount','products']
     def get_user(self, obj):
         return obj.user.username
+
+    def get_date(self, obj):
+        return obj.date.strftime('%d/%m/%Y')

@@ -6,7 +6,7 @@ class Submit:
     def __init__(self,data,pdf_name="bill.pdf",bill_image="template.jpg"):
         self.data=data
         self.canvas_obj = canvas.Canvas(pdf_name)
-        self.canvas_obj.drawImage("aaa.jpg", 0, 00, width=595.276, height=841.89)
+        self.canvas_obj.drawImage(bill_image, 0, 00, width=595.276, height=841.89)
         self.canvas_obj.setFontSize(self.font_size)
 
 

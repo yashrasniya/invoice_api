@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.db import models
 from accounts.models import User
 
@@ -6,7 +8,7 @@ class Invoice(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     invoice_number = models.CharField(max_length=30,blank=True,null=True)
     receiver = models.ForeignKey('companies.Companies', on_delete=models.CASCADE,blank=True,null=True)
-    date = models.DateField(null=True,blank=True)
+    date = models.DateField(null=True,blank=True,default=lambda :datetime.now().date())
     products = models.ManyToManyField('Product',blank=True,null=True)  # connect to Product model
     gst_final_amount = models.DecimalField(max_digits=20,decimal_places=2,null=True)
     total_final_amount = models.DecimalField(max_digits=20,decimal_places=2,null=True)

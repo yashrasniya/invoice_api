@@ -24,12 +24,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-ek$w%80pal+0$dygovaza-4fc!fedaex=+(wrl)s_*z3d03$yd'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = False
 CORS_URLS_REGEX = r'^/api/.*$'
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_ALL_ORIGINS = True
 ALLOWED_HOSTS = ['*','yashadvertisinggroup.com','api.yashadvertisinggroup.com']
-CORS_ALLOWED_ORIGINS = ['http://localhost:3000','http://localhost:5173','http://192.168.29.29:3000','http://api.yashadvertisinggroup.com/','http://yashadvertisinggroup.com/']
+CORS_ALLOWED_ORIGINS = ['http://localhost:3000','http://localhost:5173','http://192.168.29.29:3000','https://api.yashadvertisinggroup.com','https://yashadvertisinggroup.com']
 
 STATIC_ROOT=os.path.join(BASE_DIR, 'static')
 STATIC='/static/'
@@ -52,6 +52,7 @@ INSTALLED_APPS = [
     'pdf_builder',
     'companies',
     'invoice',
+    'yaml_manager',
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
@@ -177,4 +178,40 @@ REST_FRAMEWORK = {
 
     }
 
+}
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'level': 'INFO',  # Change to WARNING or ERROR to reduce noise
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    'file': {
+                'level': 'DEBUG',
+                'class': 'logging.FileHandler',
+                'filename': os.path.join(BASE_DIR, 'logs/django.log'),  # Log file location
+                'formatter': 'verbose',
+            },
+    },
+    'loggers': {
+        'django': {
+            'handlers': ['console','file'],
+            'level': 'DEBUG',  # Adjust level to suppress debug logs
+            'propagate': True,
+        },
+        # Add filters if needed
+    },
 }
