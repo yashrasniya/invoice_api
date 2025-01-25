@@ -16,7 +16,6 @@ import os
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
@@ -28,15 +27,21 @@ DEBUG = False
 CORS_URLS_REGEX = r'^/api/.*$'
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_ALL_ORIGINS = True
-ALLOWED_HOSTS = ['*','yashadvertisinggroup.com','api.yashadvertisinggroup.com']
-CORS_ALLOWED_ORIGINS = ['http://localhost:3000','http://localhost:5173','http://192.168.29.29:3000','https://api.yashadvertisinggroup.com','https://yashadvertisinggroup.com']
+CORS_ALLOW_CREDENTIALS = True
 
-STATIC_ROOT=os.path.join(BASE_DIR, 'static')
-STATIC='/static/'
+ALLOWED_HOSTS = ['*', 'yashadvertisinggroup.com', 'api.yashadvertisinggroup.com']
+CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173', 'http://192.168.29.29:3000',
+                        'https://api.yashadvertisinggroup.com', 'https://yashadvertisinggroup.com']
+
+CSRF_TRUSTED_ORIGINS=[
+    'http://localhost:3000',
+"http://localhost",
+]
+
+STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+STATIC = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-
 
 # Application definition
 
@@ -59,7 +64,7 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
-'corsheaders.middleware.CorsMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -89,7 +94,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'invoice_api.wsgi.application'
 
-
 # Database
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
@@ -99,7 +103,6 @@ DATABASES = {
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
-
 
 # Password validation
 # https://docs.djangoproject.com/en/5.0/ref/settings/#auth-password-validators
@@ -119,7 +122,6 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-
 # Internationalization
 # https://docs.djangoproject.com/en/5.0/topics/i18n/
 
@@ -131,7 +133,6 @@ USE_I18N = True
 
 USE_TZ = True
 
-
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
@@ -142,9 +143,8 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'accounts.User'
-APPEND_SLASH=False
+APPEND_SLASH = False
 from datetime import timedelta
-
 
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=50),  # by default
@@ -152,15 +152,22 @@ SIMPLE_JWT = {
     'UPDATE_LAST_LOGIN': True,
     'AUTH_TOKEN_CLASSES': (
         'rest_framework_simplejwt.tokens.AccessToken', 'rest_framework_simplejwt.tokens.RefreshToken',),
+    'AUTH_COOKIE': 'access_token',  # Cookie name. Enables cookies if value is set.
+    'AUTH_COOKIE_DOMAIN': None,  # A string like "example.com", or None for standard domain cookie.
+    'AUTH_COOKIE_SECURE': False,  # Whether the auth cookies should be secure (https:// only).
+    'AUTH_COOKIE_HTTP_ONLY': True,  # Http only cookie flag.It's not fetch by javascript.
+    'AUTH_COOKIE_PATH': '/',  # The path of the auth cookie.
+    'AUTH_COOKIE_SAMESITE': 'Lax',
+    # Whether to set the flag restricting cookie leaks on cross-site requests. This can be 'Lax', 'Strict', or None to disable the flag.
+
 }
 
 REST_FRAMEWORK = {
     # 'DEFAULT_PAGINATION_CLASS': ['rest_framework.pagination.PageNumberPagination'],
-    'PAGE_SIZE':10,
+    'PAGE_SIZE': 10,
     'SEARCH_PARAM': 's',
     'DEFAULT_AUTHENTICATION_CLASSES': (
-
-        'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'accounts.authenticate.CustomAuthentication',
     ),
     'DEFAULT_THROTTLE_CLASSES': [
 
@@ -199,16 +206,16 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
-    'file': {
-                'level': 'DEBUG',
-                'class': 'logging.FileHandler',
-                'filename': os.path.join(BASE_DIR, 'logs/django.log'),  # Log file location
-                'formatter': 'verbose',
-            },
+        'file': {
+            'level': 'DEBUG',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs/django.log'),  # Log file location
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'django': {
-            'handlers': ['console','file'],
+            'handlers': ['console', 'file'],
             'level': 'DEBUG',  # Adjust level to suppress debug logs
             'propagate': True,
         },

@@ -842,7 +842,7 @@ test = {'DetectedText': 'Invoice No.', 'Type': 'LINE', 'Id': 16, 'Confidence': 9
                 {'X': 0.158203125, 'Y': 0.2561607360839844}, {'X': 0.0839843600988388, 'Y': 0.2561607360839844}]}}
 invoice_number_text_coordinate=[]
 for i in k:
-    if i.get("DetectedText") == "State":
+    if i.get("DetectedText") == "Invoice No.":
         invoice_number_text_coordinate.append((i["Geometry"].get("Polygon")[-1].get("X")*1000,
                                         i["Geometry"].get("Polygon")[-1].get("Y")*1000))
 

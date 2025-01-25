@@ -5,14 +5,18 @@ class Coordinates(object):
     def __str__(self):
         return str(self.x)+','+str(self.y)
 class Word:
+
+    def __lt__(self, other):
+        return self.get_tl().x < other.get_tl().x
+
     def __init__(self,**kwargs):
 
-        self.detected_text=kwargs["DetectedText"]
-        self.type=kwargs["Type"]
+        self.detected_text=kwargs["Text"]
         self.bounding_box=kwargs["Geometry"]["BoundingBox"]
         self.polygon=kwargs["Geometry"]["Polygon"]
         self.coordinates=[]
         self.set_coordinates()
+        self.header_type=None
     def __str__(self):
         return self.detected_text
     def get_tl(self):
@@ -26,9 +30,11 @@ class Word:
     def set_coordinates(self):
         for coordinates in self.polygon:
             self.coordinates.append(Coordinates(**coordinates))
-
+    def __str__(self):
+        return str(self.detected_text)
 if __name__ == "__main__":
-    import test_data
+    from test import test_data
+
     t=[]
     for i in test_data.k:
         t.append(Word(**i))
