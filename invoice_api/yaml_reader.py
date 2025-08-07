@@ -188,7 +188,7 @@ class FillValue:
         self.raw_footer_data["gst_amount"]=round(total_amount*(self.raw_footer_data["gst"]/100),2)
         self.raw_footer_data["total_amount_with_out_gst"]=round(total_amount,2)
         self.raw_footer_data["total_amount_with_gst"]=round(total_amount+self.raw_footer_data["gst_amount"],2)
-        logger.error(f"{round(self.raw_footer_data["total_amount_with_gst"],2)=}")
+        # logger.error(f"{round(self.raw_footer_data["total_amount_with_gst"],2)=}")
         self.raw_footer_data["total_amount_in_text"]=num2words(round(self.raw_footer_data["total_amount_with_gst"],2))
         self.raw_footer_data["center_gst"]=round(self.raw_footer_data["gst"]/2,2)
         self.raw_footer_data["state_gst"]=round(self.raw_footer_data["gst"]/2,2)

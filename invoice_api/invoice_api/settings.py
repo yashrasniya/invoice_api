@@ -23,7 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'django-insecure-ek$w%80pal+0$dygovaza-4fc!fedaex=+(wrl)s_*z3d03$yd'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = False
+DEBUG = True
 CORS_URLS_REGEX = r'^/api/.*$'
 CORS_ORIGIN_ALLOW_ALL = True
 CORS_ALLOW_ALL_ORIGINS = True
@@ -222,3 +222,11 @@ LOGGING = {
         # Add filters if needed
     },
 }
+# https://docs.djangoproject.com/en/stable/topics/email/
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.gmail.com'
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = os.environ.get('EMAIL_USER')          # Your email address
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASS')      # Your email app password
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
