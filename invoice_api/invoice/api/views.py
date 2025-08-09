@@ -52,7 +52,7 @@ class Invoice_update(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, id, *args, **kwargs):
-        obj = Invoice.objects.filter(id=id)
+        obj = Invoice.objects.filter(id=id,user=request.user)
         if not obj.exists():
             return Response({'message': 'id not found'}, status=status.HTTP_404_NOT_FOUND)
         print(request.data)
