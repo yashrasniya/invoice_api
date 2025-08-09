@@ -169,4 +169,6 @@ class UserInfo(APIView):
             "month_gst_final_amount":month_gst_final_amount,
             "prv_gst_final_amount":prv_gst_final_amount,
             "percentage_gst_amount":percentage_gst_amount,
+            "invoices_prv_month_count":invoices_prv.count(),
+            "invoices_this_month_count":invoices.count(),
         })
