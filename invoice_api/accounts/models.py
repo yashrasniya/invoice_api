@@ -62,7 +62,7 @@ class User(AbstractUser):
         return self.name()
 
     def name(self):
-        return self.first_name+' '+self.last_name
+        return str(self.first_name+' '+self.last_name).title()
 
 
 class Superuser(User):

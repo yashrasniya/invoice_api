@@ -57,6 +57,7 @@ class ProductSerializer(serializers.ModelSerializer):
 
 class InvoiceSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
+    receiver_name = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
 
     class Meta:
@@ -66,15 +67,21 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'user',
             'invoice_number',
             'receiver',
+            'receiver_name',
             'date',
             'products',
             'gst_final_amount',
             'total_final_amount'
         )
-        read_only_fields =['gst_final_amount',
+        read_only_fields =[
             'products']
     def get_user(self, obj):
         return obj.user.username
+
+    def get_receiver_name(self,obj):
+        if obj.receiver:
+            return obj.receiver.name
+        return ''
 
 
 
