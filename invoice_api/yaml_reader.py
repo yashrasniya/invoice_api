@@ -73,8 +73,8 @@ def check_value_name(key,yaml_header_list, values,index=0):
             return True
         if "," in d.label:
             labels=d.label.split(",")
-            if key.lower() == labels[0]:
-                for i in values.get(key,None):
+            if key.lower() == labels[0] and values.get(key,None):
+                for i in values.get(key):
                     check_value_name(i,yaml_header_list,values[key],index=1)
                 return True
             labels=labels[index:]
@@ -184,7 +184,7 @@ class FillValue:
 
             print([i.y for i in self.products])
             start-=15
-        self.raw_footer_data["gst"]=round(sum(gst_list)/len(gst_list),2)
+        self.raw_footer_data["gst"]=round(sum(gst_list)/len(gst_list),2) if gst_list else 0
         self.raw_footer_data["gst_amount"]=round(total_amount*(self.raw_footer_data["gst"]/100),2)
         self.raw_footer_data["total_amount_with_out_gst"]=round(total_amount,2)
         self.raw_footer_data["total_amount_with_gst"]=round(total_amount+self.raw_footer_data["gst_amount"],2)

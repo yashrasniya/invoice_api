@@ -2,12 +2,16 @@ import datetime
 import io
 import logging
 
+from django.db.models import Q
 from django.http import FileResponse
 from rest_framework import status, viewsets, pagination
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework import filters, pagination
+from rest_framework.permissions import IsAuthenticated
+from django_filters.rest_framework import DjangoFilterBackend
 
 from companies.models import Companies
 from companies.serializers import CompanySerializer
@@ -15,6 +19,7 @@ from invoice.models import Invoice, Product, new_product_in_frontend, Product_pr
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
+from ..export import pdf_generator, csv_generator
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
     Product_propertiesSerializer, InvoiceSerializerForPDF
 
@@ -25,12 +30,37 @@ class InvoiceView(ListAPIView):
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated]
     pagination_class = pagination.PageNumberPagination
+    queryset = Invoice.objects.filter()
+
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    # Exact field filtering (e.g., ?status=paid)
+    filterset_fields = ['receiver', 'date','id']
+
+    # Search (partial match, e.g., ?search=ABC)
+    search_fields = ['invoice_number', 'receiver__name',]
+
+    # Ordering (e.g., ?ordering=-invoice_date)
+    ordering_fields = ['date', 'total_final_amount','gst_final_amount']
+    ordering = ['-date']
 
 
     def get_queryset(self):
-        if self.kwargs.get('id',''):
-            return Invoice.objects.filter(user=self.request.user, id=self.kwargs.get('id'))
-        return Invoice.objects.filter(user=self.request.user).order_by('-id')
+        qs = super().get_queryset()
+        qs = qs.filter(user = self.request.user)
+        date_from = self.request.query_params.get('date_from')
+        date_to = self.request.query_params.get('date_to')
+        customers = self.request.query_params.get('customer')
+        if customers:
+            customer_list = customers.split(',')
+            qs = qs.filter(receiver__in=customer_list)
+        if date_from and date_to:
+            qs = qs.filter(date__range=[date_from, date_to])
+        elif date_from:
+            qs = qs.filter(date__gte=date_from)
+        elif date_to:
+            qs = qs.filter(date__lte=date_to)
+        return qs
+
 
     def post(self, request, *args, **kwargs):
         print(request.POST)
@@ -41,11 +71,11 @@ class InvoiceView(ListAPIView):
             return Response(serializer.data)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-    def delete(self,request,id,*args, **kwargs):
+    def delete(self,request,*args, **kwargs):
 
-        if not Invoice.objects.filter(id=self.kwargs.get('id')):
+        if not Invoice.objects.filter(id=self.request.query_params.get('id')):
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-        Invoice.objects.get(id=self.kwargs.get('id')).delete()
+        Invoice.objects.get(id=self.request.query_params.get('id')).delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
 class Invoice_update(APIView):
@@ -195,24 +225,49 @@ class ProductPropertiesViewsSet(APIView):
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
 
-class PDF_maker(APIView):
+
+class PdfMaker(APIView):
     permission_classes = [AllowAny]
     def get(self,request,format=None,*args, **kwargs):
         if not request.GET.get("id"):return Response({"status":400},400)
-        obj=Invoice.objects.filter(id=request.GET.get('id'))
-        if not obj:return Response({"status":404},404)
-        obj=obj.first()
-        yaml_obj=Yaml.objects.filter(user=request.user)
-        if not yaml_obj:
-            return Response({"message":"configuration not found"},404)
-        data = YamalReader(yaml_obj.first().yaml_file.file)
-        ser_obj=InvoiceSerializerForPDF(obj)
-        ser_obj.Meta.depth=1
-        logger.error(ser_obj.data)
-        fill_obj = FillValue(ser_obj.data, data)
-        pdf_data = Submit(fill_obj.collect_all_data(),bill_image=str(yaml_obj.first().pdf_template.file)).draw_header_data()
-        ser_obj.Meta.depth = 0
-        pdf_file = io.BytesIO(pdf_data)
-        pdf_file.seek(0)
-        response = FileResponse(pdf_file, as_attachment=True, filename=f"{request.user.username}_{datetime.datetime.now().date()}_{obj.receiver.name}.pdf")
-        return response
+        qs = Invoice.objects.filter(id__in=request.GET.get('id').split(','), user=request.user)
+        return  pdf_generator(qs,request)
+
+
+class BulkExport(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self,request):
+        # Extract values from request data
+        search = request.data.get("s", "").strip()
+        customers = request.data.get("customer", [])  # This will be a list
+        date_from = request.data.get("date_from", "").strip()
+        date_to = request.data.get("date_to", "").strip()
+        type = request.data.get("type", "PDF").strip()
+
+        # Start with base queryset
+        queryset = Invoice.objects.all()
+
+        # Search filter (on invoice_number or receiver name)
+        if search:
+            queryset = queryset.filter(
+                Q(invoice_number__icontains=search) |
+                Q(receiver__name__icontains=search)
+            )
+
+        # Customer filter (list of IDs)
+        if customers and isinstance(customers, list):
+            queryset = queryset.filter(receiver_id__in=customers)
+
+        # Date range filter
+        if date_from and date_to:
+            queryset = queryset.filter(date__range=[date_from, date_to])
+        elif date_from:
+            queryset = queryset.filter(date__gte=date_from)
+        elif date_to:
+            queryset = queryset.filter(date__lte=date_to)
+        if type =="PDF":
+            return pdf_generator(queryset, request)
+        else:
+            return csv_generator(queryset,request)
+

@@ -1,6 +1,6 @@
 from django.urls import path
 from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
-    new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PDF_maker
+    new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport
 
 urlpatterns = [
     path('invoice/', InvoiceView.as_view()),
@@ -18,6 +18,7 @@ urlpatterns = [
     path('product/properties/',ProductPropertiesViewsSet.as_view()),
     path('product/properties/<int:id>/update/',ProductPropertiesViewsSet.as_view()),
     # pdf
-    path('pdf/',PDF_maker.as_view())
+    path('pdf/', PdfMaker.as_view()),
+    path('bulk_export/', BulkExport.as_view())
 
 ]

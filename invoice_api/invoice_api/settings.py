@@ -33,9 +33,9 @@ ALLOWED_HOSTS = ['*', 'yashadvertisinggroup.com', 'api.yashadvertisinggroup.com'
 CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173', 'http://192.168.29.29:3000',
                         'https://api.yashadvertisinggroup.com', 'https://yashadvertisinggroup.com']
 
-CSRF_TRUSTED_ORIGINS=[
+CSRF_TRUSTED_ORIGINS = [
     'http://localhost:3000',
-"http://localhost",
+    "http://localhost",
 ]
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'corsheaders',
+    'django_filters',
 ]
 
 MIDDLEWARE = [
@@ -164,7 +165,7 @@ SIMPLE_JWT = {
 
 REST_FRAMEWORK = {
     # 'DEFAULT_PAGINATION_CLASS': ['rest_framework.pagination.PageNumberPagination'],
-    'PAGE_SIZE': 10,
+    'PAGE_SIZE': 20,
     'SEARCH_PARAM': 's',
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'accounts.authenticate.CustomAuthentication',
@@ -175,6 +176,11 @@ REST_FRAMEWORK = {
 
         'rest_framework.throttling.UserRateThrottle'
 
+    ],
+    'DEFAULT_FILTER_BACKENDS': [
+        'django_filters.rest_framework.DjangoFilterBackend',
+        'rest_framework.filters.SearchFilter',
+        'rest_framework.filters.OrderingFilter',
     ],
 
     'DEFAULT_THROTTLE_RATES': {
@@ -227,6 +233,6 @@ EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.gmail.com'
 EMAIL_PORT = 587
 EMAIL_USE_TLS = True
-EMAIL_HOST_USER = os.environ.get('EMAIL_USER')          # Your email address
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASS')      # Your email app password
+EMAIL_HOST_USER = os.environ.get('EMAIL_USER')  # Your email address
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASS')  # Your email app password
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER

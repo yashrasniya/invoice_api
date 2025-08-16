@@ -108,4 +108,39 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
         return obj.user.username
 
     def get_date(self, obj):
-        return obj.date.strftime('%d/%m/%Y')
+        if obj.date:
+            return obj.date.strftime('%d/%m/%Y')
+        return ''
+
+
+class InvoiceSerializerForCSV(serializers.ModelSerializer):
+    date = serializers.SerializerMethodField()
+    receiver = serializers.SerializerMethodField()
+    products_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Invoice
+        fields = (
+            'invoice_number',
+            'receiver',
+            'date',
+            'gst_final_amount',
+            'total_final_amount',
+            'products_count',
+        )
+        read_only_fields =['gst_final_amount',
+            'total_final_amount','products']
+
+    def get_receiver(self,obj):
+        if obj.receiver:
+            return obj.receiver.name
+        return ''
+    def get_date(self, obj):
+        if obj.date:
+            return obj.date.strftime('%d/%m/%Y')
+        return ''
+
+    def get_products_count(self,obj):
+        if obj.products:
+            return obj.products.all().count()
+        return 0
