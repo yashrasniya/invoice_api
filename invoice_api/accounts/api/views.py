@@ -1,23 +1,25 @@
-from django.conf import settings
-from datetime import timedelta, date
+import logging
 
-from rest_framework.permissions import IsAuthenticated, AllowAny
+from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from invoice.models import Invoice
-from ..models import User
+from ..models import UserCompanies
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
+from rest_framework import viewsets, mixins
 
 from django.contrib.auth import authenticate
 
-from ..serializers import RegisterSerializer,user_detail
+from accounts.serializers.serializers import RegisterSerializer,user_detail
 from django.middleware import csrf
 
+from accounts.serializers.UserCompanies import UserCompaniesSerializer
 
+logging = logging.getLogger(__name__)
 class Register_user(generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
@@ -36,8 +38,8 @@ class Login(APIView):
         username=request.data.get('username','')
         password=request.data.get('password','')
         if not (username and password):
+            logging.info(f"{username} wrong password")
             return Response({'error':'password is wrong!','status':400},status=400)
-        print(username,password)
         user=authenticate(username=username, password=password)
         if user:
             response = Response()
@@ -52,12 +54,15 @@ class Login(APIView):
             )
             csrf.get_token(request)
             response.data = user_detail(user).data
+            logging.info(f"{username} login")
             return response
+        logging.info(f"{username} wrong password")
         return Response({'error':'password is wrong!','status':400},status=400)
 
 class log_out(APIView):
     permission_classes = (IsAuthenticated,)
     def get(self,request):
+        logging.info(f"{request.user.username} Is logout")
         response = Response()
         response.set_cookie(
             key=settings.SIMPLE_JWT['AUTH_COOKIE'],
@@ -117,7 +122,7 @@ class UserInfo(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self,request):
-        from datetime import date, timedelta
+        from datetime import date
         from calendar import monthrange
 
         today = date.today()
@@ -172,3 +177,36 @@ class UserInfo(APIView):
             "invoices_prv_month_count":invoices_prv.count(),
             "invoices_this_month_count":invoices.count(),
         })
+
+class UserCompaniesViewSet(
+    APIView
+):
+    queryset = UserCompanies.objects.all()
+    serializer_class = UserCompaniesSerializer
+
+    def post(self,request):
+        if request.user.user_company:
+            serializer = UserCompaniesSerializer(request.user.user_company,data=request.data)
+        else:
+            serializer = UserCompaniesSerializer(data=request.data)
+        if serializer.is_valid():
+            company = serializer.save()
+
+            # Link company to current user
+            user = request.user
+            user.user_company = company
+            company.is_varified = True
+            company.save()
+            user.save()
+
+            return Response({
+                "message": "Company created and linked to user",
+                "company": serializer.data
+            }, status=status.HTTP_201_CREATED)
+
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def get(self,request):
+        if request.user.user_company and request.user.is_company_admin:
+            return  Response(UserCompaniesSerializer(request.user.user_company, context={"request": request}).data)
+        return Response()

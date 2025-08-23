@@ -1,7 +1,8 @@
 from django.urls import path
 
-from yaml_manager.api.views import YamlView
+from yaml_manager.api.views import YamlView, YamlListView
 
 urlpatterns = [
     path('yaml/',YamlView.as_view()),
+    path('yaml/list/',YamlListView.as_view()),
 ]

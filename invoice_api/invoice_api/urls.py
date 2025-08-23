@@ -20,12 +20,15 @@ from django.urls import path, include
 
 from django.conf import settings
 
+from bill_share.views import ShareByWhatsapp
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('accounts.api.urls')),
     path('api/', include('companies.api.urls')),
     path('api/', include('invoice.api.urls')),
     path('api/', include('yaml_manager.api.urls')),
+    path('api/share_by_whatsapp/', ShareByWhatsapp.as_view()),
 
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

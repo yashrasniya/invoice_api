@@ -13,7 +13,7 @@ from rest_framework import filters, pagination
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 
-from companies.models import Companies
+from companies.models import Customers
 from companies.serializers import CompanySerializer
 from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties
 from submit import Submit
@@ -231,7 +231,7 @@ class PdfMaker(APIView):
     def get(self,request,format=None,*args, **kwargs):
         if not request.GET.get("id"):return Response({"status":400},400)
         qs = Invoice.objects.filter(id__in=request.GET.get('id').split(','), user=request.user)
-        return  pdf_generator(qs,request)
+        return  pdf_generator(qs,request,template_id=request.GET.get("template_id",None))
 
 
 class BulkExport(APIView):

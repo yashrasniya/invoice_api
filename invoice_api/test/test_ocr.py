@@ -57,3 +57,15 @@ class testocr(unittest.TestCase):
     def test_bill_with_5_iteam(self):
         self.table_headers("bill_with_5_iteam.json")
 
+    def test_convertor(self):
+        from reportlab.pdfgen import canvas
+        self.file_setup("computer_gen_one_item.json")
+        canvas.Canvas("test.pdf")
+        t = []
+        for i in self.data:
+            if i["BlockType"] == "WORD":
+                # t.append(Word(**i))
+                i.get("Polygon")
+                # self.canvas_obj.drawString(obj.x, obj.y, str(obj.value))
+
+

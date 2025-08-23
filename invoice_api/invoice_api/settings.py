@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'pdf_builder',
     'companies',
     'invoice',
+    'bill_share',
     'yaml_manager',
     'rest_framework',
     'rest_framework_simplejwt',
@@ -216,14 +217,25 @@ LOGGING = {
             'level': 'DEBUG',
             'class': 'logging.FileHandler',
             'filename': os.path.join(BASE_DIR, 'logs/django.log'),  # Log file location
-            'formatter': 'verbose',
+            'formatter': 'simple',
+        },
+        'Info': {
+            'level': 'INFO',
+            'class': 'logging.FileHandler',
+            'filename': os.path.join(BASE_DIR, 'logs/django_info.log'),  # Log file location
+            'formatter': 'simple',
         },
     },
     'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG',  # Adjust level to suppress debug logs
-            'propagate': True,
+        "invoice": {
+            "handlers": ["console", "file","Info"],
+            "level": "DEBUG",  # you can set different level
+            "propagate": False,
+        },
+        "accounts": {
+            "handlers": ["console", "file","Info"],
+            "level": "DEBUG",  # you can set different level
+            "propagate": False,
         },
         # Add filters if needed
     },

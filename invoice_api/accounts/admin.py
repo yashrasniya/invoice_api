@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import User,Superuser,CR
+from .models import User, Superuser, CR, UserCompanies
 from .utils import actions
 from django.db.models import Q
 
@@ -27,6 +27,8 @@ class UserAdmin(actions,UserAdmin):
         {
             "fields": (
                 "mobile_number",
+                "user_company",
+                "is_company_admin",
 
             ),
         }),
@@ -58,4 +60,6 @@ class UserAdmin(actions,UserAdmin):
 
 
 
-
+@admin.register(UserCompanies)
+class UserCompaniesAdmin(admin.ModelAdmin):
+    list_display = ['company_name','is_varified']

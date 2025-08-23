@@ -1,9 +1,6 @@
 from rest_framework import serializers
-from rest_framework.exceptions import ValidationError
 
-from accounts.serializers import User_PublicSerializer
-from companies.models import Companies
-from companies.serializers import CompanySerializer
+from accounts.serializers.serializers import User_PublicSerializer
 from .models import Invoice, Product, Product_properties, new_product_in_frontend
 
 

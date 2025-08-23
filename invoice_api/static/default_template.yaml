@@ -1,0 +1,270 @@
+Bill:
+  bill_stretcher:
+    - '636':
+        x: 240
+        y: 800
+        width: 538.6494808197021
+        height: -89.31536865234375
+        label: '636'
+        value: "INVOICE"
+        font_size: 25
+
+    - '636':
+        type: rectangles
+        x: 29.51799964904785
+        y: 663.394287109375
+        width: 538.6494808197021
+        height: -113.31536865234375
+        label: '636'
+    - publication:
+        x: 58
+        y: 555
+        font_size: 13
+        font: bold
+        label: Publication
+        value: Publication
+
+    - QUANTITY_LABEL:
+        x: 273
+        y: 555
+        font_size: 13
+        font: bold
+        label: "QUANTITY_label"
+        value: "Quantity"
+    - rate:
+        x: 373
+        y: 555
+        font_size: 13
+        font: bold
+        label: "rate"
+        value: "Rate"
+    - Amount:
+        x: 478
+        y: 555
+        font_size: 13
+        font: bold
+        label: "Amount"
+        value: "Amount"
+  my_company_details:
+    - Company_name:
+        x: 39
+        y: 740
+        font_size: 18
+        label: "Company_name"
+        value: "Yash Advertising Group"
+        prefix: "Name : "
+    - Address:
+        x: 39
+        y: 700
+        label: "company_address"
+        prefix: "Address : "
+
+    - GST_Number:
+        x: 39
+        y: 680
+        label: "company_gst_number"
+        prefix: "GST Number : "
+
+    - logo:
+        type: rectangles
+        src: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSYys1QGolK6G8ygLiNnXZUWyaBmGtG6JYknA&s'
+        x: 478
+        y: 700
+        width: 100
+        height: 110
+        label: 'company_logo'
+
+
+  harder:
+    - invoice_number:
+        x: 325
+        y: 639
+        label: invoice_number
+        prefix : "Invoice Number : "
+        font_size: 12
+    - invoice_date:
+        x: 325
+        y: 621
+        label: date
+        prefix : "Date : "
+        font_size: 12
+    - company_name:
+        x: 40
+        y: 639
+        label: receiver,name
+        prefix: "Customer Name: "
+        font_size: 12
+        limit: 55
+    - company_address:
+        x: 40
+        y: 621
+        limit: 55
+        no_lines: 2
+        font_size: 12
+        prefix: "Address : "
+        next_line:
+          gap: 12
+        label: receiver,address
+    - gst_number:
+        x: 40
+        y: 586
+        label: receiver,gst_number
+        prefix: "GST Number : "
+        font_size: 9
+  product_stretcher:
+    - '906':
+        type: rectangles
+        x: 29.521099090576172
+        y: 576.731689453125
+        width: 538.6444282531738
+        height: -310
+        label: '906'
+    - '615':
+        type: line
+        x: 268.06219482421875
+        y: 576.731689453125
+        x2: 268.06219482421875
+        y2: 266.9952392578125
+        label: '615'
+    - '685':
+        type: line
+        x: 350.220703125
+        y: 576.731689453125
+        x2: 350.220703125
+        y2: 266.9952392578125
+        label: '685'
+    - '714':
+        type: line
+        x: 422.3514099121094
+        y: 576.731689453125
+        x2: 422.3514099121094
+        y2: 266.9952392578125
+        label: '714'
+  product:
+    start: 530
+    product_config:
+      product_gap: 20
+      font_size: 12
+    product_list:
+      - s.no:
+          x: 39
+          label: s.no
+      - Description:
+          x: 58
+          label: Description
+          limit: 100
+          no_lines: 5
+          next_line:
+            gap: 10
+            x: 58
+      - Quantity:
+          x: 273
+          label: "Quantity"
+      - Rate:
+          x: 373
+          label: "Rate"
+      - amount:
+          x: 478
+          label: amount
+          suffix: /-
+  footer:
+    - 'Start_footer_line':
+        type: line
+        x: 29.290300369262695
+        y: 266.55731201171875
+        x2: 568.16552734375
+        y2: 266.55731201171875
+        label: '463'
+
+    - total_amount_with_out_gst:
+        x: 428
+        y: 252
+        font_size: 10
+        label: total_amount_with_out_gst
+        prefix: "Sub Total : "
+        suffix: /-
+    - total_amount_in_text:
+        x: 39
+        y: 245
+        label: total_amount_in_text
+        limit: 70
+        font_size: 10
+        prefix: "Total Invoice Amount in Words :  "
+        no_lines: 3
+        next_line:
+          gap: 26
+          x: 39
+          font_size: 10
+        suffix: ' only'
+    - total_amount_with_gst:
+        x: 428
+        y: 164
+        label: total_amount_with_gst
+        suffix: /-
+        font: bold
+        prefix: "Total : "
+        font_size: 15
+    - center_gst_amount:
+        x: 428
+        y: 224
+        label: center_gst_amount
+        suffix: /-
+        prefix: "CGST Amount : "
+        font_size: 10
+    - state_gst_amount:
+        x: 428
+        y: 198
+        label: state_gst_amount
+        suffix: /-
+        prefix: "SGST Amount : "
+        font_size: 10
+
+
+    - '906':
+        type: rectangles
+        x: 29.521099090576172
+        y: 266.731689453125
+        width: 538.6444282531738
+        height: -107
+        label: '906'
+
+    - '755':
+        type: line
+        x: 422.3514099121094
+        y: 239.6292724609375
+        x2: 568.16552734375
+        y2: 239.6292724609375
+        label: '755'
+    - '544':
+        type: line
+        x: 422.3514099121094
+        y: 212.7012939453125
+        x2: 568.16552734375
+        y2: 212.7012939453125
+        label: '544'
+
+    - '883':
+        type: line
+        x: 422.3514099121094
+        y: 185.7733154296875
+        x2: 568.16552734375
+        y2: 185.7733154296875
+        label: '883'
+
+    - '714':
+        type: line
+        x: 422.3514099121094
+        y: 266.731689453125
+        x2: 422.3514099121094
+        y2: 159.9952392578125
+        label: '714'
+
+    - Signatory:
+        x: 423.145
+        y: 100.11923230588434
+        value: "(Authorised Signatory) "
+
+
+
+
+

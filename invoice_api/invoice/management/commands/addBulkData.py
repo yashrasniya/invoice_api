@@ -3,7 +3,7 @@ import json
 from django.core.management.base import BaseCommand, CommandError
 
 from accounts.models import User
-from companies.models import Companies
+from companies.models import Customers
 
 
 class Command(BaseCommand):
@@ -18,10 +18,10 @@ class Command(BaseCommand):
         for i in data:i["product"] = json.loads(i.get("product"))
 
         for i in data:
-            obj=Companies.objects.filter(name=i["name"])
+            obj=Customers.objects.filter(name=i["name"])
             if not obj:
 
-                obj = Companies(name=i["name"],user=User.objects.first(),gst_number=i["gst_num"],address=i["address"])
+                obj = Customers(name=i["name"], user=User.objects.first(), gst_number=i["gst_num"], address=i["address"])
                 obj.save()
             else:
                 obj=obj.first()

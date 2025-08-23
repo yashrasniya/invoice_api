@@ -13,16 +13,25 @@ from utilitis import pdf_to_jpg
 
 
 class Yaml(models.Model):
+    template_name = models.CharField(max_length=200,default="Untitled Template")
     yaml_file=models.FileField(upload_to="yaml")
-    pdf_template=models.FileField(upload_to="pdf_template")
+    pdf_template=models.FileField(upload_to="pdf_template",null=True,blank=True)
     user=models.ForeignKey(User,on_delete=models.CASCADE)
+    company = models.ForeignKey("accounts.UserCompanies",on_delete=models.CASCADE,null=True,blank=True)
+    auto_scale = models.BooleanField(default=False)
+
+    def __str__(self):
+        if self.template_name != "Untitled Template":
+            return self.template_name
+        return f"{self.template_name} {self.user.username}"
 
     def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
         # Save the uploaded PDF file first
-        super().save(force_insert, force_update, using, update_fields)
+        if not self.company and self.user and self.user.user_company:
+            self.company = self.user.user_company
 
         # Only convert if it's a PDF file
-        if self.pdf_template.name.endswith('.pdf'):
+        if self.pdf_template and self.pdf_template.name.endswith('.pdf'):
             # Absolute path to original PDF
             pdf_path = self.pdf_template.path
 
@@ -48,8 +57,8 @@ class Yaml(models.Model):
 
             # Remove original PDF file
             os.remove(pdf_path)
+            print(f"Replaced PDF with JPG: {self.pdf_template.name}")
 
             # Save again to update DB
-            super().save(force_insert, force_update, using, update_fields)
+        super().save(force_insert, force_update, using, update_fields)
 
-            print(f"Replaced PDF with JPG: {self.pdf_template.name}")
