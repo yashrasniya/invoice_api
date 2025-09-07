@@ -73,8 +73,6 @@ Bill:
         width: 100
         height: 110
         label: 'company_logo'
-
-
   harder:
     - invoice_number:
         x: 325

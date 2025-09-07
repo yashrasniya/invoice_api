@@ -113,7 +113,7 @@ class user_detail(serializers.ModelSerializer):
     first_name = serializers.CharField(read_only=True)
     last_name = serializers.CharField(read_only=True)
     status = serializers.IntegerField(default=200)
-    token = serializers.SerializerMethodField()
+    # token = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -130,11 +130,13 @@ class user_detail(serializers.ModelSerializer):
             'is_company_varified',
             'is_company_admin',
             'dob',
-            'token',
+            'is_superuser',
+            'is_staff',
+            # 'token',
 
         )
-    def get_token(self, obj):
-        return str(RefreshToken.for_user(obj))
+    # def get_token(self, obj):
+    #     return str(RefreshToken.for_user(obj))
 
     def update(self, instance, validated_data):
         read_only = ['id', 'email', 'profile']

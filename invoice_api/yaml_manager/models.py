@@ -2,19 +2,15 @@ import os
 from io import BytesIO
 
 from django.db import models
+from django.utils.timezone import override
 from pdf2image import convert_from_bytes
 from django.core.files import File
 
 from accounts.models import User
 from utilitis import pdf_to_jpg
-
-
-# Create your models here.
-
-
 class Yaml(models.Model):
     template_name = models.CharField(max_length=200,default="Untitled Template")
-    yaml_file=models.FileField(upload_to="yaml")
+    yaml_file=models.FileField(upload_to="yaml/")
     pdf_template=models.FileField(upload_to="pdf_template",null=True,blank=True)
     user=models.ForeignKey(User,on_delete=models.CASCADE)
     company = models.ForeignKey("accounts.UserCompanies",on_delete=models.CASCADE,null=True,blank=True)
