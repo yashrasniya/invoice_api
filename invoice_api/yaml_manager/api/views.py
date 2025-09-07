@@ -20,13 +20,22 @@ class YamlView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self,request):
-        yaml_obj=Yaml.objects.filter(company=request.user.user_company.id)
+        if self.request.user.is_staff:
+            yaml_obj = Yaml.objects.filter()
+
+        else:
+            yaml_obj=Yaml.objects.filter(company=request.user.user_company.id)
         if request.query_params.get("id"):
             yaml_obj = yaml_obj.filter(id=request.query_params.get("id"))
         if not yaml_obj:
             return Response({"message":"not found"},status=status.HTTP_404_NOT_FOUND)
         template = YamalReader(yaml_obj.first().yaml_file.file)
-        user_company_obj = request.user.user_company
+
+        if self.request.user.is_staff:
+            user_company_obj = yaml_obj.first().company
+        else:
+            user_company_obj = request.user.user_company
+        print(yaml_obj)
         for key in template.yaml_raw_data.get("Bill"):
             if key != "product":
                 objs = template.yaml_raw_data.get("Bill")[key]
@@ -52,11 +61,14 @@ class YamlView(APIView):
                             obj[obj_key]["value"] = str(getattr(user_company_obj,name))
         template.yaml_raw_data['id'] = yaml_obj.first().id
         template.yaml_raw_data['pdf_template'] = request.build_absolute_uri(settings.MEDIA_URL + str(yaml_obj.first().pdf_template))
-        print(template.yaml_raw_data)
         return Response(template.yaml_raw_data)
 
     def put(self,request):
-        yaml_obj = Yaml.objects.filter(company=request.user.user_company.id)
+        if self.request.user.is_staff:
+            yaml_obj = Yaml.objects.filter()
+
+        else:
+            yaml_obj = Yaml.objects.filter(company=request.user.user_company.id)
         yaml_id = request.data.pop("id")
         request.data.pop("pdf_template")
         yaml_obj= yaml_obj.filter(id=yaml_id)
