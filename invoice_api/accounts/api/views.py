@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from invoice.models import Invoice
+from yaml_manager.models import Yaml
 from ..models import UserCompanies
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
@@ -194,6 +195,10 @@ class UserCompaniesViewSet(
 
             # Link company to current user
             user = request.user
+            yaml_obj = Yaml.objects.filter(user__id=request.user.id).first()
+            if yaml_obj:
+                yaml_obj.company = company
+                yaml_obj.save()
             user.user_company = company
             company.is_varified = True
             company.save()

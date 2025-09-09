@@ -79,7 +79,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         with open('static/default_template.yaml', 'rb') as f:
             Yaml.objects.create(
                 yaml_file=File(f, name="default_template.yaml"),  # attach file
-                user=user
+                user=user,
             )
         new_product_in_frontend.objects.create(user= user,input_title='Description',size=3,is_calculable=False,is_show=True)
         new_product_in_frontend.objects.create(user= user,input_title='Quantity',size=3,is_calculable=True,is_show=True)
