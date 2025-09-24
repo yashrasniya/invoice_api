@@ -5,7 +5,7 @@ import logging
 from django.db.models import Q
 from django.http import FileResponse
 from rest_framework import status, viewsets, pagination
-from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView
+from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView, UpdateAPIView
 from rest_framework.permissions import IsAuthenticated,AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
