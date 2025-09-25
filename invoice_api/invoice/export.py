@@ -51,6 +51,8 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
     except Exception as e:
         loger.error(e)
         loger.debug(traceback.print_exc())
+        if return_bytes:
+            return None
         return FileResponse('Some thing went wrong', as_attachment=True,
                                 filename=f"error.pdf")
     return response
