@@ -24,6 +24,7 @@ from bill_share.views import ShareByWhatsapp
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/inventory/', include('inventory.api.urls')),
     path('api/', include('accounts.api.urls')),
     path('api/', include('companies.api.urls')),
     path('api/', include('invoice.api.urls')),

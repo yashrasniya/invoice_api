@@ -36,12 +36,13 @@ CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173', 'http:
 CSRF_TRUSTED_ORIGINS = [
     'http://localhost:3000',
     "http://localhost",
+    "https://yashadvertisinggroup.com"
 ]
 
-STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+STATIC_ROOT = os.environ.get('STATIC_ROOT', os.path.join(BASE_DIR, 'static'))
 STATIC = '/static/'
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_ROOT = os.environ.get('MEDIA_ROOT', os.path.join(BASE_DIR, 'media'))
 
 # Application definition
 
@@ -63,6 +64,7 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     'corsheaders',
     'django_filters',
+    'inventory',
 ]
 
 MIDDLEWARE = [
