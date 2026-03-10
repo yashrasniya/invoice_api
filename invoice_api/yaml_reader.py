@@ -389,6 +389,8 @@ class FillValue:
         if request.user.user_company and request.user.user_company.is_varified:
             obj = request.user.user_company
             for i in self.my_company_details + self.footers:
+                if hasattr(i, 'rectangles_type'):
+                    print(i)
                 if hasattr(i, 'rectangles_type') and obj.company_logo and i.rectangles_type == 'image':
                     points = i.points
                     xs = [p[0] for p in points]
@@ -407,6 +409,7 @@ class FillValue:
                     i.points = points
                     i.src = getattr(obj, str(i.label).lower(), '')
                     i.src = request.build_absolute_uri(settings.MEDIA_URL + str(i.src))
+                    print(i.src)
                 if i.type() == 'Point' and hasattr(obj,str(str(i.label).lower())):
                     i.value = getattr(obj,str(i.label).lower(),'')
 

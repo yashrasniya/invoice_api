@@ -148,36 +148,68 @@ class Submit:
         if obj.font_size:
             self.canvas_obj.setFontSize(obj.font_size)
 
-        if obj.limit and obj.value and len(obj.value) > obj.limit:
-            text_list = obj.value.split(' ')
-            draw_value = []
-            text_len = 0
+        if obj.font_size:
+            self.canvas_obj.setFontSize(obj.font_size)
+
+        value_str = str(obj.value) if obj.value else ""
+        
+        # Determine if we need to do multiline rendering based on explicit \n or char limits
+        needs_multiline = value_str and (('\n' in value_str) or (obj.limit and len(value_str) > obj.limit))
+
+        if needs_multiline:
             x = obj.x
             y = obj.y
             line = 1
+            max_lines = obj.no_lines if obj.no_lines else 100 # safe default 
 
-            for text in text_list:
-                draw_value.append(text)
-                text_len += len(text) + 1
-                if text_len > obj.limit and line < obj.no_lines:
-                    self.canvas_obj.drawString(x, y, ' '.join(draw_value[:-1]))
-                    draw_value.clear()
-                    draw_value.append(text)
-                    text_len = len(text) + 1
-                    x = obj.next_line.get("x", obj.x)
-                    font_size = obj.next_line.get("font_size", self.font_size)
-                    self.canvas_obj.setFontSize(font_size)
-                    y -= obj.next_line.get("gap", 15)
+            # First, split by explicit newlines
+            raw_lines = value_str.split('\n')
+            
+            for raw_line in raw_lines:
+                # print(raw_lines)
+                if not raw_line.strip() and len(raw_lines) > 1:
+                    # preserve empty lines as gap jumps
+                    y -= obj.next_line.get("gap", 15) if obj.next_line else 15
                     line += 1
-
-            if text_len > 0:
-                if text_len > obj.limit:
-                    font_size = obj.next_line.get("font_size",
-                                                  self.font_size - 2) if obj.next_line else self.font_size - 2
+                    continue
+                    
+                text_list = raw_line.split(' ')
+                draw_value = []
+                text_len = 0
+                
+                for text in text_list:
+                    draw_value.append(text)
+                    text_len += len(text) + 1
+                    
+                    
+                    if obj.limit and text_len > obj.limit and line < max_lines:
+                        self.canvas_obj.drawString(x, y, ' '.join(draw_value[:-1]))
+                        draw_value.clear()
+                        draw_value.append(text)
+                        text_len = len(text) + 1
+                        
+                        x = obj.next_line.get("x", obj.x) if obj.next_line else obj.x
+                        font_size = obj.next_line.get("font_size", self.font_size) if obj.next_line else self.font_size
+                        self.canvas_obj.setFontSize(font_size)
+                        y -= obj.next_line.get("gap", 15) if obj.next_line else 15
+                        line += 1
+                print(text_len ,line ,max_lines)
+                if text_len > 0 and line <= max_lines:
+                    # Draw remaining text on the current raw_line
+                    if obj.limit and text_len > obj.limit:
+                         font_size = obj.next_line.get("font_size", self.font_size - 2) if obj.next_line else self.font_size - 2
+                         self.canvas_obj.setFontSize(font_size)
+                    self.canvas_obj.drawString(x, y, ' '.join(draw_value))
+                    
+                    # Prepare for the next explicit raw_line
+                    x = obj.next_line.get("x", obj.x) if obj.next_line else obj.x
+                    font_size = obj.next_line.get("font_size", self.font_size) if obj.next_line else self.font_size
                     self.canvas_obj.setFontSize(font_size)
-                self.canvas_obj.drawString(x, y, ' '.join(draw_value))
+                    y -= obj.next_line.get("gap", 15) if obj.next_line else 15
+                    line += 1
+                    
         else:
-            self.canvas_obj.drawString(obj.x, obj.y, str(obj.value))
+            self.canvas_obj.drawString(obj.x, obj.y, value_str)
 
 
 

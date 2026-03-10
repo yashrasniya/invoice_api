@@ -71,6 +71,7 @@ Bill:
         x: 478
         y: 700
         width: 100
+        rectangles_type: image
         height: 110
         label: 'company_logo'
   harder:

@@ -30,6 +30,7 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             template_obj = yaml_obj.first()
             template = YamalReader(template_obj.yaml_file.file,auto_scale=template_obj.auto_scale)
             fill_obj = FillValue(ser_obj.data, template)
+            print(request.user.user_company.company_logo)
             fill_obj.set_my_company_data(request)
             file_data.append(fill_obj)
         try:

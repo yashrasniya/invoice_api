@@ -78,9 +78,15 @@ class YamlView(APIView):
         yaml_str = yaml.dump(request.data, sort_keys=False)
 
         obj = yaml_obj.first()
-        obj.yaml_file.save(obj.yaml_file.name.split('/')[-1], ContentFile(yaml_str), save=True)
+        
+        if obj.yaml_file and hasattr(obj.yaml_file, 'path'):
+            with open(obj.yaml_file.path, 'w') as f:
+                f.write(yaml_str)
+        else:
+            # Fallback if file doesn't exist yet for some reason
+            obj.yaml_file.save(obj.yaml_file.name.split('/')[-1], ContentFile(yaml_str), save=True)
 
-        return Response("done",200)
+        return Response("done", 200)
 
 class YamlListView(ListAPIView):
     permission_classes = [IsAuthenticated]
