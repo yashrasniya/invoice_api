@@ -23,8 +23,11 @@ class Yaml(models.Model):
 
     def save(self, force_insert=False, force_update=False, using=None, update_fields=None):
         # Save the uploaded PDF file first
-        if not self.company and self.user and self.user.user_company:
+        if not self.company and hasattr(self, 'user') and self.user and hasattr(self.user, 'user_company') and self.user.user_company:
             self.company = self.user.user_company
+
+        if self.template_name == "Untitled Template" and self.company and self.company.company_name:
+            self.template_name = self.company.company_name
 
         # Only convert if it's a PDF file
         if self.pdf_template and self.pdf_template.name.endswith('.pdf'):
@@ -58,3 +61,11 @@ class Yaml(models.Model):
             # Save again to update DB
         super().save(force_insert, force_update, using, update_fields)
 
+
+class YamlVersion(models.Model):
+    yaml = models.ForeignKey(Yaml, on_delete=models.CASCADE, related_name='versions')
+    version_data = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']

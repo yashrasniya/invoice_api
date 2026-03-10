@@ -8,9 +8,10 @@ from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+import os
 
 from yaml_manager.api.serializer import Yaml_serializers
-from yaml_manager.models import Yaml
+from yaml_manager.models import Yaml, YamlVersion
 from yaml_reader import YamalReader, FillValue
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,20 @@ class YamlView(APIView):
             yaml_obj = yaml_obj.filter(id=request.query_params.get("id"))
         if not yaml_obj:
             return Response({"message":"not found"},status=status.HTTP_404_NOT_FOUND)
-        template = YamalReader(yaml_obj.first().yaml_file.file)
+            
+        version_id = request.query_params.get("version_id")
+        template = None
+        if version_id:
+            version_obj = yaml_obj.first().versions.filter(id=version_id).first()
+            if version_obj:
+                try:
+                    yaml_data = yaml.safe_load(version_obj.version_data)
+                    template = YamalReader(yaml_raw_data=yaml_data)
+                except yaml.YAMLError:
+                    pass
+                    
+        if not template:
+            template = YamalReader(yaml_obj.first().yaml_file.file)
 
         if self.request.user.is_staff:
             user_company_obj = yaml_obj.first().company
@@ -60,7 +74,21 @@ class YamlView(APIView):
                         else:
                             obj[obj_key]["value"] = str(getattr(user_company_obj,name))
         template.yaml_raw_data['id'] = yaml_obj.first().id
+        t_name = yaml_obj.first().template_name
+        if t_name == "Untitled Template" and user_company_obj and user_company_obj.company_name:
+            t_name = user_company_obj.company_name
+            
+        template.yaml_raw_data['template_name'] = t_name
         template.yaml_raw_data['pdf_template'] = request.build_absolute_uri(settings.MEDIA_URL + str(yaml_obj.first().pdf_template))
+        
+        versions = []
+        for v in yaml_obj.first().versions.all():
+            versions.append({
+                "id": v.id,
+                "created_at": v.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            })
+        template.yaml_raw_data['versions_list'] = versions
+        
         return Response(template.yaml_raw_data)
 
     def put(self,request):
@@ -69,8 +97,14 @@ class YamlView(APIView):
 
         else:
             yaml_obj = Yaml.objects.filter(company=request.user.user_company.id)
-        yaml_id = request.data.pop("id")
-        request.data.pop("pdf_template")
+        yaml_id = request.data.pop("id", None)
+        request.data.pop("pdf_template", None)
+        template_name = request.data.pop("template_name", None)
+        request.data.pop("versions_list", None)
+
+        if not yaml_id:
+             return Response({"error":"Missing ID"},400)
+
         yaml_obj= yaml_obj.filter(id=yaml_id)
         if not yaml_obj:
             return Response({"error":"Not Found"},404)
@@ -79,6 +113,21 @@ class YamlView(APIView):
 
         obj = yaml_obj.first()
         
+        YamlVersion.objects.create(yaml=obj, version_data=yaml_str)
+        try:
+            limit = int(os.getenv('TEMPLATE_VERSION_LIMIT', 50))
+        except ValueError:
+            limit = 50
+            
+        versions = obj.versions.all()
+        if versions.count() > limit:
+            versions_to_delete = versions[limit:].values_list('id', flat=True)
+            YamlVersion.objects.filter(id__in=list(versions_to_delete)).delete()
+        
+        if template_name:
+            obj.template_name = template_name
+            obj.save()
+            
         if obj.yaml_file and hasattr(obj.yaml_file, 'path'):
             with open(obj.yaml_file.path, 'w') as f:
                 f.write(yaml_str)
@@ -86,7 +135,14 @@ class YamlView(APIView):
             # Fallback if file doesn't exist yet for some reason
             obj.yaml_file.save(obj.yaml_file.name.split('/')[-1], ContentFile(yaml_str), save=True)
 
-        return Response("done", 200)
+        versions = []
+        for v in obj.versions.all():
+            versions.append({
+                "id": v.id,
+                "created_at": v.created_at.strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+        return Response({"message": "done", "versions_list": versions}, 200)
 
 class YamlListView(ListAPIView):
     permission_classes = [IsAuthenticated]

@@ -232,7 +232,7 @@ def check_value_name(key,yaml_header_list, values,index=0):
 
 class YamalReader:
 
-    def __init__(self,name,auto_scale=False):
+    def __init__(self,name=None,auto_scale=False, yaml_raw_data=None):
         self.name=name
         self.headers=[]
         self.footers=[]
@@ -242,12 +242,15 @@ class YamalReader:
         self.products=[]
         self.start=None
         self.product_config=None
-        self.yaml_raw_data=None
+        self.yaml_raw_data=yaml_raw_data
         self.auto_scale=auto_scale
         self.serialize_data()
 
     def serialize_data(self):
-        yaml_raw_data=get_yaml_data(self.name)
+        if self.yaml_raw_data is None:
+            yaml_raw_data=get_yaml_data(self.name)
+        else:
+            yaml_raw_data = self.yaml_raw_data
         self.headers=serialize_data(yaml_raw_data["Bill"]["harder"])
         self.bill_stretcher=serialize_data(yaml_raw_data["Bill"].get("bill_stretcher",[]))
         self.product_stretcher=serialize_data(yaml_raw_data["Bill"].get("product_stretcher",[]))
