@@ -14,8 +14,8 @@ class Point:
 
     def __init__(self,title,x=None,y=None,label=None,value=None,**kwargs):
         self.title=title
-        self.x=x
-        self.y=y
+        self.x=x if x is not None else 0
+        self.y=y if y is not None else 0
         self.value=value
         self.label=label
         self.raw=kwargs
@@ -98,15 +98,24 @@ class Line:
         :param height: (optional) page height, for coordinate transform (y -> height - y)
         :param kwargs: Extra attributes like stroke_color, line_width, label, etc.
         """
+        # Ensure all coordinate values are numeric to avoid TypeErrors
+        x = x if x is not None else 0
+        y = y if y is not None else 0
+        x2 = x2 if x2 is not None else 0
+        y2 = y2 if y2 is not None else 0
+
         # Handle coordinate transformation if height is provided
-        if height:
+        if height is not None:
             y1 = height - y
             y2 = height - y2
+        else:
+            y1 = y
+            y2 = y2
 
         self.x = x
         self.x1 = x
         self.y = y
-        self.y1 = y
+        self.y1 = y1
         self.x2 = x2
         self.y2 = y2
 
@@ -160,6 +169,12 @@ def create_rectangle(title, x, y, width, height=0, **kwargs):
     :param kwargs: Extra attributes (stroke, fill, line_width, etc.)
     :return: Polygon instance
     """
+    # Ensure all coordinate values are numeric to avoid TypeErrors
+    x = x if x is not None else 0
+    y = y if y is not None else 0
+    width = width if width is not None else 0
+    height = height if height is not None else 0
+
     points = [
         (x, y),                    # bottom-left
         (x + width, y),            # bottom-right
