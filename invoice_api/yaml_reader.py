@@ -316,7 +316,11 @@ class FillValue:
                 formula=product_properties.get("new_product_in_frontend").get("formula",'')
                 value=product_properties.get("value")
                 if input_title=="GST":
-                    gst_list.append(int(value))
+                    try:
+                        gst_val = int(value) if value and str(value).strip() else 0
+                    except (ValueError, TypeError):
+                        gst_val = 0
+                    gst_list.append(gst_val)
                 for i in products_list:
                     all_label = [ k.lower() for k in i.label.split(',') ]
                     all_label.append(str(i).lower())
@@ -336,9 +340,14 @@ class FillValue:
                     if formula:
                         other_callable_values.append({"formula":formula,value:value})
                     else:
-                        callable_values*=float(value if value else 1)
+                        try:
+                            val_float = float(value) if value and str(value).strip() else 1.0
+                        except (ValueError, TypeError):
+                            val_float = 1.0
+                        callable_values *= val_float
             for i in self.yaml_obj.products:
                 i = copy.copy(i)
+                i.value = ""
                 i.font_size = i.font_size if i.font_size else self.yaml_obj.product_config.get("font_size")
                 i.font = i.font if i.font else self.yaml_obj.product_config.get("font")
                 if i.label=="amount":
@@ -350,12 +359,13 @@ class FillValue:
                     if i.label in ["Amount_after_GST","C_GST","S_GST"]:
                         self.products.append(i)
                         i.y = start
+                    current_gst = gst_list[-1] if gst_list else 1
                     if i.label=="Amount_after_GST":
-                        i.value=round(callable_values+(callable_values*(gst_list[-1]/100)))
+                        i.value=round(callable_values+(callable_values*(current_gst/100)))
                     elif i.label=="C_GST":
-                        i.value = round( (callable_values * (gst_list[-1] / 100))/2,2)
+                        i.value = round( (callable_values * (current_gst / 100))/2,2)
                     elif i.label=="S_GST":
-                        i.value = round( (callable_values * (gst_list[-1] / 100))/2,2)
+                        i.value = round( (callable_values * (current_gst / 100))/2,2)
 
 
             start-=self.yaml_obj.product_config.get("product_gap",15)
@@ -390,8 +400,9 @@ class FillValue:
         for i in self.footers:
             if difference:
                 i.go_down(difference)
-            if self.raw_footer_data.get(i.label):
+            if self.raw_footer_data.get(i.label) is not None:
                 i.value=self.raw_footer_data.get(i.label)
+            print(self.raw_footer_data.get(i.label),i.label,"footer")
 
     def collect_all_data(self):
         data=[]
@@ -407,8 +418,6 @@ class FillValue:
         if request.user.user_company and request.user.user_company.is_varified:
             obj = request.user.user_company
             for i in self.my_company_details + self.footers:
-                if hasattr(i, 'rectangles_type'):
-                    print(i)
                 if hasattr(i, 'rectangles_type') and obj.company_logo and i.rectangles_type == 'image':
                     points = i.points
                     xs = [p[0] for p in points]
@@ -427,7 +436,6 @@ class FillValue:
                     i.points = points
                     i.src = getattr(obj, str(i.label).lower(), '')
                     i.src = request.build_absolute_uri(settings.MEDIA_URL + str(i.src))
-                    print(i.src)
                 if i.type() == 'Point' and hasattr(obj,str(str(i.label).lower())):
                     i.value = getattr(obj,str(i.label).lower(),'')
 

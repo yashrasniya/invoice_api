@@ -19,7 +19,9 @@ class new_product_in_frontendSerializer(serializers.ModelSerializer):
             'size',
             'is_show',
             'is_calculable',
-            'formula'
+            'formula',
+            'presets',
+            'default_value'
         )
     def get_user(self, obj):
         return obj.user.username

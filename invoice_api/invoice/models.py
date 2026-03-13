@@ -45,6 +45,8 @@ class new_product_in_frontend(models.Model):
     is_show = models.BooleanField(default=False)
     is_calculable = models.BooleanField(default=False)  # if true then make formula in table
     formula = models.CharField(max_length=20, blank=True)
+    presets = models.TextField(blank=True, null=True, help_text="Comma-separated preset values")
+    default_value = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):
         return self.input_title
