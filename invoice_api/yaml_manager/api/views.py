@@ -79,6 +79,7 @@ class YamlView(APIView):
             t_name = user_company_obj.company_name
             
         template.yaml_raw_data['template_name'] = t_name
+        template.yaml_raw_data['auto_save'] = yaml_obj.first().auto_save
         template.yaml_raw_data['pdf_template'] = request.build_absolute_uri(settings.MEDIA_URL + str(yaml_obj.first().pdf_template))
         
         versions = []
@@ -100,6 +101,7 @@ class YamlView(APIView):
         yaml_id = request.data.pop("id", None)
         request.data.pop("pdf_template", None)
         template_name = request.data.pop("template_name", None)
+        auto_save = request.data.pop("auto_save", None)
         request.data.pop("versions_list", None)
 
         if not yaml_id:
@@ -126,7 +128,9 @@ class YamlView(APIView):
         
         if template_name:
             obj.template_name = template_name
-            obj.save()
+        if auto_save is not None:
+            obj.auto_save = auto_save
+        obj.save()
             
         if obj.yaml_file and hasattr(obj.yaml_file, 'path'):
             with open(obj.yaml_file.path, 'w') as f:

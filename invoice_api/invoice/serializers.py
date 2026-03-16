@@ -20,6 +20,7 @@ class new_product_in_frontendSerializer(serializers.ModelSerializer):
             'is_show',
             'is_calculable',
             'formula',
+            'on_with_out_gst_amount',
             'presets',
             'default_value'
         )
