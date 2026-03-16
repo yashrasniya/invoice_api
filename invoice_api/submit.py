@@ -197,14 +197,14 @@ class Submit:
                 if text_len > 0 and line <= max_lines:
                     # Draw remaining text on the current raw_line
                     if obj.limit and text_len > obj.limit:
-                         font_size = obj.next_line.get("font_size", obj.font) if obj.next_line else obj.font
-                         self.canvas_obj.setFontSize(font_size)
+                        font_size = obj.next_line.get("font_size", obj.font_size or self.font_size) if obj.next_line else (obj.font_size or self.font_size)
+                        self.canvas_obj.setFontSize(float(font_size))
                     self.canvas_obj.drawString(x, y, ' '.join(draw_value))
                     
                     # Prepare for the next explicit raw_line
                     x = obj.next_line.get("x", obj.x) if obj.next_line else obj.x
-                    font_size = obj.next_line.get("font_size", obj.font) if obj.next_line else obj.font
-                    self.canvas_obj.setFontSize(font_size)
+                    font_size = obj.next_line.get("font_size", obj.font_size or self.font_size) if obj.next_line else (obj.font_size or self.font_size)
+                    self.canvas_obj.setFontSize(float(font_size))
                     y -= obj.next_line.get("gap", 12) if obj.next_line else 12
                     line += 1
                     
