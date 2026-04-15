@@ -246,8 +246,10 @@ class BulkExport(APIView):
         type = request.data.get("type", "PDF").strip()
 
         # Start with base queryset
-        queryset = Invoice.objects.all()
+        queryset = Invoice.objects.filter(user=request.user)
 
+        if not queryset:
+            return Response({"error":"no invoice found"},status=status.HTTP_400_BAD_REQUEST)
         # Search filter (on invoice_number or receiver name)
         if search:
             queryset = queryset.filter(
