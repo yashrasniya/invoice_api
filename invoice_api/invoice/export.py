@@ -4,6 +4,8 @@ import logging
 import traceback
 
 from django.http import FileResponse, HttpResponse
+from django.template.loader import render_to_string
+import weasyprint
 from rest_framework.response import Response
 
 from invoice.serializers import InvoiceSerializerForPDF, InvoiceSerializerForCSV
@@ -80,4 +82,25 @@ def csv_generator(qs, request):
         content_type='text/csv'
     )
     response['Content-Disposition'] = 'attachment; filename="invoices_export.csv"'
+    return response
+
+def pdf_data_generator(qs, request):
+    ser_obj = InvoiceSerializerForCSV(qs, many=True)
+    data_list = ser_obj.data
+
+    total_final = sum([float(item.get('total_final_amount') or 0) for item in data_list])
+    total_gst = sum([float(item.get('gst_final_amount') or 0) for item in data_list])
+
+    context = {
+        'invoices': data_list,
+        'total_final': total_final,
+        'total_gst': total_gst,
+        'report_date': datetime.datetime.now().strftime('%Y-%m-%d')
+    }
+
+    html_string = render_to_string('html_template_one.html', context)
+    pdf_file = weasyprint.HTML(string=html_string).write_pdf()
+
+    response = HttpResponse(pdf_file, content_type='application/pdf')
+    response['Content-Disposition'] = 'attachment; filename="invoices_export_data.pdf"'
     return response

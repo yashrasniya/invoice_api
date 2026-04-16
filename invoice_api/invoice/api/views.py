@@ -19,7 +19,7 @@ from invoice.models import Invoice, Product, new_product_in_frontend, Product_pr
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
-from ..export import pdf_generator, csv_generator
+from ..export import pdf_generator, csv_generator, pdf_data_generator
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
     Product_propertiesSerializer, InvoiceSerializerForPDF
 
@@ -270,6 +270,8 @@ class BulkExport(APIView):
             queryset = queryset.filter(date__lte=date_to)
         if type =="PDF":
             return pdf_generator(queryset, request)
+        elif type == "PDF_DATA":
+            return pdf_data_generator(queryset, request)
         else:
             return csv_generator(queryset,request)
 
