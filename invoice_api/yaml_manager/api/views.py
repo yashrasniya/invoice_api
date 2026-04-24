@@ -13,6 +13,9 @@ import os
 from yaml_manager.api.serializer import Yaml_serializers
 from yaml_manager.models import Yaml, YamlVersion
 from yaml_reader import YamalReader, FillValue
+import uuid
+from django.core.files.storage import default_storage
+from django.core.files.base import ContentFile
 
 logger = logging.getLogger(__name__)
 # Create your views here.
@@ -157,3 +160,18 @@ class YamlListView(ListAPIView):
             return Yaml.objects.filter()
         return Yaml.objects.filter(company=self.request.user.user_company.id)
 
+class ImageUploadView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if 'image' not in request.FILES:
+            return Response({"error": "No image provided"}, status=400)
+        
+        image_file = request.FILES['image']
+        ext = image_file.name.split('.')[-1]
+        filename = f"template_images/{uuid.uuid4()}.{ext}"
+        
+        path = default_storage.save(filename, ContentFile(image_file.read()))
+        url = request.build_absolute_uri(settings.MEDIA_URL + path)
+        
+        return Response({"url": url}, status=200)

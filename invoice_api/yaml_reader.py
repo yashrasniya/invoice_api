@@ -495,23 +495,25 @@ class FillValue:
             obj = request.user.user_company
             for i in self.my_company_details + self.footers:
                 if hasattr(i, 'rectangles_type') and obj.company_logo and i.rectangles_type == 'image':
-                    points = i.points
-                    xs = [p[0] for p in points]
-                    ys = [p[1] for p in points]
+                    if i.label == "company_logo":
+                        points = i.points
+                        xs = [p[0] for p in points]
+                        ys = [p[1] for p in points]
 
-                    x = min(xs)
-                    y = min(ys)
-                    width = max(xs) - x
-                    height = obj.logo_scaled_height(width)
-                    points = [
-                        (x, y),  # bottom-left
-                        (x + width, y),  # bottom-right
-                        (x + width, y + height),  # top-right (adjusted height)
-                        (x, y + height)  # top-left (adjusted height)
-                    ]
-                    i.points = points
-                    i.src = getattr(obj, str(i.label).lower(), '')
-                    i.src = request.build_absolute_uri(settings.MEDIA_URL + str(i.src))
+                        x = min(xs)
+                        y = min(ys)
+                        width = max(xs) - x
+                        height = obj.logo_scaled_height(width)
+                        points = [
+                            (x, y),  # bottom-left
+                            (x + width, y),  # bottom-right
+                            (x + width, y + height),  # top-right (adjusted height)
+                            (x, y + height)  # top-left (adjusted height)
+                        ]
+                        i.points = points
+
+                        i.src = getattr(obj, str(i.label).lower(), '')
+                        i.src = request.build_absolute_uri(settings.MEDIA_URL + str(i.src))
                 if i.type() == 'Point' and hasattr(obj,str(str(i.label).lower())):
                     i.value = getattr(obj,str(i.label).lower(),'')
 

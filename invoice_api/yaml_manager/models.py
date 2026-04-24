@@ -16,6 +16,7 @@ class Yaml(models.Model):
     company = models.ForeignKey("accounts.UserCompanies",on_delete=models.CASCADE,null=True,blank=True)
     auto_scale = models.BooleanField(default=False)
     auto_save = models.BooleanField(default=False)
+    is_html = models.BooleanField(default=False)
 
     def __str__(self):
         if self.template_name != "Untitled Template":

@@ -99,8 +99,22 @@ class Submit:
 
                 # Wrap in BytesIO
                 img_data = BytesIO(response.content)
+                pil_img = Image.open(img_data)
+                
+                # Calculate target size for 150 DPI resolution
+                target_w = int(width * 150.0 / 72.0)
+                target_h = int(height * 150.0 / 72.0)
+                
+                if pil_img.width > target_w or pil_img.height > target_h:
+                    try:
+                        resample_filter = Image.Resampling.LANCZOS
+                    except AttributeError:
+                        resample_filter = getattr(Image, 'LANCZOS', 1)
+                    
+                    pil_img = pil_img.resize((max(1, target_w), max(1, target_h)), resample_filter)
+
                 # Use ImageReader for ReportLab
-                img = ImageReader(img_data)
+                img = ImageReader(pil_img)
                 self.canvas_obj.drawImage(
                     img,
                     x, y,
@@ -109,6 +123,7 @@ class Submit:
                 )
             except Exception as e:
                 logger.info(e)
+
         else:
             self.canvas_obj.drawPath(path, stroke=stroke, fill=1 if obj.fill else 0)
             # self.canvas_obj.drawString(obj.x, obj.y, str(obj.label))
