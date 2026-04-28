@@ -191,3 +191,4 @@ Thumbs.db
 *.sublime-project
 *.sublime-workspace
 /invoice_api/inventory/migrations/
+/invoice_api/whatsapp_integration/migrations/

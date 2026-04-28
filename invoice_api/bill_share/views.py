@@ -14,6 +14,7 @@ from bill_share.models import BillShare
 from bill_share.serializers import BillShareSerializers
 from invoice.export import pdf_generator
 from invoice.models import Invoice
+from whatsapp_integration.models import WhatsAppIntegration
 
 # Load environment variables
 load_dotenv()
@@ -22,12 +23,31 @@ ACCESS_TOKEN = os.getenv("ACCESS_TOKEN")
 PHONE_NUMBER_ID = os.getenv("PHONE_NUMBER_ID")
 WHATSAPP_BUSINESS_ACCOUNT_ID = os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID")
 
-def upload_pdf(file_io_obj):
+def get_details(request):
+    object = WhatsAppIntegration.objects.filter(status="active", user=request.user).first()
+    if object:
+        phone_number_id = object.phone_number_id
+        access_token = object.access_token
+        default_template_name = object.default_template_name
+        business_account_id = object.business_account_id
+    else:
+        phone_number_id = None
+        access_token = None
+        default_template_name = None
+        business_account_id = None
+
+    return phone_number_id, access_token,default_template_name,business_account_id
+
+def upload_pdf(file_io_obj,phone_number_id, access_token):
     """
     Upload local PDF to WhatsApp Cloud API and return media_id
     """
-    url = f"https://graph.facebook.com/v18.0/{PHONE_NUMBER_ID}/media"
-    headers = {"Authorization": f"Bearer {ACCESS_TOKEN}"}
+
+
+
+
+    url = f"https://graph.facebook.com/v18.0/{phone_number_id}/media"
+    headers = {"Authorization": f"Bearer {access_token}"}
 
     files = {
         "file": ("invoice.pdf", file_io_obj, "application/pdf")
@@ -73,11 +93,11 @@ def send_pdf(media_id,phone_number, caption="📄 Here is your PDF file."):
     print(response.json())
     return response.status_code == 200
 
-def send_message_by_template(RECIPIENT_PHONE,receiver,company_name,total_final_amount,MEDIA_ID):
+def send_message_by_template(RECIPIENT_PHONE,receiver,company_name,total_final_amount,MEDIA_ID,template_name,access_token):
     url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
 
     headers = {
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Authorization": f"Bearer {access_token}",
         "Content-Type": "application/json"
     }
 
@@ -87,7 +107,7 @@ def send_message_by_template(RECIPIENT_PHONE,receiver,company_name,total_final_a
         "to": RECIPIENT_PHONE,
         "type": "template",
         "template": {
-            "name": "here_is_your_bill_with_time",
+            "name": template_name,
             "language": {"code": "en_US"},  # must match template language
             "components": [
                 {
@@ -191,15 +211,15 @@ class ShareByWhatsapp(APIView):
                 return Response({
                                     "error": "Some thing went wrong connect to admin"},
                                 400)
-
-            media_id = upload_pdf(io_obj)
+            phone_number_id, access_token,default_template_name,business_account_id = get_details(request)
+            media_id = upload_pdf(io_obj,phone_number_id, access_token)
             company_name= obj.user.name
             if obj.user.user_company:
                 company_name = obj.invoice.user.user_company.company_name
             error_message = "File not uploaded"
             if media_id:
                 # if send_pdf(media_id,caption=caption.format(obj.invoice.receiver.name,company_name,obj.invoice.total_final_amount), phone_number=phone_number):
-                if send_message_by_template(phone_number,obj.invoice.receiver.name,company_name,obj.invoice.total_final_amount,media_id):
+                if send_message_by_template(phone_number,obj.invoice.receiver.name,company_name,obj.invoice.total_final_amount,media_id,default_template_name,access_token):
                     return Response({}, 201)
                 error_message = "Message not able to send"
             return Response({"error": error_message})
