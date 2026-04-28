@@ -65,6 +65,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'django_filters',
     'inventory',
+    'whatsapp_integration',
 ]
 
 MIDDLEWARE = [

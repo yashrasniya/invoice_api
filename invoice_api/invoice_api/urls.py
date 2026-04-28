@@ -29,6 +29,7 @@ urlpatterns = [
     path('api/', include('companies.api.urls')),
     path('api/', include('invoice.api.urls')),
     path('api/', include('yaml_manager.api.urls')),
+    path('api/', include('whatsapp_integration.api.urls')),
     path('api/share_by_whatsapp/', ShareByWhatsapp.as_view()),
 
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
