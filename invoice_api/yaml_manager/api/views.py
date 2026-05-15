@@ -31,6 +31,10 @@ class YamlView(APIView):
             yaml_obj=Yaml.objects.filter(company=request.user.user_company.id)
         if request.query_params.get("id"):
             yaml_obj = yaml_obj.filter(id=request.query_params.get("id"))
+        if request.query_params.get("is_html"):
+            is_html_param = request.query_params.get("is_html").lower() == 'true'
+            yaml_obj = yaml_obj.filter(is_html=is_html_param)
+            
         if not yaml_obj:
             return Response({"message":"not found"},status=status.HTTP_404_NOT_FOUND)
             
@@ -53,7 +57,32 @@ class YamlView(APIView):
         else:
             user_company_obj = request.user.user_company
         print(yaml_obj)
-        for key in template.yaml_raw_data.get("Bill"):
+        
+        if yaml_obj.first().is_html:
+            html_content = ""
+            try:
+                if yaml_obj.first().yaml_file:
+                    yaml_obj.first().yaml_file.file.seek(0)
+                    html_content = yaml_obj.first().yaml_file.file.read().decode('utf-8')
+            except Exception as e:
+                logger.error(f"Error reading HTML file in GET: {e}")
+                
+            data = {
+                'id': yaml_obj.first().id,
+                'template_name': yaml_obj.first().template_name,
+                'is_html': True,
+                'elements': [
+                    {
+                        'id': '1',
+                        'type': 'html',
+                        'content': html_content,
+                        'x': 0, 'y': 0, 'width': 595, 'height': 842
+                    }
+                ]
+            }
+            return Response(data)
+            
+        for key in template.yaml_raw_data.get("Bill", {}):
             if key != "product":
                 objs = template.yaml_raw_data.get("Bill")[key]
             else:
@@ -114,11 +143,17 @@ class YamlView(APIView):
         if not yaml_obj:
             return Response({"error":"Not Found"},404)
 
-        yaml_str = yaml.dump(request.data, sort_keys=False)
-
+        is_html = yaml_obj.first().is_html
         obj = yaml_obj.first()
         
-        YamlVersion.objects.create(yaml=obj, version_data=yaml_str)
+        if is_html:
+            file_content = request.data.get("html_content", "")
+            ext = ".html"
+        else:
+            file_content = yaml.dump(request.data, sort_keys=False)
+            ext = ".yaml"
+            
+        YamlVersion.objects.create(yaml=obj, version_data=file_content)
         try:
             limit = int(os.getenv('TEMPLATE_VERSION_LIMIT', 50))
         except ValueError:
@@ -137,10 +172,10 @@ class YamlView(APIView):
             
         if obj.yaml_file and hasattr(obj.yaml_file, 'path'):
             with open(obj.yaml_file.path, 'w') as f:
-                f.write(yaml_str)
+                f.write(file_content)
         else:
             # Fallback if file doesn't exist yet for some reason
-            obj.yaml_file.save(obj.yaml_file.name.split('/')[-1], ContentFile(yaml_str), save=True)
+            obj.yaml_file.save(f"{uuid.uuid4()}{ext}", ContentFile(file_content), save=True)
 
         versions = []
         for v in obj.versions.all():
@@ -149,7 +184,32 @@ class YamlView(APIView):
                 "created_at": v.created_at.strftime("%Y-%m-%d %H:%M:%S")
             })
 
-        return Response({"message": "done", "versions_list": versions}, 200)
+        return Response({"message": "done", "versions_list": versions, "id": obj.id}, 200)
+
+    def post(self, request):
+        template_name = request.data.get("template_name", "Untitled Template")
+        is_html = request.data.get("is_html", False)
+        
+        company = request.user.user_company if not self.request.user.is_staff else None
+        
+        obj = Yaml.objects.create(
+            user=request.user,
+            company=company,
+            template_name=template_name,
+            is_html=is_html
+        )
+        
+        if is_html:
+            file_content = request.data.get("html_content", "")
+            file_name = f"{uuid.uuid4()}.html"
+        else:
+            file_content = yaml.dump(request.data, sort_keys=False)
+            file_name = f"{uuid.uuid4()}.yaml"
+        print(file_name)
+        obj.yaml_file.save(file_name, ContentFile(file_content), save=True)
+        YamlVersion.objects.create(yaml=obj, version_data=file_content)
+        
+        return Response({"id": obj.id, "message": "created successfully"}, status=201)
 
 class YamlListView(ListAPIView):
     permission_classes = [IsAuthenticated]
@@ -175,3 +235,23 @@ class ImageUploadView(APIView):
         url = request.build_absolute_uri(settings.MEDIA_URL + path)
         
         return Response({"url": url}, status=200)
+
+class WeasyprintPreviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        html_content = request.data.get("html_content")
+        if not html_content:
+            return Response({"error": "html_content is required"}, status=400)
+            
+        import weasyprint
+        import io
+        from django.http import FileResponse
+
+        try:
+            pdf_file = weasyprint.HTML(string=html_content).write_pdf()
+            buffer = io.BytesIO(pdf_file)
+            buffer.seek(0)
+            return FileResponse(buffer, as_attachment=False, filename='preview.pdf', content_type='application/pdf')
+        except Exception as e:
+            return Response({"error": str(e)}, status=500)

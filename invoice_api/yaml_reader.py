@@ -330,12 +330,14 @@ class FillValue:
         total_taxable_amount = 0
         total_gst_amount_acc = 0
         total_extra_cal_acc = 0
-        
+
         for index, product in enumerate(self.data.get("products")):
+            print("Working on {}".format(index))
             callable_values = 1.0  # Taxable subtotal (Rate * Qty)
             extra_cal = 0.0        # Post-tax additions
             other_formulas = []
             current_gst_pct = 0.0
+            calc_results = {} # Store calculated values for display
             
             row_columns = copy.deepcopy(self.yaml_obj.products)
             # Standard row columns (S.No)
@@ -350,52 +352,54 @@ class FillValue:
                     col.y = start
                     self.products.append(col)
 
-            # Property processing
+                # Property processing (First pass: extract base values and math)
+                print(len(product.get("product_properties")))
             for prop in product.get("product_properties"):
                 item_config = prop.get("new_product_in_frontend")
                 if not item_config: continue
-                
+                print(item_config.get("input_title"))
                 title = item_config.get("input_title", "")
-                is_show = item_config.get("is_show", False)
                 is_calculable = item_config.get("is_calculable", False)
                 formula = item_config.get("formula", "")
                 on_without_gst = item_config.get("on_with_out_gst_amount", False)
                 value = prop.get("value")
-                
-                # Update display for visible columns
-                if is_show:
-                    for col in row_columns:
-                        all_label = [l.lower() for l in col.label.split(',')]
-                        all_label.append(str(col).lower())
-                        if title.lower() in all_label:
-                            col.value = value
-                            col.y = start
-                            self.products.append(col)
-                
+
+                # Store original value as fallback for calculation result
+                calc_results[item_config.get('id')] = value
+
                 # Math extraction
                 if title == "GST":
                     try: current_gst_pct = float(value) if value else 0.0
                     except: current_gst_pct = 0.0
                 elif is_calculable:
+
                     if formula:
                         other_formulas.append({
-                            "formula": formula, 
-                            "value": value, 
+                            "id": item_config.get('id'),
+                            "formula": formula,
+                            "value": value,
                             "on_without_gst": on_without_gst
                         })
                     else:
-                        try: val_float = float(value) if value and str(value).strip() else 1.0
-                        except: val_float = 1.0
-                        callable_values *= val_float
-
-            # Formula calculations
+                        if value and str(value).strip() and title.lower() != 'gst':
+                            try:
+                                val_float = float(value)
+                                callable_values *= val_float
+                                calc_results[item_config.get('id')] = val_float
+                            except:
+                                print("ERROR",item_config.get("input_title"),value)
+                                pass
+            # Formula calculations (Second pass: apply math)
             for f_item in other_formulas:
+
                 f = f_item["formula"]
                 v_str = f_item["value"]
                 on_without_gst = f_item["on_without_gst"]
+                fid = f_item["id"]
                 try: v = float(v_str) if v_str else 0.0
                 except: v = 0.0
                 
+                calculated_val = v
                 if f == '+':
                     if on_without_gst: extra_cal += v
                     else: callable_values += v
@@ -405,13 +409,36 @@ class FillValue:
                 elif f == '/':
                     callable_values /= v if v != 0 else 1.0
                 elif f == '%+':
-                    calc_val = (v / 100) * callable_values
-                    if on_without_gst: extra_cal += calc_val
-                    else: callable_values += calc_val
+                    calculated_val = (v / 100) * callable_values
+                    if on_without_gst: extra_cal += calculated_val
+                    else: callable_values += calculated_val
                 elif f == '%-':
-                    calc_val = (v / 100) * callable_values
-                    if on_without_gst: extra_cal -= calc_val
-                    else: callable_values -= calc_val
+                    calculated_val = (v / 100) * callable_values
+                    if on_without_gst: extra_cal -= calculated_val
+                    else: callable_values -= calculated_val
+                
+                calc_results[fid] = calculated_val
+
+            # Display pass (Third pass: populate row_columns)
+            for prop in product.get("product_properties"):
+                item_config = prop.get("new_product_in_frontend")
+                if not item_config or not item_config.get('is_show'): continue
+                
+                title = item_config.get("input_title", "")
+                value = prop.get("value")
+
+                if item_config.get('show_calculated_value'):
+                    calc_val = calc_results.get(item_config.get('id'), value)
+                    try: value = f"{float(calc_val):.2f}"
+                    except: value = calc_val
+
+                for col in row_columns:
+                    all_label = [l.lower() for l in col.label.split(',')]
+                    all_label.append(str(col).lower())
+                    if title.lower() in all_label:
+                        col.value = value
+                        col.y = start
+                        self.products.append(col)
 
             # Totals for this item
             row_gst_amount = callable_values * (current_gst_pct / 100)

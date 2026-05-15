@@ -1,6 +1,9 @@
 from django.urls import path
+
+from .pipline import InvoiceExtractAPIView
 from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
     new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport
+from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView
 
 urlpatterns = [
     path('invoice/', InvoiceView.as_view()),
@@ -19,6 +22,8 @@ urlpatterns = [
     path('product/properties/<int:id>/update/',ProductPropertiesViewsSet.as_view()),
     # pdf
     path('pdf/', PdfMaker.as_view()),
-    path('bulk_export/', BulkExport.as_view())
-
+    path('bulk_export/', BulkExport.as_view()),
+    path('cash-flow/', CashFlowReportAPIView.as_view()),
+    path('purchase-summary/', PurchaseInvoiceSummaryAPIView.as_view()),
+    path('purchase/upload/', InvoiceExtractAPIView.as_view())
 ]

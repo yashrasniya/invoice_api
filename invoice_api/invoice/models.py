@@ -11,10 +11,17 @@ class Invoice(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     invoice_number = models.CharField(max_length=30,blank=True,null=True)
     receiver = models.ForeignKey('companies.Customers', on_delete=models.CASCADE,blank=True,null=True)
+    vendor = models.ForeignKey('companies.Vendor', on_delete=models.CASCADE,blank=True,null=True)
     date = models.DateField(null=True,blank=True)
     products = models.ManyToManyField('Product',blank=True,null=True)  # connect to Product model
     gst_final_amount = models.DecimalField(max_digits=20,decimal_places=2,null=True)
     total_final_amount = models.DecimalField(max_digits=20,decimal_places=2,null=True)
+
+    INVOICE_TYPE_CHOICES = [
+        ('sales', 'Sales'),
+        ('purchase', 'Purchase'),
+    ]
+    invoice_type = models.CharField(max_length=10, choices=INVOICE_TYPE_CHOICES, default='sales')
 
     def __str__(self):
         return str(self.id)+str(self.user)
@@ -47,6 +54,7 @@ class new_product_in_frontend(models.Model):
     formula = models.CharField(max_length=20, blank=True)
     on_with_out_gst_amount = models.BooleanField(default=False)
     presets = models.TextField(blank=True, null=True, help_text="Comma-separated preset values")
+    show_calculated_value= models.BooleanField(default=False)
     default_value = models.CharField(max_length=100, blank=True, null=True)
 
     def __str__(self):

@@ -8,6 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from invoice.models import Invoice
 from yaml_manager.models import Yaml
+from ..authenticate import ServiceTokenAuthentication
 from ..models import UserCompanies
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
@@ -215,3 +216,27 @@ class UserCompaniesViewSet(
         if request.user.user_company and request.user.is_company_admin:
             return  Response(UserCompaniesSerializer(request.user.user_company, context={"request": request}).data)
         return Response()
+
+class LoginByToken(APIView):
+
+    authentication_classes = [ServiceTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        username = request.user.username
+        response = Response()
+        data = get_tokens_for_user(user)
+        response.set_cookie(
+            key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+            value=data["access"],
+            expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+            secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+            httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+            samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE']
+        )
+        csrf.get_token(request)
+        response.data = user_detail(user).data
+        logging.info(f"{username} login by token")
+        return response
+

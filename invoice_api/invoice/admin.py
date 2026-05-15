@@ -3,7 +3,7 @@ from .models import Invoice, Product, Product_properties, new_product_in_fronten
 
 
 class InvoiceAdmin(admin.ModelAdmin):
-    list_display = ('user', 'invoice_number', 'receiver', 'date', 'gst_final_amount', 'total_final_amount')
+    list_display = ('id','user', 'invoice_number', 'receiver', 'date', 'gst_final_amount', 'total_final_amount')
 
 
 class ProductAdmin(admin.ModelAdmin):

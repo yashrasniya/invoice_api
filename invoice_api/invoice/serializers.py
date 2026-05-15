@@ -21,6 +21,7 @@ class new_product_in_frontendSerializer(serializers.ModelSerializer):
             'is_calculable',
             'formula',
             'on_with_out_gst_amount',
+            'show_calculated_value',
             'presets',
             'default_value'
         )
@@ -58,6 +59,7 @@ class ProductSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
     receiver_name = serializers.SerializerMethodField()
+    vendor_name = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
 
     class Meta:
@@ -68,10 +70,13 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'invoice_number',
             'receiver',
             'receiver_name',
+            'vendor',
+            'vendor_name',
             'date',
             'products',
             'gst_final_amount',
-            'total_final_amount'
+            'total_final_amount',
+            'invoice_type'
         )
         read_only_fields =[
             'products']
@@ -81,6 +86,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def get_receiver_name(self,obj):
         if obj.receiver:
             return obj.receiver.name
+        return ''
+
+    def get_vendor_name(self, obj):
+        if obj.vendor:
+            return obj.vendor.name
         return ''
 
 
@@ -97,10 +107,12 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             'user',
             'invoice_number',
             'receiver',
+            'vendor',
             'date',
             'products',
             'gst_final_amount',
-            'total_final_amount'
+            'total_final_amount',
+            'invoice_type'
         )
         read_only_fields =['gst_final_amount',
             'total_final_amount','products']
@@ -116,6 +128,7 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
 class InvoiceSerializerForCSV(serializers.ModelSerializer):
     date = serializers.SerializerMethodField()
     receiver = serializers.SerializerMethodField()
+    vendor = serializers.SerializerMethodField()
     products_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -123,10 +136,12 @@ class InvoiceSerializerForCSV(serializers.ModelSerializer):
         fields = (
             'invoice_number',
             'receiver',
+            'vendor',
             'date',
             'gst_final_amount',
             'total_final_amount',
             'products_count',
+            'invoice_type'
         )
         read_only_fields =['gst_final_amount',
             'total_final_amount','products']
@@ -134,6 +149,11 @@ class InvoiceSerializerForCSV(serializers.ModelSerializer):
     def get_receiver(self,obj):
         if obj.receiver:
             return obj.receiver.name
+        return ''
+        
+    def get_vendor(self, obj):
+        if obj.vendor:
+            return obj.vendor.name
         return ''
     def get_date(self, obj):
         if obj.date:

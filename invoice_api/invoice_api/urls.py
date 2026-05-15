@@ -21,6 +21,7 @@ from django.urls import path, include
 from django.conf import settings
 
 from bill_share.views import ShareByWhatsapp
+from invoice_api import swagger_urls
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -33,5 +34,5 @@ urlpatterns = [
     path('api/share_by_whatsapp/', ShareByWhatsapp.as_view()),
 
 ]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
-
+urlpatterns += swagger_urls.urlpatterns
 urlpatterns=urlpatterns+static(settings.STATIC, document_root=settings.STATIC_ROOT)

@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'drf_yasg',
     'accounts',
     'adminconfig',
     'pdf_builder',
@@ -171,6 +172,7 @@ REST_FRAMEWORK = {
     # 'DEFAULT_PAGINATION_CLASS': ['rest_framework.pagination.PageNumberPagination'],
     'PAGE_SIZE': 20,
     'SEARCH_PARAM': 's',
+    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'accounts.authenticate.CustomAuthentication',
     ),
@@ -251,3 +253,4 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_USER')  # Your email address
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASS')  # Your email app password
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+INVOICE_CONVERTOR_PIPLINE_URL = os.environ.get('INVOICE_CONVERTOR_PIPLINE_URL','http://localhost:8001')

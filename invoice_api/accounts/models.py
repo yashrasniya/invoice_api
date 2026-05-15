@@ -1,3 +1,5 @@
+import secrets
+
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 
@@ -97,3 +99,20 @@ class UserCompanies(models.Model):
 
 class Subscriptions(models.Model):
     name = models.CharField(max_length=255,null=True)
+
+
+class ServiceToken(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    name = models.CharField(max_length=100)
+
+    token = models.CharField(max_length=128, unique=True)
+
+    is_active = models.BooleanField(default=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_hex(32)
+
+        super().save(*args, **kwargs)
