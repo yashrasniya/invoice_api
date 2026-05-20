@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .pipline import InvoiceExtractAPIView
+from .pipline import InvoiceExtractAPIView, InvoiceExtractionStatusAPIView, InvoiceExtractionPendingJobsAPIView, InvoiceExtractionCallbackAPIView
 from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
     new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport
 from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView
@@ -25,5 +25,8 @@ urlpatterns = [
     path('bulk_export/', BulkExport.as_view()),
     path('cash-flow/', CashFlowReportAPIView.as_view()),
     path('purchase-summary/', PurchaseInvoiceSummaryAPIView.as_view()),
-    path('purchase/upload/', InvoiceExtractAPIView.as_view())
+    path('purchase/upload/', InvoiceExtractAPIView.as_view()),
+    path('purchase/status/<str:job_id>/', InvoiceExtractionStatusAPIView.as_view()),
+    path('purchase/pending-jobs/', InvoiceExtractionPendingJobsAPIView.as_view()),
+    path('purchase/callback/<str:job_id>/', InvoiceExtractionCallbackAPIView.as_view(), name='purchase-callback')
 ]

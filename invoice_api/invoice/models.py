@@ -70,3 +70,13 @@ class Font(models.Model):
             self.name = os.path.splitext(os.path.basename(self.font.name))[0]
 
         super().save(*args, **kwargs)
+
+class InvoiceExtractionLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
+    file = models.FileField(upload_to="invoices/logs/")
+    response_data = models.JSONField(null=True, blank=True)
+    status = models.CharField(max_length=50, blank=True, null=True)
+    invoice_type = models.CharField(max_length=50, blank=True, null=True)
+    job_id = models.UUIDField(null=True, blank=True)
+    meta_data = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
