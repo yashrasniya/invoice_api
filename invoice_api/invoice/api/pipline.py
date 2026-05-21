@@ -6,6 +6,7 @@ import requests
 
 from django.conf import settings
 from django.core.files.storage import default_storage
+from django.utils import timezone
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework.permissions import IsAuthenticated
@@ -46,6 +47,35 @@ class InvoiceExtractAPIView(APIView):
             if not uploaded_file:
                 return Response(
                     {"error": "File is required"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # -----------------------------------
+            # Daily Limit Check
+            # -----------------------------------
+            today = timezone.now().date()
+            daily_count = InvoiceExtractionLog.objects.filter(
+                user=request.user,
+                created_at__date=today
+            ).count()
+            
+            if daily_count >= 10:
+                return Response(
+                    {"error": "Daily limit of 10 invoice uploads reached. Please try again tomorrow."},
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+
+            # -----------------------------------
+            # Duplicate Filename Check
+            # -----------------------------------
+            duplicate_exists = InvoiceExtractionLog.objects.filter(
+                user=request.user,
+                file__endswith=f"_{uploaded_file.name}"
+            ).exists()
+            
+            if duplicate_exists:
+                return Response(
+                    {"error": f"A document with the name '{uploaded_file.name}' already exists. This is a duplicate."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
