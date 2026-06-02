@@ -468,7 +468,16 @@ class FillValue:
                     elif col.label == "row_total_with_out_gst":
                         col.value = round(row_total_with_out_gst, 2)
                         self.products.append(col)
+                    elif col.label == "extra_cal":
+                        col.value = round(extra_cal, 2)
+                        self.products.append(col)
                     elif col.label == "S_GST":
+                        col.value = round(row_gst_amount / 2, 2)
+                        self.products.append(col)
+                    elif col.label == "gst":
+                        col.value = round(current_gst_pct / 2, 2)
+                        self.products.append(col)
+                    elif col.label == "gst_amount":
                         col.value = round(row_gst_amount / 2, 2)
                         self.products.append(col)
 
