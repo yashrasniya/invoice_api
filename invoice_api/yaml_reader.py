@@ -443,7 +443,8 @@ class FillValue:
             # Totals for this item
             row_gst_amount = callable_values * (current_gst_pct / 100)
             row_total = callable_values + row_gst_amount + extra_cal
-            
+            row_total_with_out_gst = callable_values + extra_cal
+
             total_taxable_amount += callable_values
             total_gst_amount_acc += row_gst_amount
             total_extra_cal_acc += extra_cal
@@ -454,7 +455,6 @@ class FillValue:
                 col.y = start
                 col.font_size = col.font_size if col.font_size else self.yaml_obj.product_config.get("font_size")
                 col.font = col.font if col.font else self.yaml_obj.product_config.get("font")
-                
                 if col.label == "amount":
                     col.value = round(callable_values, 2)
                     self.products.append(col)
@@ -464,6 +464,9 @@ class FillValue:
                         self.products.append(col)
                     elif col.label == "C_GST":
                         col.value = round(row_gst_amount / 2, 2)
+                        self.products.append(col)
+                    elif col.label == "row_total_with_out_gst":
+                        col.value = round(row_total_with_out_gst, 2)
                         self.products.append(col)
                     elif col.label == "S_GST":
                         col.value = round(row_gst_amount / 2, 2)
