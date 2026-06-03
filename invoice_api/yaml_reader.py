@@ -329,6 +329,7 @@ class FillValue:
         start = self.yaml_obj.start
         total_taxable_amount = 0
         total_gst_amount_acc = 0
+        total_taxable_amount_with_extra_non_gst = 0
         total_extra_cal_acc = 0
 
         for index, product in enumerate(self.data.get("products")):
@@ -446,6 +447,7 @@ class FillValue:
             row_total_with_out_gst = callable_values + extra_cal
 
             total_taxable_amount += callable_values
+            total_taxable_amount_with_extra_non_gst += row_total_with_out_gst
             total_gst_amount_acc += row_gst_amount
             total_extra_cal_acc += extra_cal
 
@@ -485,6 +487,7 @@ class FillValue:
 
         # Global Footer Context
         self.raw_footer_data["total_amount_with_out_gst"] = round(total_taxable_amount, 2)
+        self.raw_footer_data["total_taxable_amount_with_extra_non_gst"] = round(total_taxable_amount_with_extra_non_gst, 2)
         self.raw_footer_data["gst_amount"] = round(total_gst_amount_acc, 2)
         self.raw_footer_data["total_amount_with_gst"] = round(total_taxable_amount + total_gst_amount_acc + total_extra_cal_acc, 2)
         self.raw_footer_data["total_amount_in_text"] = num2words(round(self.raw_footer_data["total_amount_with_gst"], 2))
