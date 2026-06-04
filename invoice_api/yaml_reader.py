@@ -246,10 +246,14 @@ def check_value_name(key,yaml_header_list, values,index=0):
     for d in yaml_header_list:
         logger.debug(f"{d=} {values=} {key=}")
         if key.lower() ==str(d):
-            d.value= values[key]
+            val = values.get(key)
+            if val is not None:
+                d.value= val
             return True
         if key.lower() ==d.label:
-            d.value = values[key]
+            val = values.get(key)
+            if val is not None:
+                d.value = val
             return True
         if "," in d.label:
             labels=d.label.split(",")
@@ -264,7 +268,8 @@ def check_value_name(key,yaml_header_list, values,index=0):
                 if new_value:
                     new_value=new_value.get(label,None)
             if label==key:
-                d.value = new_value
+                if new_value is not None:
+                    d.value = new_value
                 return True
     return None
 
