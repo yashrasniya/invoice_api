@@ -1,8 +1,14 @@
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 
 from .pipline import InvoiceExtractAPIView, InvoiceExtractionStatusAPIView, InvoiceExtractionPendingJobsAPIView, InvoiceExtractionCallbackAPIView
 from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
-    new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport
+    new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport, \
+    CustomFieldViewSet
+
+router = DefaultRouter()
+router.register(r'custom-fields', CustomFieldViewSet, basename='custom-field')
+
 from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView
 
 urlpatterns = [
@@ -29,4 +35,4 @@ urlpatterns = [
     path('purchase/status/<str:job_id>/', InvoiceExtractionStatusAPIView.as_view()),
     path('purchase/pending-jobs/', InvoiceExtractionPendingJobsAPIView.as_view()),
     path('purchase/callback/<str:job_id>/', InvoiceExtractionCallbackAPIView.as_view(), name='purchase-callback')
-]
+] + router.urls

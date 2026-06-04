@@ -304,7 +304,21 @@ class YamalReader:
 
 class FillValue:
     def __init__(self,data,yaml_obj):
-        self.data=data
+        self.data=copy.deepcopy(data)
+        custom_header = self.data.get('custom_header_field')
+        if isinstance(custom_header, str):
+            import json
+            try:
+                custom_header = json.loads(custom_header)
+            except Exception:
+                custom_header = {}
+        if not isinstance(custom_header, dict):
+            custom_header = {}
+        self.data['custom_header_field'] = custom_header
+
+        for k, v in self.data['custom_header_field'].items():
+            self.data[k] = v
+            self.data[k.lower()] = v
         self.yaml_obj=yaml_obj
         self.headers=self.yaml_obj.headers.copy()
         self.footers=self.yaml_obj.footers.copy()

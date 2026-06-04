@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Invoice, Product, Product_properties, new_product_in_frontend, Font, InvoiceExtractionLog
+from .models import Invoice, Product, Product_properties, new_product_in_frontend, Font, InvoiceExtractionLog, CustomField
 
 
 class InvoiceAdmin(admin.ModelAdmin):
@@ -30,3 +30,11 @@ class InvoiceExtractionLogAdmin(admin.ModelAdmin):
     list_display = ('id', 'user', 'status', 'job_id','invoice_type', 'created_at')
     list_filter = ('status', 'created_at')
     search_fields = ('job_id', 'user__username', 'status','invoice_type')
+
+
+@admin.register(CustomField)
+class CustomFieldAdmin(admin.ModelAdmin):
+    list_display = ('id', 'name', 'user', 'company', 'field_type', 'hidden', 'created_time', 'updated_time')
+    list_filter = ('field_type', 'hidden', 'created_time')
+    search_fields = ('name', 'user__username', 'company__company_name')
+

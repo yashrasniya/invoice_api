@@ -16,6 +16,7 @@ class Invoice(models.Model):
     products = models.ManyToManyField('Product',blank=True,null=True)  # connect to Product model
     gst_final_amount = models.DecimalField(max_digits=20,decimal_places=2,null=True)
     total_final_amount = models.DecimalField(max_digits=20,decimal_places=2,null=True)
+    custom_header_field = models.JSONField(blank=True, null=True, default=dict)
 
     INVOICE_TYPE_CHOICES = [
         ('sales', 'Sales'),
@@ -80,3 +81,34 @@ class InvoiceExtractionLog(models.Model):
     job_id = models.UUIDField(null=True, blank=True)
     meta_data = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class CustomField(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='custom_fields')
+    company = models.ForeignKey('accounts.UserCompanies', on_delete=models.CASCADE, null=True, blank=True, related_name='custom_fields')
+    name = models.CharField(max_length=100)
+    
+    FIELD_TYPE_CHOICES = [
+        ('text', 'Text'),
+        ('number', 'Number'),
+        ('select', 'Select'),
+        ('multiselect', 'Multi-Select'),
+        ('date', 'Date'),
+    ]
+    field_type = models.CharField(max_length=20, choices=FIELD_TYPE_CHOICES, default='text')
+    
+    hidden = models.BooleanField(default=False)
+    default_value = models.CharField(max_length=255, blank=True, null=True)
+    multioption_value = models.JSONField(blank=True, null=True, help_text="List of choices/options for select or multiselect fields")
+    
+    created_time = models.DateTimeField(auto_now_add=True)
+    updated_time = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if not self.company and hasattr(self, 'user') and self.user and hasattr(self.user, 'user_company') and self.user.user_company:
+            self.company = self.user.user_company
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} ({self.company.company_name if self.company else self.user.username})"
+

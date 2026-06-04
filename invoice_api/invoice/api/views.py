@@ -15,13 +15,14 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from companies.models import Customers
 from companies.serializers import CompanySerializer
-from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties
+from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties, CustomField
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
 from ..export import pdf_generator, csv_generator, pdf_data_generator
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
-    Product_propertiesSerializer, InvoiceSerializerForPDF
+    Product_propertiesSerializer, InvoiceSerializerForPDF, CustomFieldSerializer
+
 
 logger = logging.getLogger(__name__)
 
@@ -279,4 +280,21 @@ class BulkExport(APIView):
             return pdf_data_generator(queryset, request)
         else:
             return csv_generator(queryset,request)
+
+
+class CustomFieldViewSet(viewsets.ModelViewSet):
+    serializer_class = CustomFieldSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['hidden', 'field_type', 'company']
+    search_fields = ['name']
+    ordering_fields = ['created_time', 'name']
+    ordering = ['-created_time']
+
+    def get_queryset(self):
+        return CustomField.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
 

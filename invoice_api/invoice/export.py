@@ -49,6 +49,20 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             if obj.receiver:
                 invoice_data['receiver_name'] = obj.receiver.name
                 
+            custom_header = invoice_data.get('custom_header_field')
+            if isinstance(custom_header, str):
+                import json
+                try:
+                    custom_header = json.loads(custom_header)
+                except Exception:
+                    custom_header = {}
+            if not isinstance(custom_header, dict):
+                custom_header = {}
+            invoice_data['custom_header_field'] = custom_header
+            for k, v in custom_header.items():
+                invoice_data[k] = v
+                invoice_data[k.lower()] = v
+                    
             for p in invoice_data.get('products', []):
                 props = {}
                 total = 1.0
@@ -153,11 +167,25 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             footer_data["center_gst"] = round(avg_gst / 2, 2)
             footer_data["state_gst"] = round(avg_gst / 2, 2)
 
-            context = Context({
+            context_dict = {
                 'invoice': invoice_data,
                 'company': company_data,
                 'footer': footer_data
-            })
+            }
+            custom_header = invoice_data.get('custom_header_field')
+            if isinstance(custom_header, str):
+                import json
+                try:
+                    custom_header = json.loads(custom_header)
+                except Exception:
+                    custom_header = {}
+            if not isinstance(custom_header, dict):
+                custom_header = {}
+            invoice_data['custom_header_field'] = custom_header
+            for k, v in custom_header.items():
+                context_dict[k] = v
+                context_dict[k.lower()] = v
+            context = Context(context_dict)
             
             products = invoice_data.get("products", [])
             products_data = []
