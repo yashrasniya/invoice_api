@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from invoice.models import Invoice
 from yaml_manager.models import Yaml
-from ..authenticate import ServiceTokenAuthentication
+from ..authenticate import ServiceTokenAuthentication, AdminJWTTokenAuthentication
 from ..models import UserCompanies
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
@@ -239,4 +239,30 @@ class LoginByToken(APIView):
         response.data = user_detail(user).data
         logging.info(f"{username} login by token")
         return response
+
+
+class CheckMobileNumber(APIView):
+    authentication_classes = [AdminJWTTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        mobile = request.query_params.get('mobile_number') or request.query_params.get('mobile')
+        return self._check_mobile(mobile)
+
+    def post(self, request):
+        mobile = request.data.get('mobile_number') or request.data.get('mobile')
+        return self._check_mobile(mobile)
+
+    def _check_mobile(self, mobile):
+        if not mobile:
+            return Response({'error': 'Mobile number is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        user_exists = User.objects.filter(mobile_number=mobile).exists()
+        if user_exists:
+            return Response({'present': True, 'mobile_number': mobile}, status=status.HTTP_200_OK)
+        return Response({'present': False, 'mobile_number': mobile}, status=status.HTTP_404_NOT_FOUND)
+
 

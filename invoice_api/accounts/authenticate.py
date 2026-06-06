@@ -30,6 +30,17 @@ class CustomAuthentication(JWTAuthentication):
 
         validated_token = self.get_validated_token(raw_token)
         # enforce_csrf(request)
+        
+        token_id = validated_token.get('token_id')
+        if token_id is not None:
+            from adminconfig.models import AdminJWTToken
+            try:
+                db_token = AdminJWTToken.objects.get(id=token_id)
+                if not db_token.is_active:
+                    raise AuthenticationFailed("This token has been deactivated.")
+            except AdminJWTToken.DoesNotExist:
+                raise AuthenticationFailed("This token has been revoked.")
+
         return self.get_user(validated_token), validated_token
 
 class ServiceTokenAuthentication(BaseAuthentication):
@@ -59,3 +70,31 @@ class ServiceTokenAuthentication(BaseAuthentication):
             raise AuthenticationFailed("Invalid token")
 
         return (service_token.user, None)
+
+
+class AdminJWTTokenAuthentication(JWTAuthentication):
+    def authenticate(self, request):
+        header = self.get_header(request)
+
+        if header is None:
+            raw_token = request.COOKIES.get(settings.SIMPLE_JWT['AUTH_COOKIE']) or None
+        else:
+            raw_token = self.get_raw_token(header)
+        if raw_token is None:
+            return None
+
+        validated_token = self.get_validated_token(raw_token)
+
+        token_id = validated_token.get('token_id')
+        if token_id is None:
+            raise AuthenticationFailed("This endpoint requires an admin-generated API token.")
+
+        from adminconfig.models import AdminJWTToken
+        try:
+            db_token = AdminJWTToken.objects.get(id=token_id)
+            if not db_token.is_active:
+                raise AuthenticationFailed("This token has been deactivated.")
+        except AdminJWTToken.DoesNotExist:
+            raise AuthenticationFailed("This token has been revoked.")
+
+        return self.get_user(validated_token), validated_token

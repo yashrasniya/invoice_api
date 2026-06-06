@@ -17,6 +17,7 @@ from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from accounts.models import ServiceToken, User
+from accounts.authenticate import AdminJWTTokenAuthentication
 from invoice.all_serializers.pipline_seriallzers import InvoiceUploadSerializer
 from invoice.models import InvoiceExtractionLog
 
@@ -317,3 +318,9 @@ class InvoiceExtractionCallbackAPIView(APIView):
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class AdminInvoiceExtractAPIView(InvoiceExtractAPIView):
+    authentication_classes = [AdminJWTTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
