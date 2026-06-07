@@ -97,4 +97,20 @@ class AdminJWTTokenAuthentication(JWTAuthentication):
         except AdminJWTToken.DoesNotExist:
             raise AuthenticationFailed("This token has been revoked.")
 
-        return self.get_user(validated_token), validated_token
+        user = self.get_user(validated_token)
+
+        # Check for X-User-Id or x-user-id header to impersonate/switch to that user context
+        impersonated_user_val = request.headers.get("X-User-Id") or request.headers.get("x-user-id")
+        if impersonated_user_val:
+            from django.contrib.auth import get_user_model
+            User = get_user_model()
+            try:
+                if str(impersonated_user_val).isdigit():
+                    selected_user = User.objects.get(id=int(impersonated_user_val))
+                else:
+                    selected_user = User.objects.get(username=impersonated_user_val)
+                user = selected_user
+            except User.DoesNotExist:
+                raise AuthenticationFailed("The specified user in X-User-Id header does not exist.")
+
+        return user, validated_token

@@ -241,6 +241,26 @@ class LoginByToken(APIView):
         return response
 
 
+def normalize_mobile(mobile):
+    if not mobile:
+        return ""
+    # Retain only digits and '+'
+    mobile = "".join(c for c in str(mobile) if c.isdigit() or c == "+")
+    
+    # 1. Remove +91 prefix
+    if mobile.startswith("+91"):
+        mobile = mobile[3:]
+    # 2. Remove 91 prefix if total length is > 10
+    elif mobile.startswith("91") and len(mobile) > 10:
+        mobile = mobile[2:]
+        
+    # 3. If more than 10 characters and starts with 0, remove the leading 0s
+    while len(mobile) > 10 and mobile.startswith("0"):
+        mobile = mobile[1:]
+        
+    return mobile
+
+
 class CheckMobileNumber(APIView):
     authentication_classes = [AdminJWTTokenAuthentication]
     permission_classes = [IsAuthenticated]
@@ -260,9 +280,33 @@ class CheckMobileNumber(APIView):
         from django.contrib.auth import get_user_model
         User = get_user_model()
         
-        user_exists = User.objects.filter(mobile_number=mobile).exists()
-        if user_exists:
-            return Response({'present': True, 'mobile_number': mobile}, status=status.HTTP_200_OK)
-        return Response({'present': False, 'mobile_number': mobile}, status=status.HTTP_404_NOT_FOUND)
+        normalized_input = normalize_mobile(mobile)
+        if not normalized_input:
+            return Response({'error': 'Invalid mobile number format.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Match using last 8 digits for DB index performance, then exact normalize comparison in python
+        suffix = normalized_input[-8:]
+        candidates = User.objects.filter(mobile_number__endswith=suffix)
+        
+        matched_user = None
+        for u in candidates:
+            if normalize_mobile(u.mobile_number) == normalized_input:
+                matched_user = u
+                break
+                
+        if matched_user:
+            return Response({
+                'present': True, 
+                'mobile_number': mobile, 
+                'normalized_number': normalized_input,
+                'id': matched_user.id
+            }, status=status.HTTP_200_OK)
+            
+        return Response({
+            'present': False, 
+            'mobile_number': mobile,
+            'normalized_number': normalized_input
+        }, status=status.HTTP_404_NOT_FOUND)
+
 
 
