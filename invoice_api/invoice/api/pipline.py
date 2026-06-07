@@ -288,6 +288,38 @@ class InvoiceExtractionPendingJobsAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+def send_conformation_message(invoice_payload, user):
+    message = f"""
+    Please review the extracted invoice details below:
+
+    📄 Invoice Number: {invoice_payload.get('invoice_number', 'N/A')}
+    📅 Invoice Date: {invoice_payload.get('date', 'N/A')}
+    🧾 Invoice Type: {invoice_payload.get('invoice_type', 'N/A')}
+    💰 GST Amount: {invoice_payload.get('gst_final_amount', 0)}
+    💵 Total Amount: {invoice_payload.get('total_final_amount', 0)}
+
+    Kindly verify that the above information is correct.
+
+    If you notice any incorrect or missing details, you can update them from the dashboard before proceeding.
+    """
+    
+    url = "https://n8n.yashadvertisinggroup.com/webhook/send_whatsapp_message"
+    payload = {
+        "mobile": user.mobile_number,
+        "mobile_number": user.mobile_number,
+        "message": message,
+        "meta_data": invoice_payload
+    }
+    
+    try:
+        response = requests.post(url, json=payload, timeout=10)
+        logger = logging.getLogger('invoice')
+        logger.info(f"n8n WhatsApp message webhook triggered with status: {response.status_code}")
+    except Exception as e:
+        logger = logging.getLogger('invoice')
+        logger.error(f"Error calling n8n WhatsApp webhook: {str(e)}")
+
+
 class InvoiceExtractionCallbackAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -310,6 +342,9 @@ class InvoiceExtractionCallbackAPIView(APIView):
                 log_entry.invoice_type = invoice_type
                 log_entry.meta_data = request.data
                 log_entry.save()
+
+                if log_entry.user and log_entry.user.mobile_number:
+                    send_conformation_message(request.data, log_entry.user)
             
             return Response({"message": "Status updated successfully"}, status=status.HTTP_200_OK)
 
