@@ -38,40 +38,36 @@ class YamlView(APIView):
         if not yaml_obj:
             return Response({"message":"not found"},status=status.HTTP_404_NOT_FOUND)
             
-        version_id = request.query_params.get("version_id")
-        template = None
-        if version_id:
-            version_obj = yaml_obj.first().versions.filter(id=version_id).first()
-            if version_obj:
-                try:
-                    yaml_data = yaml.safe_load(version_obj.version_data)
-                    template = YamalReader(yaml_raw_data=yaml_data)
-                except yaml.YAMLError:
-                    pass
-                    
-        if not template:
-            template = YamalReader(yaml_obj.first().yaml_file.file)
-
-        if self.request.user.is_staff:
-            user_company_obj = yaml_obj.first().company
-        else:
-            user_company_obj = request.user.user_company
-        print(yaml_obj)
-        
-        if yaml_obj.first().is_html:
+        first_obj = yaml_obj.first()
+        if first_obj.is_html:
             html_content = ""
             try:
-                if yaml_obj.first().yaml_file:
-                    yaml_obj.first().yaml_file.file.seek(0)
-                    html_content = yaml_obj.first().yaml_file.file.read().decode('utf-8')
+                version_id = request.query_params.get("version_id")
+                if version_id:
+                    version_obj = first_obj.versions.filter(id=version_id).first()
+                    if version_obj:
+                        html_content = version_obj.version_data
+                if not html_content and first_obj.yaml_file:
+                    first_obj.yaml_file.file.seek(0)
+                    html_content = first_obj.yaml_file.file.read().decode('utf-8')
             except Exception as e:
                 logger.error(f"Error reading HTML file in GET: {e}")
                 
+            versions = []
+            for v in first_obj.versions.all():
+                versions.append({
+                    "id": v.id,
+                    "created_at": v.created_at.strftime("%Y-%m-%d %H:%M:%S")
+                })
+
             data = {
-                'id': yaml_obj.first().id,
-                'template_name': yaml_obj.first().template_name,
+                'id': first_obj.id,
+                'template_name': first_obj.template_name,
                 'is_html': True,
-                'elements': [
+                'auto_save': first_obj.auto_save,
+                'pdf_template': request.build_absolute_uri(settings.MEDIA_URL + str(first_obj.pdf_template)) if first_obj.pdf_template else None,
+                'versions_list': versions,
+                'elements': first_obj.elements if (first_obj.elements and len(first_obj.elements) > 0) else [
                     {
                         'id': '1',
                         'type': 'html',
@@ -81,7 +77,27 @@ class YamlView(APIView):
                 ]
             }
             return Response(data)
-            
+
+        # Non-HTML / YAML workflow
+        version_id = request.query_params.get("version_id")
+        template = None
+        if version_id:
+            version_obj = first_obj.versions.filter(id=version_id).first()
+            if version_obj:
+                try:
+                    yaml_data = yaml.safe_load(version_obj.version_data)
+                    template = YamalReader(yaml_raw_data=yaml_data)
+                except yaml.YAMLError:
+                    pass
+                    
+        if not template:
+            template = YamalReader(first_obj.yaml_file.file)
+
+        if self.request.user.is_staff:
+            user_company_obj = first_obj.company
+        else:
+            user_company_obj = request.user.user_company
+
         for key in template.yaml_raw_data.get("Bill", {}):
             if key != "product":
                 objs = template.yaml_raw_data.get("Bill")[key]
@@ -149,6 +165,9 @@ class YamlView(APIView):
         if is_html:
             file_content = request.data.get("html_content", "")
             ext = ".html"
+            elements = request.data.get("elements", None)
+            if elements is not None:
+                obj.elements = elements
         else:
             file_content = yaml.dump(request.data, sort_keys=False)
             ext = ".yaml"
@@ -189,6 +208,7 @@ class YamlView(APIView):
     def post(self, request):
         template_name = request.data.get("template_name", "Untitled Template")
         is_html = request.data.get("is_html", False)
+        elements = request.data.get("elements", None)
         
         company = request.user.user_company if not self.request.user.is_staff else None
         
@@ -196,7 +216,8 @@ class YamlView(APIView):
             user=request.user,
             company=company,
             template_name=template_name,
-            is_html=is_html
+            is_html=is_html,
+            elements=elements
         )
         
         if is_html:
@@ -246,7 +267,91 @@ class WeasyprintPreviewView(APIView):
             
         import weasyprint
         import io
+        import datetime
         from django.http import FileResponse
+        from django.template import Template, Context
+
+        # Prepare rich dummy data context for template rendering
+        today_str = datetime.datetime.now().strftime('%Y-%m-%d')
+        due_date_str = (datetime.datetime.now() + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+        
+        company_name = "Acme Corporation"
+        company_logo_url = "https://via.placeholder.com/150"
+        if request.user and hasattr(request.user, 'user_company') and request.user.user_company:
+            if request.user.user_company.company_name:
+                company_name = request.user.user_company.company_name
+            if request.user.user_company.company_logo:
+                company_logo_url = request.build_absolute_uri(request.user.user_company.company_logo.url)
+        print(company_logo_url)
+        company_data = {
+            'company_name': company_name,
+            'company_logo': company_logo_url,
+            'company_address': "123 Business Lane, Suite 100, Financial District",
+            'company_phone': "+1 (555) 019-2834",
+            'company_email': "billing@acme.com",
+            'gst_number': "22AAAAA0000A1Z5",
+        }
+        
+        dummy_products = [
+            {
+                'props': {
+                    'item': 'Web Development Services',
+                    'description': 'Frontend UI Design & API Integration',
+                    'quantity': '1',
+                    'rate': '800.00',
+                    'amount': '800.00',
+                },
+                'total_amount': '800.00'
+            },
+            {
+                'props': {
+                    'item': 'Cloud Hosting Setup',
+                    'description': 'AWS Deployment & Configuration',
+                    'quantity': '2',
+                    'rate': '100.00',
+                    'amount': '200.00',
+                },
+                'total_amount': '200.00'
+            }
+        ]
+        
+        invoice_data = {
+            'invoice_number': "INV-2026-0001",
+            'date': today_str,
+            'due_date': due_date_str,
+            'receiver_name': "Acme Client Enterprises",
+            'receiver_address': "456 Client Boulevard, Innovation Hub",
+            'receiver_phone': "+1 (555) 014-9988",
+            'receiver_email': "accounts@acmeclient.com",
+            'total_final_amount': 1180.00,
+            'gst_final_amount': 180.00,
+            'products': dummy_products,
+        }
+        
+        footer_data = {
+            'total_amount_with_out_gst': 1000.00,
+            'gst_amount': 180.00,
+            'total_amount_with_gst': 1180.00,
+            'total_amount_in_text': "One Thousand One Hundred Eighty Rupees Only",
+            'center_gst_amount': 90.00,
+            'state_gst_amount': 90.00,
+            'gst': 18.00,
+            'center_gst': 9.00,
+            'state_gst': 9.00
+        }
+        
+        context_dict = {
+            'invoice': invoice_data,
+            'company': company_data,
+            'footer': footer_data,
+            'products_data': [p['props'] for p in dummy_products]
+        }
+
+        try:
+            django_template = Template(html_content)
+            html_content = django_template.render(Context(context_dict))
+        except Exception as e:
+            logger.error(f"Error rendering preview template: {e}")
 
         try:
             pdf_file = weasyprint.HTML(string=html_content).write_pdf()

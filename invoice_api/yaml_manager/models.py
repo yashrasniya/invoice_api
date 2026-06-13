@@ -17,6 +17,7 @@ class Yaml(models.Model):
     auto_scale = models.BooleanField(default=False)
     auto_save = models.BooleanField(default=False)
     is_html = models.BooleanField(default=False)
+    elements = models.JSONField(null=True, blank=True)
 
     def __str__(self):
         if self.template_name != "Untitled Template":
