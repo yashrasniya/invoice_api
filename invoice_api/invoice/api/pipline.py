@@ -36,12 +36,21 @@ class InvoiceExtractAPIView(APIView):
                 description="Invoice File",
                 type=openapi.TYPE_FILE,
                 required=True
+            ),
+            openapi.Parameter(
+                'invoice_type',
+                openapi.IN_FORM,
+                description="Invoice Type (purchase, sales, auto)",
+                type=openapi.TYPE_STRING,
+                required=False,
+                default="purchase"
             )
         ]
     )
     def post(self, request):
 
         try:
+            invoice_type = request.data.get("invoice_type") or request.query_params.get("invoice_type") or "purchase"
 
             uploaded_file = request.FILES.get("file")
 
@@ -143,7 +152,8 @@ class InvoiceExtractAPIView(APIView):
                 json={
                     "file_path": absolute_file_path,
                     "schema": "",
-                    "meta_data": meta_data
+                    "meta_data": meta_data,
+                    "invoice_type": invoice_type
                 },
                 headers={
                     "Authorization": f"Bearer {token}"
