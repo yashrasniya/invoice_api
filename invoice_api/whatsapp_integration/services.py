@@ -4,6 +4,9 @@ import logging
 
 logger = logging.getLogger('invoice')
 
+META_APP_ID = "434279422908745"
+
+
 def register_whatsapp_number(access_token, phone_number_id, pin):
     """
     Register a phone number with Meta WhatsApp Business API.
@@ -370,7 +373,7 @@ def create_bill_template(access_token, business_account_id,phone_number_id, name
     }
     with open("invoice_api/template.pdf", 'rb') as fh:
 
-        media_id = upload_pdf(fh,phone_number_id,access_token)
+        media_id = upload_pdf(fh, META_APP_ID, access_token)
     payload = {
         "name": f"{name}",
         "language": "en_US",
@@ -412,6 +415,13 @@ def create_bill_template(access_token, business_account_id,phone_number_id, name
 
     except requests.exceptions.RequestException as e:
         logger.error(f"❌ Error creating template: {e}")
+        if e.response is not None:
+            try:
+                logger.error(f"Response: {e.response.text}")
+                if e.response.json().get("error").get("error_user_title")=="Content in this language already exists":
+                    return True
+            except Exception as e:
+                return False
         if e.response is not None:
             logger.error(f"Response: {e.response.text}")
         print({

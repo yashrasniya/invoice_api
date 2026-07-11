@@ -50,10 +50,18 @@ class WhatsAppConfigAPIView(APIView):
             integration.status = "failed"
             integration.save()
             return Response({"error": f"Failed to register {not_valid_key}", "details": reg_response}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Register number on WhatsApp Business Platform
+        register_resp = register_whatsapp_number(access_token, phone_number_id, pin)
+        if "error" in register_resp:
+            integration.status = "failed"
+            integration.save()
+            return Response({"error": "Failed to register WhatsApp number", "details": register_resp}, status=status.HTTP_400_BAD_REQUEST)
+
         template_name = "here_is_your_bill_with_time"
-        response = create_bill_template(access_token, business_account_id, pin, template_name)
+        response = create_bill_template(access_token, business_account_id, phone_number_id, template_name)
         if not response:
-            return Response({"error": f"Failed to create new template", "details": reg_response}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": f"Failed to create new template"}, status=status.HTTP_400_BAD_REQUEST)
         integration.status = "active"
         integration.default_template_name = template_name
         integration.save()
