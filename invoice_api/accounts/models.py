@@ -116,3 +116,18 @@ class ServiceToken(models.Model):
             self.token = secrets.token_hex(32)
 
         super().save(*args, **kwargs)
+
+
+class SocialAccount(models.Model):
+    PROVIDER_CHOICES = [('google', 'Google')]
+
+    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='social_accounts')
+    provider = models.CharField(max_length=30, choices=PROVIDER_CHOICES, default='google')
+    provider_uid = models.CharField(max_length=255)   # Google's stable 'sub' claim — NOT email
+    email = models.EmailField(blank=True)              # email at time of linking (informational)
+    picture_url = models.URLField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_login_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ('provider', 'provider_uid')

@@ -12,9 +12,14 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
+
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
@@ -168,6 +173,9 @@ SIMPLE_JWT = {
 
 }
 
+import sys
+IS_TESTING = 'test' in sys.argv
+
 REST_FRAMEWORK = {
     # 'DEFAULT_PAGINATION_CLASS': ['rest_framework.pagination.PageNumberPagination'],
     'PAGE_SIZE': 20,
@@ -176,13 +184,11 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'accounts.authenticate.CustomAuthentication',
     ),
-    'DEFAULT_THROTTLE_CLASSES': [
-
+    'DEFAULT_THROTTLE_CLASSES': [] if IS_TESTING else [
         'rest_framework.throttling.AnonRateThrottle',
-
         'rest_framework.throttling.UserRateThrottle'
-
     ],
+
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',

@@ -1,11 +1,12 @@
 from django.urls import path, include
-from .views import Register_user, Login, Profile, log_out, ContactUs, UserInfo, UserCompaniesViewSet, LoginByToken, CheckMobileNumber
+from .views import Register_user, Login, GoogleLogin, Profile, log_out, ContactUs, UserInfo, UserCompaniesViewSet, LoginByToken, CheckMobileNumber
 from rest_framework.routers import DefaultRouter
 
 
 urlpatterns = [
     path('register/', Register_user.as_view()),
     path('login/', Login.as_view()),
+    path('google-login/', GoogleLogin.as_view()),
     path('login_token/', LoginByToken.as_view()),
     path('profile/', Profile.as_view()),
     path('log_out/', log_out.as_view()),
