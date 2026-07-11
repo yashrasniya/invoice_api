@@ -1,5 +1,101 @@
+from datetime import timedelta
+
 from django.db import models
+from django.utils import timezone
+
 from accounts.models import User
+
+
+# ---------------------------------------------------------------------------
+# Subscription system
+# ---------------------------------------------------------------------------
+
+class SubscriptionPlan(models.Model):
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100, unique=True, db_index=True)
+    description = models.TextField(blank=True)
+    monthly_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    yearly_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Feature(models.Model):
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100, unique=True, db_index=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class PlanFeature(models.Model):
+    subscription_plan = models.ForeignKey(
+        SubscriptionPlan, on_delete=models.CASCADE, related_name='plan_features')
+    feature = models.ForeignKey(
+        Feature, on_delete=models.CASCADE, related_name='plan_features')
+    limits = models.JSONField(
+        default=dict, blank=True,
+        help_text="e.g. {'users': 5, 'invoices_per_month': 100}")
+
+    class Meta:
+        unique_together = ('subscription_plan', 'feature')
+
+    def __str__(self):
+        return f"{self.subscription_plan.code} / {self.feature.code}"
+
+
+class CompanySubscription(models.Model):
+    STATUS_CHOICES = [
+        ('active', 'Active'),
+        ('trialing', 'Trialing'),
+        ('past_due', 'Past Due'),
+        ('canceled', 'Canceled'),
+        ('expired', 'Expired'),  # explicit terminal state set by expiry job
+    ]
+    GRACE_PERIOD_DAYS = 7  # past_due grace window
+
+    company = models.ForeignKey(
+        'accounts.UserCompanies', on_delete=models.CASCADE,
+        related_name='company_subscriptions')
+    # PROTECT: deleting a plan must not cascade-delete tenant subscriptions
+    subscription_plan = models.ForeignKey(
+        SubscriptionPlan, on_delete=models.PROTECT,
+        related_name='company_subscriptions')
+    start_date = models.DateField()
+    end_date = models.DateField()
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default='active', db_index=True)
+    auto_renew = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            # at most one working subscription per company
+            models.UniqueConstraint(
+                fields=['company'],
+                condition=models.Q(status__in=['active', 'trialing']),
+                name='one_active_subscription_per_company',
+            )
+        ]
+        indexes = [models.Index(fields=['company', 'status', 'end_date'])]
+
+    def __str__(self):
+        return f"{self.company} → {self.subscription_plan} ({self.status})"
+
+    def is_working(self):
+        today = timezone.now().date()
+        if self.status in ('active', 'trialing'):
+            return self.start_date <= today <= self.end_date
+        if self.status == 'past_due':  # grace period
+            return today <= self.end_date + timedelta(days=self.GRACE_PERIOD_DAYS)
+        return False
 
 
 class Customers(models.Model):

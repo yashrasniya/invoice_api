@@ -83,6 +83,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'invoice_api.middleware.tenant_middleware',  # multi-tenant context (lazy)
 ]
 
 ROOT_URLCONF = 'invoice_api.urls'

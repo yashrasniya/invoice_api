@@ -101,6 +101,128 @@ class Subscriptions(models.Model):
     name = models.CharField(max_length=255,null=True)
 
 
+# ---------------------------------------------------------------------------
+# Multi-tenant authorization: permissions, roles, groups, direct grants, audit
+# ---------------------------------------------------------------------------
+
+class CompanyPermission(models.Model):
+    TYPE_CHOICES = [('MODEL', 'Model Permission'), ('CUSTOM', 'Custom Business Permission')]
+
+    name = models.CharField(max_length=255)
+    code = models.CharField(max_length=100, db_index=True)
+    description = models.TextField(blank=True)
+    permission_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='CUSTOM')
+    # company=NULL → system-wide permission (Product Owner managed)
+    company = models.ForeignKey(
+        'UserCompanies', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='custom_permissions')
+    is_system_permission = models.BooleanField(default=False)  # editable only by Product Owner
+
+    class Meta:
+        unique_together = ('code', 'company')
+        constraints = [
+            # unique_together does NOT deduplicate rows with company=NULL in SQL
+            models.UniqueConstraint(
+                fields=['code'],
+                condition=models.Q(company__isnull=True),
+                name='uniq_system_perm_code',
+            )
+        ]
+
+    def __str__(self):
+        return self.code
+
+
+class CompanyRole(models.Model):
+    # company=NULL → global system role (e.g. Product Owner)
+    company = models.ForeignKey(
+        'UserCompanies', on_delete=models.CASCADE, null=True, blank=True,
+        related_name='roles')
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    is_system_role = models.BooleanField(default=False)
+    permissions = models.ManyToManyField(CompanyPermission, related_name='roles', blank=True)
+    users = models.ManyToManyField('User', related_name='roles', blank=True)
+
+    class Meta:
+        unique_together = ('company', 'name')
+        constraints = [
+            models.UniqueConstraint(
+                fields=['name'],
+                condition=models.Q(company__isnull=True),
+                name='uniq_global_role_name',
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.name} ({self.company or 'global'})"
+
+
+class CompanyGroup(models.Model):
+    company = models.ForeignKey(
+        'UserCompanies', on_delete=models.CASCADE, related_name='custom_groups')
+    name = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    users = models.ManyToManyField('User', related_name='company_groups', blank=True)
+    roles = models.ManyToManyField(CompanyRole, related_name='company_groups', blank=True)
+    permissions = models.ManyToManyField(
+        CompanyPermission, related_name='company_groups', blank=True)
+
+    class Meta:
+        unique_together = ('company', 'name')
+
+    def __str__(self):
+        return f"{self.name} ({self.company})"
+
+
+class UserDirectPermission(models.Model):
+    user = models.ForeignKey(
+        'User', on_delete=models.CASCADE, related_name='user_direct_permissions')
+    permission = models.ForeignKey(
+        CompanyPermission, on_delete=models.CASCADE, related_name='direct_users')
+    company = models.ForeignKey(
+        'UserCompanies', on_delete=models.CASCADE, related_name='direct_user_permissions')
+    is_granted = models.BooleanField(default=True)  # False = explicit DENY, overrides role/group grants
+    granted_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, related_name='+')  # accountability
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'permission', 'company')
+
+    def __str__(self):
+        sign = '+' if self.is_granted else '-'
+        return f"{sign}{self.permission.code} → {self.user}"
+
+
+class AuditLog(models.Model):
+    company = models.ForeignKey(
+        'UserCompanies', on_delete=models.CASCADE, related_name='audit_logs',
+        null=True, blank=True)
+    user = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='audit_actions')
+    action = models.CharField(max_length=50)           # CREATE, UPDATE, DELETE, ASSIGN, REVOKE, DENY
+    resource_type = models.CharField(max_length=100)   # ROLE, PERMISSION, GROUP, SUBSCRIPTION, PLAN
+    resource_id = models.CharField(max_length=255, blank=True, null=True)
+    previous_data = models.JSONField(null=True, blank=True)  # populated via pre_save snapshot
+    new_data = models.JSONField(null=True, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+        indexes = [models.Index(fields=['company', 'resource_type', '-timestamp'])]
+
+    # append-only
+    def save(self, *args, **kwargs):
+        if self.pk:
+            raise ValueError("AuditLog is append-only")
+        super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValueError("AuditLog entries cannot be deleted")
+
+
 class ServiceToken(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=100)
