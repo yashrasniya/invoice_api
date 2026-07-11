@@ -246,10 +246,14 @@ def check_value_name(key,yaml_header_list, values,index=0):
     for d in yaml_header_list:
         logger.debug(f"{d=} {values=} {key=}")
         if key.lower() ==str(d):
-            d.value= values[key]
+            val = values.get(key)
+            if val is not None:
+                d.value= val
             return True
         if key.lower() ==d.label:
-            d.value = values[key]
+            val = values.get(key)
+            if val is not None:
+                d.value = val
             return True
         if "," in d.label:
             labels=d.label.split(",")
@@ -264,7 +268,8 @@ def check_value_name(key,yaml_header_list, values,index=0):
                 if new_value:
                     new_value=new_value.get(label,None)
             if label==key:
-                d.value = new_value
+                if new_value is not None:
+                    d.value = new_value
                 return True
     return None
 
@@ -304,7 +309,21 @@ class YamalReader:
 
 class FillValue:
     def __init__(self,data,yaml_obj):
-        self.data=data
+        self.data=copy.deepcopy(data)
+        custom_header = self.data.get('custom_header_field')
+        if isinstance(custom_header, str):
+            import json
+            try:
+                custom_header = json.loads(custom_header)
+            except Exception:
+                custom_header = {}
+        if not isinstance(custom_header, dict):
+            custom_header = {}
+        self.data['custom_header_field'] = custom_header
+
+        for k, v in self.data['custom_header_field'].items():
+            self.data[k] = v
+            self.data[k.lower()] = v
         self.yaml_obj=yaml_obj
         self.headers=self.yaml_obj.headers.copy()
         self.footers=self.yaml_obj.footers.copy()
@@ -329,13 +348,16 @@ class FillValue:
         start = self.yaml_obj.start
         total_taxable_amount = 0
         total_gst_amount_acc = 0
+        total_taxable_amount_with_extra_non_gst = 0
         total_extra_cal_acc = 0
-        
+
         for index, product in enumerate(self.data.get("products")):
+            print("Working on {}".format(index))
             callable_values = 1.0  # Taxable subtotal (Rate * Qty)
             extra_cal = 0.0        # Post-tax additions
             other_formulas = []
             current_gst_pct = 0.0
+            calc_results = {} # Store calculated values for display
             
             row_columns = copy.deepcopy(self.yaml_obj.products)
             # Standard row columns (S.No)
@@ -350,52 +372,54 @@ class FillValue:
                     col.y = start
                     self.products.append(col)
 
-            # Property processing
+                # Property processing (First pass: extract base values and math)
+                print(len(product.get("product_properties")))
             for prop in product.get("product_properties"):
                 item_config = prop.get("new_product_in_frontend")
                 if not item_config: continue
-                
+                print(item_config.get("input_title"))
                 title = item_config.get("input_title", "")
-                is_show = item_config.get("is_show", False)
                 is_calculable = item_config.get("is_calculable", False)
                 formula = item_config.get("formula", "")
                 on_without_gst = item_config.get("on_with_out_gst_amount", False)
                 value = prop.get("value")
-                
-                # Update display for visible columns
-                if is_show:
-                    for col in row_columns:
-                        all_label = [l.lower() for l in col.label.split(',')]
-                        all_label.append(str(col).lower())
-                        if title.lower() in all_label:
-                            col.value = value
-                            col.y = start
-                            self.products.append(col)
-                
+
+                # Store original value as fallback for calculation result
+                calc_results[item_config.get('id')] = value
+
                 # Math extraction
                 if title == "GST":
                     try: current_gst_pct = float(value) if value else 0.0
                     except: current_gst_pct = 0.0
                 elif is_calculable:
+
                     if formula:
                         other_formulas.append({
-                            "formula": formula, 
-                            "value": value, 
+                            "id": item_config.get('id'),
+                            "formula": formula,
+                            "value": value,
                             "on_without_gst": on_without_gst
                         })
                     else:
-                        try: val_float = float(value) if value and str(value).strip() else 1.0
-                        except: val_float = 1.0
-                        callable_values *= val_float
-
-            # Formula calculations
+                        if value and str(value).strip() and title.lower() != 'gst':
+                            try:
+                                val_float = float(value)
+                                callable_values *= val_float
+                                calc_results[item_config.get('id')] = val_float
+                            except:
+                                print("ERROR",item_config.get("input_title"),value)
+                                pass
+            # Formula calculations (Second pass: apply math)
             for f_item in other_formulas:
+
                 f = f_item["formula"]
                 v_str = f_item["value"]
                 on_without_gst = f_item["on_without_gst"]
+                fid = f_item["id"]
                 try: v = float(v_str) if v_str else 0.0
                 except: v = 0.0
                 
+                calculated_val = v
                 if f == '+':
                     if on_without_gst: extra_cal += v
                     else: callable_values += v
@@ -405,19 +429,44 @@ class FillValue:
                 elif f == '/':
                     callable_values /= v if v != 0 else 1.0
                 elif f == '%+':
-                    calc_val = (v / 100) * callable_values
-                    if on_without_gst: extra_cal += calc_val
-                    else: callable_values += calc_val
+                    calculated_val = (v / 100) * callable_values
+                    if on_without_gst: extra_cal += calculated_val
+                    else: callable_values += calculated_val
                 elif f == '%-':
-                    calc_val = (v / 100) * callable_values
-                    if on_without_gst: extra_cal -= calc_val
-                    else: callable_values -= calc_val
+                    calculated_val = (v / 100) * callable_values
+                    if on_without_gst: extra_cal -= calculated_val
+                    else: callable_values -= calculated_val
+                
+                calc_results[fid] = calculated_val
+
+            # Display pass (Third pass: populate row_columns)
+            for prop in product.get("product_properties"):
+                item_config = prop.get("new_product_in_frontend")
+                if not item_config or not item_config.get('is_show'): continue
+                
+                title = item_config.get("input_title", "")
+                value = prop.get("value")
+
+                if item_config.get('show_calculated_value'):
+                    calc_val = calc_results.get(item_config.get('id'), value)
+                    try: value = f"{float(calc_val):.2f}"
+                    except: value = calc_val
+
+                for col in row_columns:
+                    all_label = [l.lower() for l in col.label.split(',')]
+                    all_label.append(str(col).lower())
+                    if title.lower() in all_label:
+                        col.value = value
+                        col.y = start
+                        self.products.append(col)
 
             # Totals for this item
             row_gst_amount = callable_values * (current_gst_pct / 100)
             row_total = callable_values + row_gst_amount + extra_cal
-            
+            row_total_with_out_gst = callable_values + extra_cal
+
             total_taxable_amount += callable_values
+            total_taxable_amount_with_extra_non_gst += row_total_with_out_gst
             total_gst_amount_acc += row_gst_amount
             total_extra_cal_acc += extra_cal
 
@@ -427,7 +476,6 @@ class FillValue:
                 col.y = start
                 col.font_size = col.font_size if col.font_size else self.yaml_obj.product_config.get("font_size")
                 col.font = col.font if col.font else self.yaml_obj.product_config.get("font")
-                
                 if col.label == "amount":
                     col.value = round(callable_values, 2)
                     self.products.append(col)
@@ -438,7 +486,19 @@ class FillValue:
                     elif col.label == "C_GST":
                         col.value = round(row_gst_amount / 2, 2)
                         self.products.append(col)
+                    elif col.label == "row_total_with_out_gst":
+                        col.value = round(row_total_with_out_gst, 2)
+                        self.products.append(col)
+                    elif col.label == "extra_cal":
+                        col.value = round(extra_cal, 2)
+                        self.products.append(col)
                     elif col.label == "S_GST":
+                        col.value = round(row_gst_amount / 2, 2)
+                        self.products.append(col)
+                    elif col.label == "gst":
+                        col.value = round(current_gst_pct / 2, 2)
+                        self.products.append(col)
+                    elif col.label == "gst_amount":
                         col.value = round(row_gst_amount / 2, 2)
                         self.products.append(col)
 
@@ -446,6 +506,7 @@ class FillValue:
 
         # Global Footer Context
         self.raw_footer_data["total_amount_with_out_gst"] = round(total_taxable_amount, 2)
+        self.raw_footer_data["total_taxable_amount_with_extra_non_gst"] = round(total_taxable_amount_with_extra_non_gst, 2)
         self.raw_footer_data["gst_amount"] = round(total_gst_amount_acc, 2)
         self.raw_footer_data["total_amount_with_gst"] = round(total_taxable_amount + total_gst_amount_acc + total_extra_cal_acc, 2)
         self.raw_footer_data["total_amount_in_text"] = num2words(round(self.raw_footer_data["total_amount_with_gst"], 2))

@@ -12,9 +12,14 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from pathlib import Path
 import os
+from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
+
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
@@ -53,6 +58,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'drf_yasg',
     'accounts',
     'adminconfig',
     'pdf_builder',
@@ -167,20 +173,22 @@ SIMPLE_JWT = {
 
 }
 
+import sys
+IS_TESTING = 'test' in sys.argv
+
 REST_FRAMEWORK = {
     # 'DEFAULT_PAGINATION_CLASS': ['rest_framework.pagination.PageNumberPagination'],
     'PAGE_SIZE': 20,
     'SEARCH_PARAM': 's',
+    'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'accounts.authenticate.CustomAuthentication',
     ),
-    'DEFAULT_THROTTLE_CLASSES': [
-
+    'DEFAULT_THROTTLE_CLASSES': [] if IS_TESTING else [
         'rest_framework.throttling.AnonRateThrottle',
-
         'rest_framework.throttling.UserRateThrottle'
-
     ],
+
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
@@ -251,3 +259,4 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_USER')  # Your email address
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASS')  # Your email app password
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+INVOICE_CONVERTOR_PIPLINE_URL = os.environ.get('INVOICE_CONVERTOR_PIPLINE_URL','http://localhost:8001')

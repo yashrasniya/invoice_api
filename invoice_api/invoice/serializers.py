@@ -1,7 +1,9 @@
 from rest_framework import serializers
 
 from accounts.serializers.serializers import User_PublicSerializer
-from .models import Invoice, Product, Product_properties, new_product_in_frontend
+from .models import Invoice, Product, Product_properties, new_product_in_frontend, CustomField
+
+
 
 
 def get_user(obj):
@@ -21,6 +23,7 @@ class new_product_in_frontendSerializer(serializers.ModelSerializer):
             'is_calculable',
             'formula',
             'on_with_out_gst_amount',
+            'show_calculated_value',
             'presets',
             'default_value'
         )
@@ -58,6 +61,7 @@ class ProductSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
     receiver_name = serializers.SerializerMethodField()
+    vendor_name = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
 
     class Meta:
@@ -68,10 +72,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'invoice_number',
             'receiver',
             'receiver_name',
+            'vendor',
+            'vendor_name',
             'date',
             'products',
             'gst_final_amount',
-            'total_final_amount'
+            'total_final_amount',
+            'invoice_type',
+            'custom_header_field'
         )
         read_only_fields =[
             'products']
@@ -82,6 +90,43 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.receiver:
             return obj.receiver.name
         return ''
+
+    def get_vendor_name(self, obj):
+        if obj.vendor:
+            return obj.vendor.name
+        return ''
+
+    def validate_custom_header_field(self, value):
+        import json
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except Exception:
+                pass
+
+        if not isinstance(value, dict):
+            return value
+            
+        cleaned_value = {}
+        from invoice.models import CustomField
+        
+        request = self.context.get('request')
+        user = request.user if request else None
+        
+        if user:
+            active_fields = CustomField.objects.filter(user=user)
+            if hasattr(user, 'user_company') and user.user_company:
+                active_fields = active_fields | CustomField.objects.filter(company=user.user_company)
+            casing_map = {cf.name.lower(): cf.name for cf in active_fields}
+        else:
+            casing_map = {}
+
+        for k, v in value.items():
+            normalized_key = casing_map.get(k.lower(), k)
+            cleaned_value[normalized_key] = v
+            
+        return cleaned_value
+
 
 
 
@@ -97,10 +142,13 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             'user',
             'invoice_number',
             'receiver',
+            'vendor',
             'date',
             'products',
             'gst_final_amount',
-            'total_final_amount'
+            'total_final_amount',
+            'invoice_type',
+            'custom_header_field'
         )
         read_only_fields =['gst_final_amount',
             'total_final_amount','products']
@@ -116,6 +164,7 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
 class InvoiceSerializerForCSV(serializers.ModelSerializer):
     date = serializers.SerializerMethodField()
     receiver = serializers.SerializerMethodField()
+    vendor = serializers.SerializerMethodField()
     products_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -123,10 +172,12 @@ class InvoiceSerializerForCSV(serializers.ModelSerializer):
         fields = (
             'invoice_number',
             'receiver',
+            'vendor',
             'date',
             'gst_final_amount',
             'total_final_amount',
             'products_count',
+            'invoice_type'
         )
         read_only_fields =['gst_final_amount',
             'total_final_amount','products']
@@ -134,6 +185,11 @@ class InvoiceSerializerForCSV(serializers.ModelSerializer):
     def get_receiver(self,obj):
         if obj.receiver:
             return obj.receiver.name
+        return ''
+        
+    def get_vendor(self, obj):
+        if obj.vendor:
+            return obj.vendor.name
         return ''
     def get_date(self, obj):
         if obj.date:
@@ -144,3 +200,23 @@ class InvoiceSerializerForCSV(serializers.ModelSerializer):
         if obj.products:
             return obj.products.all().count()
         return 0
+
+
+class CustomFieldSerializer(serializers.ModelSerializer):
+    company_name = serializers.CharField(source='company.company_name', read_only=True)
+    
+    class Meta:
+        model = CustomField
+        fields = [
+            'id',
+            'name',
+            'field_type',
+            'hidden',
+            'default_value',
+            'multioption_value',
+            'company',
+            'company_name',
+            'created_time',
+            'updated_time',
+        ]
+        read_only_fields = ['id', 'created_time', 'updated_time']

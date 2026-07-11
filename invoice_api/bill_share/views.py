@@ -64,6 +64,7 @@ def upload_pdf(file_io_obj,phone_number_id, access_token):
         print(f"✅ Uploaded PDF. Media ID: {media_id}")
         return media_id
     else:
+        print("Error:",url)
         print("❌ Upload failed:", response.json())
         return None
 
@@ -93,8 +94,8 @@ def send_pdf(media_id,phone_number, caption="📄 Here is your PDF file."):
     print(response.json())
     return response.status_code == 200
 
-def send_message_by_template(RECIPIENT_PHONE,receiver,company_name,total_final_amount,MEDIA_ID,template_name,access_token):
-    url = f"https://graph.facebook.com/v20.0/{PHONE_NUMBER_ID}/messages"
+def send_message_by_template(RECIPIENT_PHONE,receiver,company_name,total_final_amount,MEDIA_ID,template_name,access_token,phone_number_id):
+    url = f"https://graph.facebook.com/v20.0/{phone_number_id}/messages"
 
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -212,6 +213,39 @@ class ShareByWhatsapp(APIView):
                                     "error": "Some thing went wrong connect to admin"},
                                 400)
             phone_number_id, access_token,default_template_name,business_account_id = get_details(request)
+            if not phone_number_id or not access_token:
+                return Response({"error": "WhatsApp integration is not configured or not active."}, status=400)
+            
+            # Check phone number status on Meta first
+            status_url = f"https://graph.facebook.com/v18.0/{phone_number_id}"
+            status_params = {
+                "fields": "display_phone_number,verified_name,quality_rating,status",
+                "access_token": access_token
+            }
+            try:
+                status_resp = requests.get(status_url, params=status_params)
+                if status_resp.status_code == 200:
+                    status_data = status_resp.json()
+                    number_status = status_data.get("status")
+                    if number_status != "CONNECTED":
+                        return Response({
+                            "error": f"WhatsApp phone number status is '{number_status}' (expected 'CONNECTED'). Please check Meta Business Suite."
+                        }, status=400)
+                else:
+                    try:
+                        error_msg = status_resp.json().get("error", {}).get("message", "Failed to verify WhatsApp phone number status with Meta.")
+                    except Exception:
+                        error_msg = "Failed to verify WhatsApp phone number status with Meta."
+                    return Response({
+                        "error": error_msg,
+                        "details": status_resp.text
+                    }, status=400)
+            except Exception as status_err:
+                return Response({
+                    "error": f"Error checking WhatsApp status: {str(status_err)}"
+                }, status=400)
+
+            print(phone_number_id, access_token, default_template_name, business_account_id)
             media_id = upload_pdf(io_obj,phone_number_id, access_token)
             company_name= obj.user.name
             if obj.user.user_company:
@@ -219,10 +253,10 @@ class ShareByWhatsapp(APIView):
             error_message = "File not uploaded"
             if media_id:
                 # if send_pdf(media_id,caption=caption.format(obj.invoice.receiver.name,company_name,obj.invoice.total_final_amount), phone_number=phone_number):
-                if send_message_by_template(phone_number,obj.invoice.receiver.name,company_name,obj.invoice.total_final_amount,media_id,default_template_name,access_token):
+                if send_message_by_template(phone_number,obj.invoice.receiver.name,company_name,obj.invoice.total_final_amount,media_id,default_template_name,access_token,phone_number_id):
                     return Response({}, 201)
                 error_message = "Message not able to send"
-            return Response({"error": error_message})
+            return Response({"error": error_message}, status=400)
         else:
             return Response(ser.errors, 400)
 

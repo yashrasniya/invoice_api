@@ -6,14 +6,22 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from invoice.models import Invoice
+from invoice.models import Invoice, new_product_in_frontend
 from yaml_manager.models import Yaml
+from ..authenticate import ServiceTokenAuthentication, AdminJWTTokenAuthentication
 from ..models import UserCompanies
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import viewsets, mixins
 
 from django.contrib.auth import authenticate
+from django.conf import settings
+from django.utils import timezone
+from django.db import transaction
+from django.core.files import File
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
+import os
 
 from accounts.serializers.serializers import RegisterSerializer,user_detail
 from django.middleware import csrf
@@ -57,8 +65,146 @@ class Login(APIView):
             response.data = user_detail(user).data
             logging.info(f"{username} login")
             return response
+
+        # Check for Google login hint if password auth fails
+        from django.contrib.auth import get_user_model
+        from django.db.models import Q
+        User = get_user_model()
+        existing_user = User.objects.filter(Q(username=username) | Q(email__iexact=username)).first()
+        if existing_user and not existing_user.has_usable_password() and existing_user.social_accounts.filter(provider='google').exists():
+            logging.info(f"{username} login failed: account uses Google Sign-In")
+            return Response({'error': 'This account uses Google Sign-In.', 'status': 400}, status=400)
+
         logging.info(f"{username} wrong password")
         return Response({'error':'password is wrong!','status':400},status=400)
+
+class GoogleLogin(APIView):
+    permission_classes = [AllowAny]
+    authentication_classes = []          # pure credential exchange, no prior auth
+
+    def post(self, request):
+        credential = request.data.get('credential')
+        if not credential:
+            return Response({'error': 'Missing Google credential.'}, status=400)
+
+        # 1. Verify token: signature (Google public keys), exp, iss, aud
+        try:
+            claims = google_id_token.verify_oauth2_token(
+                credential,
+                google_requests.Request(),
+                settings.GOOGLE_OAUTH_CLIENT_ID,
+                clock_skew_in_seconds=10,
+            )
+        except ValueError:
+            logging.warning("Google login: invalid ID token")
+            return Response({'error': 'Invalid or expired Google token.'}, status=401)
+
+        if not claims.get('email_verified'):
+            return Response({'error': 'Google account email is not verified.'}, status=403)
+
+        sub = claims['sub']
+        email = claims.get('email', '')
+
+        # 2. Resolve user: sub match → email link → create
+        user, created = self._get_or_create_user(sub, email, claims)
+        if user is None:
+            return Response({'error': 'This account is disabled.'}, status=403)
+
+        # 3. Issue the SAME cookie as the password Login view
+        response = Response()
+        data = get_tokens_for_user(user)
+        response.set_cookie(
+            key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+            value=data["access"],
+            expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+            secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+            httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+            samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE'],
+        )
+        csrf.get_token(request)
+        body = user_detail(user).data
+        body['created'] = created            # frontend can use this to route new users to company setup
+        response.data = body
+        logging.info(f"{user.username} login via Google ({'new user' if created else 'existing'})")
+        return response
+
+    def _get_or_create_user(self, sub, email, claims):
+        from django.contrib.auth import get_user_model
+        from accounts.models import SocialAccount
+        User = get_user_model()
+
+        with transaction.atomic():
+            # a) Already linked
+            social = (SocialAccount.objects
+                      .select_related('user')
+                      .filter(provider='google', provider_uid=sub)
+                      .first())
+            if social:
+                if not social.user.is_active:
+                    return None, False
+                social.last_login_at = timezone.now()
+                social.email = email
+                social.save(update_fields=['last_login_at', 'email'])
+                return social.user, False
+
+            # b) Existing account with same (verified) email → link
+            user = User.objects.filter(email__iexact=email).first() if email else None
+            created = False
+
+            # c) No account → create
+            if user is None:
+                username = self._unique_username(User, email)
+                
+                # Perform creation with template files initialization mimicking RegisterSerializer
+                file_path = os.path.join(settings.BASE_DIR, "static", "default_template.yaml")
+                
+                user = User(
+                    username=username,
+                    email=email,
+                    first_name=claims.get('given_name', '')[:150],
+                    last_name=claims.get('family_name', '')[:150],
+                    is_active=True,
+                    is_company_admin=True,
+                )
+                user.set_unusable_password()   # no password login until user sets one
+                user.save()
+                
+                # Create default yaml template
+                if os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        Yaml.objects.create(
+                            yaml_file=File(f, name="default_template.yaml"),
+                            user=user,
+                        )
+                else:
+                    logging.warning("default_template.yaml not found at static root.")
+                
+                # Create default product fields
+                new_product_in_frontend.objects.create(user=user, input_title='Description', size=3, is_calculable=False, is_show=True)
+                new_product_in_frontend.objects.create(user=user, input_title='Quantity', size=3, is_calculable=True, is_show=True)
+                new_product_in_frontend.objects.create(user=user, input_title='Rate', size=3, is_calculable=True, is_show=True)
+                new_product_in_frontend.objects.create(user=user, input_title='GST', size=3, is_calculable=True, is_show=True)
+                
+                created = True
+
+            if not user.is_active:
+                return None, False
+
+            SocialAccount.objects.create(
+                user=user, provider='google', provider_uid=sub,
+                email=email, picture_url=claims.get('picture', ''),
+            )
+            return user, created
+
+    @staticmethod
+    def _unique_username(User, email):
+        base = (email.split('@')[0] if email else 'google_user')[:140] or 'google_user'
+        username, i = base, 0
+        while User.objects.filter(username=username).exists():
+            i += 1
+            username = f"{base}{i}"
+        return username
+
 
 class log_out(APIView):
     permission_classes = (IsAuthenticated,)
@@ -215,3 +361,97 @@ class UserCompaniesViewSet(
         if request.user.user_company and request.user.is_company_admin:
             return  Response(UserCompaniesSerializer(request.user.user_company, context={"request": request}).data)
         return Response()
+
+class LoginByToken(APIView):
+
+    authentication_classes = [ServiceTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        username = request.user.username
+        response = Response()
+        data = get_tokens_for_user(user)
+        response.set_cookie(
+            key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+            value=data["access"],
+            expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+            secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+            httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+            samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE']
+        )
+        csrf.get_token(request)
+        response.data = user_detail(user).data
+        logging.info(f"{username} login by token")
+        return response
+
+
+def normalize_mobile(mobile):
+    if not mobile:
+        return ""
+    # Retain only digits and '+'
+    mobile = "".join(c for c in str(mobile) if c.isdigit() or c == "+")
+    
+    # 1. Remove +91 prefix
+    if mobile.startswith("+91"):
+        mobile = mobile[3:]
+    # 2. Remove 91 prefix if total length is > 10
+    elif mobile.startswith("91") and len(mobile) > 10:
+        mobile = mobile[2:]
+        
+    # 3. If more than 10 characters and starts with 0, remove the leading 0s
+    while len(mobile) > 10 and mobile.startswith("0"):
+        mobile = mobile[1:]
+        
+    return mobile
+
+
+class CheckMobileNumber(APIView):
+    authentication_classes = [AdminJWTTokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        mobile = request.query_params.get('mobile_number') or request.query_params.get('mobile')
+        return self._check_mobile(mobile)
+
+    def post(self, request):
+        mobile = request.data.get('mobile_number') or request.data.get('mobile')
+        return self._check_mobile(mobile)
+
+    def _check_mobile(self, mobile):
+        if not mobile:
+            return Response({'error': 'Mobile number is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        
+        normalized_input = normalize_mobile(mobile)
+        if not normalized_input:
+            return Response({'error': 'Invalid mobile number format.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        # Match using last 8 digits for DB index performance, then exact normalize comparison in python
+        suffix = normalized_input[-8:]
+        candidates = User.objects.filter(mobile_number__endswith=suffix)
+        
+        matched_user = None
+        for u in candidates:
+            if normalize_mobile(u.mobile_number) == normalized_input:
+                matched_user = u
+                break
+                
+        if matched_user:
+            return Response({
+                'present': True, 
+                'mobile_number': mobile, 
+                'normalized_number': normalized_input,
+                'id': matched_user.id
+            }, status=status.HTTP_200_OK)
+            
+        return Response({
+            'present': False, 
+            'mobile_number': mobile,
+            'normalized_number': normalized_input
+        }, status=status.HTTP_404_NOT_FOUND)
+
+
+

@@ -1,3 +1,4 @@
+import os
 import threading
 import logging
 
@@ -65,22 +66,25 @@ class RegisterSerializer(serializers.ModelSerializer):
             logging.error("email not sent")
 
     def create(self, validated_data):
-        user = User.objects.create(
-            email=validated_data['email'],
-            first_name=validated_data['first_name'],
-            last_name=validated_data['last_name'],
-            mobile_number=validated_data['mobile_number'],
-            username=validated_data['username'],
-        )
-        user.is_active = True
-        user.is_company_admin = True
-        user.set_password(validated_data['password'])
-        user.save()
-        with open('static/default_template.yaml', 'rb') as f:
+        file_path = os.path.join(settings.BASE_DIR, "static", "default_template.yaml")
+
+        with open(file_path, 'rb') as f:
+            user = User.objects.create(
+                email=validated_data['email'],
+                first_name=validated_data['first_name'],
+                last_name=validated_data['last_name'],
+                mobile_number=validated_data['mobile_number'],
+                username=validated_data['username'],
+            )
+            user.is_active = True
+            user.is_company_admin = True
+            user.set_password(validated_data['password'])
+            user.save()
             Yaml.objects.create(
                 yaml_file=File(f, name="default_template.yaml"),  # attach file
                 user=user,
             )
+
         new_product_in_frontend.objects.create(user= user,input_title='Description',size=3,is_calculable=False,is_show=True)
         new_product_in_frontend.objects.create(user= user,input_title='Quantity',size=3,is_calculable=True,is_show=True)
         new_product_in_frontend.objects.create(user= user,input_title='Rate',size=3,is_calculable=True,is_show=True)

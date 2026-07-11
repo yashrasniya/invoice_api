@@ -52,3 +52,4 @@ django-filter
 psycopg2-binary
 dotenv
 weasyprint==66.0
+google-auth

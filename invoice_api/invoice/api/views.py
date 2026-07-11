@@ -15,13 +15,14 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from companies.models import Customers
 from companies.serializers import CompanySerializer
-from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties
+from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties, CustomField
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
 from ..export import pdf_generator, csv_generator, pdf_data_generator
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
-    Product_propertiesSerializer, InvoiceSerializerForPDF
+    Product_propertiesSerializer, InvoiceSerializerForPDF, CustomFieldSerializer
+
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,7 @@ class InvoiceView(ListAPIView):
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     # Exact field filtering (e.g., ?status=paid)
-    filterset_fields = ['receiver', 'date','id']
+    filterset_fields = ['receiver', 'date','id', 'invoice_type']
 
     # Search (partial match, e.g., ?search=ABC)
     search_fields = ['invoice_number', 'receiver__name',]
@@ -243,7 +244,8 @@ class BulkExport(APIView):
         customers = request.data.get("customer", [])  # This will be a list
         date_from = request.data.get("date_from", "").strip()
         date_to = request.data.get("date_to", "").strip()
-        type = request.data.get("type", "PDF").strip()
+        export_type = request.data.get("type", "PDF").strip()
+        invoice_type = request.data.get("invoice_type")
 
         # Start with base queryset
         queryset = Invoice.objects.filter(user=request.user)
@@ -268,10 +270,31 @@ class BulkExport(APIView):
             queryset = queryset.filter(date__gte=date_from)
         elif date_to:
             queryset = queryset.filter(date__lte=date_to)
-        if type =="PDF":
+            
+        if invoice_type:
+            queryset = queryset.filter(invoice_type=invoice_type)
+            
+        if export_type =="PDF":
             return pdf_generator(queryset, request)
-        elif type == "PDF_DATA":
+        elif export_type == "PDF_DATA":
             return pdf_data_generator(queryset, request)
         else:
             return csv_generator(queryset,request)
+
+
+class CustomFieldViewSet(viewsets.ModelViewSet):
+    serializer_class = CustomFieldSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ['hidden', 'field_type', 'company']
+    search_fields = ['name']
+    ordering_fields = ['created_time', 'name']
+    ordering = ['-created_time']
+
+    def get_queryset(self):
+        return CustomField.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
 
