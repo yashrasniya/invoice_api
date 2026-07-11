@@ -173,6 +173,27 @@ class AuthzTestCase(APITestCase):
         self.assertEqual(r.status_code, 201)
         self.assertEqual(r.data['plan_code'], 'pro_test')
 
+    # session audit events
+    def test_login_logout_and_failed_login_are_audited(self):
+        from accounts.models import AuditLog
+        c = APIClient()
+        r = c.post('/api/login/', {'username': 'admin_a', 'password': 'x12345678'},
+                   format='json')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.admin_a, action='LOGIN', resource_type='SESSION').exists())
+
+        c.force_authenticate(user=self.admin_a)
+        c.get('/api/log_out/')
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.admin_a, action='LOGOUT', resource_type='SESSION').exists())
+
+        c2 = APIClient()
+        c2.post('/api/login/', {'username': 'admin_a', 'password': 'wrong'},
+                format='json')
+        self.assertTrue(AuditLog.objects.filter(
+            user=self.admin_a, action='LOGIN_FAILED', resource_type='SESSION').exists())
+
     # tenant isolation of the authz APIs themselves
     def test_roles_scoped_to_own_company(self):
         for company, admin in ((self.company_a, self.admin_a),

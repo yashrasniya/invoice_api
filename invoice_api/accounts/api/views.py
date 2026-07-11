@@ -23,6 +23,7 @@ from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 import os
 
+from accounts.audit import audit_session
 from accounts.serializers.serializers import RegisterSerializer,user_detail
 from django.middleware import csrf
 
@@ -64,6 +65,7 @@ class Login(APIView):
             csrf.get_token(request)
             response.data = user_detail(user).data
             logging.info(f"{username} login")
+            audit_session(user, 'LOGIN', request, {'method': 'password'})
             return response
 
         # Check for Google login hint if password auth fails
@@ -75,6 +77,8 @@ class Login(APIView):
             logging.info(f"{username} login failed: account uses Google Sign-In")
             return Response({'error': 'This account uses Google Sign-In.', 'status': 400}, status=400)
 
+        if existing_user:
+            audit_session(existing_user, 'LOGIN_FAILED', request, {'method': 'password'})
         logging.info(f"{username} wrong password")
         return Response({'error':'password is wrong!','status':400},status=400)
 
@@ -126,6 +130,7 @@ class GoogleLogin(APIView):
         body['created'] = created            # frontend can use this to route new users to company setup
         response.data = body
         logging.info(f"{user.username} login via Google ({'new user' if created else 'existing'})")
+        audit_session(user, 'LOGIN', request, {'method': 'google', 'created': created})
         return response
 
     def _get_or_create_user(self, sub, email, claims):
@@ -210,6 +215,7 @@ class log_out(APIView):
     permission_classes = (IsAuthenticated,)
     def get(self,request):
         logging.info(f"{request.user.username} Is logout")
+        audit_session(request.user, 'LOGOUT', request)
         response = Response()
         response.set_cookie(
             key=settings.SIMPLE_JWT['AUTH_COOKIE'],
@@ -383,6 +389,7 @@ class LoginByToken(APIView):
         csrf.get_token(request)
         response.data = user_detail(user).data
         logging.info(f"{username} login by token")
+        audit_session(user, 'LOGIN', request, {'method': 'service_token'})
         return response
 
 
