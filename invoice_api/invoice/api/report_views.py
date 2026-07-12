@@ -3,6 +3,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
 from invoice_api.permissions import HasMethodPermission
+from invoice_api.scoping import user_scope_q
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 from django.db.models import Sum
 from datetime import datetime, timedelta
@@ -30,7 +31,7 @@ class CashFlowReportAPIView(APIView):
             start_date = end_date - timedelta(days=30)
 
         queryset = Invoice.objects.filter(
-            user=request.user,
+            user_scope_q(request),
             date__gte=start_date,
             date__lte=end_date
         )
@@ -128,7 +129,7 @@ class PurchaseInvoiceSummaryAPIView(APIView):
         start_of_month = today.replace(day=1)
         
         purchase_invoices = Invoice.objects.filter(
-            user=request.user,
+            user_scope_q(request),
             invoice_type='purchase'
         )
         

@@ -299,6 +299,23 @@ class AuthzTestCase(APITestCase):
         # but invoice.delete is not in the Member set
         self.assertEqual(c.delete('/api/invoice/?id=1').status_code, 403)
 
+    # company-wide reads: members see the whole company's invoices
+    def test_member_sees_company_invoices_not_just_own(self):
+        from invoice.models import Invoice
+        _, member_role = ensure_company_roles(
+            CompanyRole, CompanyPermission, self.company_a)
+        member_role.users.add(self.member_a)
+        # invoice created by the ADMIN (different user, same company)
+        Invoice.objects.create(user=self.admin_a, invoice_type='sales')
+        # invoice from another company must stay invisible
+        Invoice.objects.create(user=self.admin_b, invoice_type='sales')
+
+        c = self.client_for(self.member_a)
+        r = c.get('/api/invoice/')
+        self.assertEqual(r.status_code, 200)
+        results = r.data['results'] if isinstance(r.data, dict) else r.data
+        self.assertEqual(len(results), 1)  # company A's invoice only
+
     # tenant isolation of the authz APIs themselves
     def test_roles_scoped_to_own_company(self):
         for company, admin in ((self.company_a, self.admin_a),

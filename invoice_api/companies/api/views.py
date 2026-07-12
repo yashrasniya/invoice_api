@@ -4,6 +4,7 @@ from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from invoice_api.permissions import HasMethodPermission
+from invoice_api.scoping import user_scope_q
 
 from companies.models import Customers, Vendor
 from ..serializers import CompanySerializer, VendorSerializer
@@ -24,7 +25,7 @@ class CompaniesView(ListAPIView):
 
 
     def get_queryset(self):
-        return Customers.objects.filter(user=self.request.user).order_by('id')
+        return Customers.objects.filter(user_scope_q(self.request)).order_by('id')
 
     def post(self,request,*args,**kwargs):
         print(request.POST)
@@ -61,7 +62,7 @@ class VendorView(ListAPIView):
 
 
     def get_queryset(self):
-        return Vendor.objects.filter(user=self.request.user).order_by('id')
+        return Vendor.objects.filter(user_scope_q(self.request)).order_by('id')
 
     def post(self,request,*args,**kwargs):
         print(request.POST)

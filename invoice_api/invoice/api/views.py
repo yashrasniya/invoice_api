@@ -15,6 +15,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from invoice_api.limits import enforce_limit
 from invoice_api.permissions import HasFeature, HasMethodPermission
+from invoice_api.scoping import user_scope_q
 
 from companies.models import Customers
 from companies.serializers import CompanySerializer
@@ -53,7 +54,8 @@ class InvoiceView(ListAPIView):
 
     def get_queryset(self):
         qs = super().get_queryset()
-        qs = qs.filter(user = self.request.user)
+        # company-wide read: members with invoice.view see all company invoices
+        qs = qs.filter(user_scope_q(self.request))
         date_from = self.request.query_params.get('date_from')
         date_to = self.request.query_params.get('date_to')
         customers = self.request.query_params.get('customer')
@@ -85,10 +87,12 @@ class InvoiceView(ListAPIView):
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     def delete(self,request,*args, **kwargs):
-
-        if not Invoice.objects.filter(id=self.request.query_params.get('id')):
+        # scoped to the company — no cross-tenant deletes
+        qs = Invoice.objects.filter(user_scope_q(request),
+                                    id=self.request.query_params.get('id'))
+        if not qs.exists():
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-        Invoice.objects.get(id=self.request.query_params.get('id')).delete()
+        qs.first().delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
 class Invoice_update(APIView):
@@ -96,7 +100,7 @@ class Invoice_update(APIView):
     required_permissions_map = {'POST': 'invoice.update'}
 
     def post(self, request, id, *args, **kwargs):
-        obj = Invoice.objects.filter(id=id,user=request.user)
+        obj = Invoice.objects.filter(user_scope_q(request), id=id)
         if not obj.exists():
             return Response({'message': 'id not found'}, status=status.HTTP_404_NOT_FOUND)
         print(request.data)
@@ -118,7 +122,7 @@ class Invoice_product_action(APIView):
         print(id,action,request.data.get('product_id',''))
         if not action in ['add', 'delete']:
             return Response({'message': 'invalid action'}, status=status.HTTP_400_BAD_REQUEST)
-        obj = Invoice.objects.filter(id=id)
+        obj = Invoice.objects.filter(user_scope_q(request), id=id)
         if not obj.exists():
             return Response({'message': 'id not found'}, status=status.HTTP_404_NOT_FOUND)
         if not request.data.get('product_id',''):
@@ -245,7 +249,7 @@ class PdfMaker(APIView):
     permission_classes = [AllowAny]
     def get(self,request,format=None,*args, **kwargs):
         if not request.GET.get("id"):return Response({"status":400},400)
-        qs = Invoice.objects.filter(id__in=request.GET.get('id').split(','), user=request.user)
+        qs = Invoice.objects.filter(user_scope_q(request), id__in=request.GET.get('id').split(','))
         return  pdf_generator(qs,request,template_id=request.GET.get("template_id",None))
 
 
@@ -263,7 +267,7 @@ class BulkExport(APIView):
         invoice_type = request.data.get("invoice_type")
 
         # Start with base queryset
-        queryset = Invoice.objects.filter(user=request.user)
+        queryset = Invoice.objects.filter(user_scope_q(request))
 
         if not queryset:
             return Response({"error":"no invoice found"},status=status.HTTP_400_BAD_REQUEST)
