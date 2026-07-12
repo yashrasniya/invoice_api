@@ -249,6 +249,32 @@ class AuthzTestCase(APITestCase):
                        {'email': 'takenelsewhere@example.com'}, format='json')
         self.assertEqual(r.status_code, 400)
 
+    # feature gating of existing endpoints
+    def test_whatsapp_gated_by_plan_feature(self):
+        c = self.client_for(self.member_a)
+        # company A's plan includes whatsapp_integration → allowed through the gate
+        r = c.get('/api/whatsapp/config/')
+        self.assertNotEqual(r.status_code, 403)
+
+        # company B has no subscription → upgrade_required
+        c_b = self.client_for(self.admin_b)
+        r = c_b.get('/api/whatsapp/config/')
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(getattr(r.data.get('detail'), 'code', None), 'upgrade_required')
+
+    def test_invoice_monthly_limit_enforced(self):
+        from companies.models import Feature, PlanFeature
+        invoicing, _ = Feature.objects.get_or_create(
+            code='invoicing', defaults={'name': 'Invoicing'})
+        PlanFeature.objects.update_or_create(
+            subscription_plan=self.plan, feature=invoicing,
+            defaults={'limits': {'invoices_per_month': 0}})
+        cache.clear()  # drop cached plan limits/features
+        c = self.client_for(self.member_a)
+        r = c.post('/api/invoice/', {}, format='json')
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(getattr(r.data.get('detail'), 'code', None), 'upgrade_required')
+
     # tenant isolation of the authz APIs themselves
     def test_roles_scoped_to_own_company(self):
         for company, admin in ((self.company_a, self.admin_a),

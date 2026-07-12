@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
+from invoice_api.permissions import HasFeature
+
 from bill_share.caption import caption
 from bill_share.models import BillShare
 from bill_share.serializers import BillShareSerializers
@@ -164,7 +166,7 @@ def list_of_message_templates():
         print("Error:", response.status_code, response.text)
 
 class ShareByWhatsapp(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasFeature.with_code('whatsapp_integration')]
 
     def get_count(self):
         now = timezone.now()

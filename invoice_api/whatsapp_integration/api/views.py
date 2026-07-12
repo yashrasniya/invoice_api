@@ -2,13 +2,19 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
+
+from invoice_api.permissions import HasFeature
+
 from ..models import WhatsAppIntegration, WhatsAppTemplate, WhatsAppMessage
+
+# subscription gate: plan must include the whatsapp_integration feature
+WhatsAppFeature = HasFeature.with_code('whatsapp_integration')
 from ..services import register_whatsapp_number, create_whatsapp_template, send_whatsapp_message, \
     validate_whatsapp_integration, update_whatsapp_template, fetch_whatsapp_templates, exchange_meta_code_for_token, create_bill_template
 
 
 class WhatsAppConfigAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, WhatsAppFeature]
 
     def get(self, request):
         try:
@@ -72,7 +78,7 @@ class WhatsAppConfigAPIView(APIView):
 
 
 class WhatsAppTemplateAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, WhatsAppFeature]
 
     def get(self, request):
         templates = WhatsAppTemplate.objects.filter(user=request.user).values(
@@ -125,7 +131,7 @@ class WhatsAppTemplateAPIView(APIView):
 
 
 class WhatsAppSendTestAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, WhatsAppFeature]
 
     def post(self, request):
         user = request.user
@@ -174,7 +180,7 @@ class WhatsAppSendTestAPIView(APIView):
 
 
 class WhatsAppTemplateDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, WhatsAppFeature]
 
     def put(self, request, pk):
         user = request.user
@@ -216,7 +222,7 @@ class WhatsAppTemplateDetailAPIView(APIView):
 
 
 class WhatsAppTemplateSyncAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, WhatsAppFeature]
 
     def post(self, request):
         user = request.user
@@ -271,7 +277,7 @@ class WhatsAppTemplateSyncAPIView(APIView):
 
 
 class WhatsAppOAuthAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, WhatsAppFeature]
 
     def post(self, request):
         user = request.user

@@ -13,6 +13,9 @@ from rest_framework import filters, pagination
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 
+from invoice_api.limits import enforce_limit
+from invoice_api.permissions import HasFeature
+
 from companies.models import Customers
 from companies.serializers import CompanySerializer
 from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties, CustomField
@@ -64,7 +67,13 @@ class InvoiceView(ListAPIView):
 
 
     def post(self, request, *args, **kwargs):
-        print(request.POST)
+        # plan limit: invoices created this month across the whole company
+        today = datetime.date.today()
+        month_count = Invoice.objects.filter(
+            user__user_company=getattr(request, 'company', None),
+            date__year=today.year, date__month=today.month).count()
+        enforce_limit(request, 'invoicing', 'invoices_per_month', month_count)
+
         serializer = InvoiceSerializer(data=request.data)
         if serializer.is_valid():
             print(serializer.validated_data)
@@ -236,7 +245,8 @@ class PdfMaker(APIView):
 
 
 class BulkExport(APIView):
-    permission_classes = [IsAuthenticated]
+    # subscription gate: bulk export is part of advanced reporting
+    permission_classes = [IsAuthenticated, HasFeature.with_code('advanced_reports')]
 
     def post(self,request):
         # Extract values from request data
