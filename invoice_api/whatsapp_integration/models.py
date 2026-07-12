@@ -47,6 +47,49 @@ class WhatsAppTemplate(models.Model):
         return f"{self.template_name} ({self.status}) - {self.user.username}"
 
 
+class PlatformWhatsAppAccount(models.Model):
+    """The product's shared WhatsApp account, managed by the Product Owner.
+    Companies without their own number can send through this account
+    (requires the whatsapp_shared_number plan feature)."""
+    name = models.CharField(max_length=255, default='Default account')
+    business_account_id = models.CharField(max_length=255, blank=True, null=True)
+    phone_number_id = models.CharField(max_length=255, blank=True, null=True)
+    access_token = models.TextField(blank=True, null=True)
+    default_template_name = models.CharField(max_length=255, blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    # default per-company daily send cap; a plan's whatsapp_shared_number
+    # limits {"sends_per_day": N} overrides this
+    default_daily_limit = models.PositiveIntegerField(default=10)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.name} ({'active' if self.is_active else 'inactive'})"
+
+    @classmethod
+    def get_active(cls):
+        return cls.objects.filter(is_active=True).order_by('id').first()
+
+
+class CompanyWhatsAppSettings(models.Model):
+    """Per-company choice of WhatsApp sending mode."""
+    MODE_CHOICES = (
+        ('platform', 'Use the product WhatsApp number'),
+        ('own', 'Use own WhatsApp number'),
+    )
+    company = models.OneToOneField(
+        'accounts.UserCompanies', on_delete=models.CASCADE,
+        related_name='whatsapp_settings')
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='platform')
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.company} → {self.mode}"
+
+
 class WhatsAppMessage(models.Model):
     STATUS_CHOICES = (
         ('queued', 'Queued'),

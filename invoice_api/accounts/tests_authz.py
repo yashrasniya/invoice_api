@@ -316,6 +316,75 @@ class AuthzTestCase(APITestCase):
         results = r.data['results'] if isinstance(r.data, dict) else r.data
         self.assertEqual(len(results), 1)  # company A's invoice only
 
+    # WhatsApp sending modes
+    def test_whatsapp_mode_and_shared_account(self):
+        from django.test import override_settings
+        from companies.models import Feature, PlanFeature
+        from whatsapp_integration.models import PlatformWhatsAppAccount
+        from accounts.models import UserDirectPermission
+
+        # company A's plan gets the shared-number feature, capped at 0/day
+        shared, _ = Feature.objects.get_or_create(
+            code='whatsapp_shared_number', defaults={'name': 'Shared WA'})
+        PlanFeature.objects.update_or_create(
+            subscription_plan=self.plan, feature=shared,
+            defaults={'limits': {'sends_per_day': 0}})
+        PlatformWhatsAppAccount.objects.create(
+            name='Test acct', phone_number_id='123', access_token='tok',
+            is_active=True, default_daily_limit=10)
+        cache.clear()
+
+        admin_role, _ = ensure_company_roles(
+            CompanyRole, CompanyPermission, self.company_a)
+        admin_role.users.add(self.admin_a)
+        c = self.client_for(self.admin_a)
+
+        # mode endpoint reports both options
+        r = c.get('/api/whatsapp/mode/')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data['options']['platform']['available'])
+
+        # switch to platform mode (admin has whatsapp.manage)
+        r = c.post('/api/whatsapp/mode/', {'mode': 'platform'}, format='json')
+        self.assertEqual(r.status_code, 200)
+
+        # member without whatsapp.manage cannot switch modes
+        m = self.client_for(self.member_a)
+        self.assertEqual(
+            m.post('/api/whatsapp/mode/', {'mode': 'own'}, format='json').status_code, 403)
+
+        # share in platform mode hits the 0/day plan cap → upgrade_required
+        perm = CompanyPermission.objects.get(code='whatsapp.send', company=None)
+        UserDirectPermission.objects.create(
+            user=self.member_a, permission=perm, company=self.company_a,
+            is_granted=True, granted_by=self.admin_a)
+        from invoice_api.middleware import bump_perm_version
+        bump_perm_version(self.company_a.id)
+        cache.clear()
+        from companies.models import Customers
+        from invoice.models import Invoice
+        cust = Customers.objects.create(
+            user=self.admin_a, name='Cust', phone_number='9876543210')
+        inv = Invoice.objects.create(
+            user=self.admin_a, invoice_type='sales', receiver=cust)
+        r = m.post('/api/share_by_whatsapp/', {'invoice': inv.id}, format='json')
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.data.get('code'), 'upgrade_required')
+
+    def test_platform_whatsapp_account_admin_api(self):
+        c = self.client_for(self.superuser)
+        r = c.get('/api/admin/whatsapp-account/')
+        self.assertEqual(r.status_code, 200)
+        r = c.put('/api/admin/whatsapp-account/',
+                  {'default_daily_limit': 42, 'access_token': 'newtok123'},
+                  format='json')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data['default_daily_limit'], 42)
+        self.assertTrue(r.data['has_access_token'])
+        # tenant admin blocked
+        t = self.client_for(self.admin_a)
+        self.assertEqual(t.get('/api/admin/whatsapp-account/').status_code, 403)
+
     # tenant isolation of the authz APIs themselves
     def test_roles_scoped_to_own_company(self):
         for company, admin in ((self.company_a, self.admin_a),

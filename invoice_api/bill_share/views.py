@@ -10,8 +10,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
 from invoice_api.limits import LimitExceeded, get_limit
-from invoice_api.permissions import HasFeature, HasMethodPermission
+from invoice_api.permissions import HasFeature, HasMethodPermission, UpgradeRequired
 from invoice_api.scoping import user_scope_q
+from whatsapp_integration.resolver import resolve_whatsapp_account
 
 from bill_share.caption import caption
 from bill_share.models import BillShare
@@ -168,13 +169,10 @@ def list_of_message_templates():
         print("Error:", response.status_code, response.text)
 
 class ShareByWhatsapp(APIView):
-    # plan must include whatsapp_integration AND the user needs whatsapp.send
-    permission_classes = [IsAuthenticated,
-                          HasFeature.with_code('whatsapp_integration'),
-                          HasMethodPermission]
+    # user needs whatsapp.send; the plan feature (own vs shared number) is
+    # checked per company mode by resolve_whatsapp_account()
+    permission_classes = [IsAuthenticated, HasMethodPermission]
     required_permissions_map = {'POST': 'whatsapp.send'}
-
-    DEFAULT_DAILY_LIMIT = 20  # used when the plan doesn't define sends_per_day
 
     def get_count(self):
         # company-wide sends in the last 24 hours
@@ -189,8 +187,13 @@ class ShareByWhatsapp(APIView):
         template_id = data.get("template_id")
         # company-scoped: members with permission can share company invoices
         qs = Invoice.objects.filter(user_scope_q(request), id=data.get("invoice"))
-        if not (qs.first() and qs.first().receiver.phone_number):
-            return Response({"error": f"Phone number is not set for {qs.first().receiver.name}"}, 400)
+        invoice = qs.first()
+        if invoice is None:
+            return Response({"error": "Invoice not found."}, 400)
+        if not invoice.receiver:
+            return Response({"error": "This invoice has no customer set."}, 400)
+        if not invoice.receiver.phone_number:
+            return Response({"error": f"Phone number is not set for {invoice.receiver.name}"}, 400)
         phone_number = qs.first().receiver.phone_number
         if phone_number.startswith("+"):
             phone_number = phone_number[1:]
@@ -210,16 +213,18 @@ class ShareByWhatsapp(APIView):
         if len(phone_number) != 12:
             return Response({"error": "Phone number must be exactly 12 digits (with country code)"}, 400)
         data["to"] = phone_number
-        # daily send limit from the subscription plan — checked BEFORE any
-        # Meta API call (PlanFeature limits, e.g. {"sends_per_day": 30})
-        daily_limit = get_limit(request, 'whatsapp_integration', 'sends_per_day')
-        if daily_limit is None:
-            daily_limit = self.DEFAULT_DAILY_LIMIT
+        # resolve the sending account (company's own number or the shared
+        # product account) + the applicable daily limit — before any Meta call
+        mode, creds, daily_limit, resolve_error = resolve_whatsapp_account(request)
+        if resolve_error:
+            if resolve_error['code'] == 'upgrade_required':
+                raise UpgradeRequired(resolve_error['message'])
+            return Response({"error": resolve_error['message']}, status=400)
         if self.get_count() >= daily_limit:
             raise LimitExceeded(
-                f"Your plan allows {daily_limit} WhatsApp shares per day. "
+                f"Your plan allows {daily_limit} WhatsApp shares per day "
+                f"({'shared' if mode == 'platform' else 'own'} number). "
                 "Please try again tomorrow or upgrade your plan.")
-        list_of_message_templates()
         ser = BillShareSerializers(data=data)
         if ser.is_valid():
             obj = ser.save()
@@ -228,9 +233,10 @@ class ShareByWhatsapp(APIView):
                 return Response({
                                     "error": "Some thing went wrong connect to admin"},
                                 400)
-            phone_number_id, access_token,default_template_name,business_account_id = get_details(request)
-            if not phone_number_id or not access_token:
-                return Response({"error": "WhatsApp integration is not configured or not active."}, status=400)
+            phone_number_id = creds['phone_number_id']
+            access_token = creds['access_token']
+            default_template_name = creds['default_template_name']
+            business_account_id = creds['business_account_id']
             
             # Check phone number status on Meta first
             status_url = f"https://graph.facebook.com/v18.0/{phone_number_id}"

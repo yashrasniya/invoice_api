@@ -3,7 +3,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 
-from invoice_api.permissions import HasFeature
+from invoice_api.permissions import HasFeature, HasMethodPermission
 
 from ..models import WhatsAppIntegration, WhatsAppTemplate, WhatsAppMessage
 
@@ -14,7 +14,10 @@ from ..services import register_whatsapp_number, create_whatsapp_template, send_
 
 
 class WhatsAppConfigAPIView(APIView):
-    permission_classes = [IsAuthenticated, WhatsAppFeature]
+    permission_classes = [IsAuthenticated, WhatsAppFeature, HasMethodPermission]
+    required_permissions_map = {'POST': 'whatsapp.manage',
+                                'PUT': 'whatsapp.manage',
+                                'DELETE': 'whatsapp.manage'}
 
     def get(self, request):
         try:
@@ -78,7 +81,8 @@ class WhatsAppConfigAPIView(APIView):
 
 
 class WhatsAppTemplateAPIView(APIView):
-    permission_classes = [IsAuthenticated, WhatsAppFeature]
+    permission_classes = [IsAuthenticated, WhatsAppFeature, HasMethodPermission]
+    required_permissions_map = {'POST': 'whatsapp.manage'}
 
     def get(self, request):
         templates = WhatsAppTemplate.objects.filter(user=request.user).values(
@@ -131,7 +135,8 @@ class WhatsAppTemplateAPIView(APIView):
 
 
 class WhatsAppSendTestAPIView(APIView):
-    permission_classes = [IsAuthenticated, WhatsAppFeature]
+    permission_classes = [IsAuthenticated, WhatsAppFeature, HasMethodPermission]
+    required_permissions_map = {'POST': 'whatsapp.send'}
 
     def post(self, request):
         user = request.user
@@ -180,7 +185,11 @@ class WhatsAppSendTestAPIView(APIView):
 
 
 class WhatsAppTemplateDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated, WhatsAppFeature]
+    permission_classes = [IsAuthenticated, WhatsAppFeature, HasMethodPermission]
+    required_permissions_map = {'POST': 'whatsapp.manage',
+                                'PUT': 'whatsapp.manage',
+                                'PATCH': 'whatsapp.manage',
+                                'DELETE': 'whatsapp.manage'}
 
     def put(self, request, pk):
         user = request.user
@@ -222,7 +231,8 @@ class WhatsAppTemplateDetailAPIView(APIView):
 
 
 class WhatsAppTemplateSyncAPIView(APIView):
-    permission_classes = [IsAuthenticated, WhatsAppFeature]
+    permission_classes = [IsAuthenticated, WhatsAppFeature, HasMethodPermission]
+    required_permissions_map = {'POST': 'whatsapp.manage'}
 
     def post(self, request):
         user = request.user
@@ -277,7 +287,8 @@ class WhatsAppTemplateSyncAPIView(APIView):
 
 
 class WhatsAppOAuthAPIView(APIView):
-    permission_classes = [IsAuthenticated, WhatsAppFeature]
+    permission_classes = [IsAuthenticated, WhatsAppFeature, HasMethodPermission]
+    required_permissions_map = {'POST': 'whatsapp.manage'}
 
     def post(self, request):
         user = request.user

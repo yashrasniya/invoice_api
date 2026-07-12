@@ -225,6 +225,51 @@ class CompanySubscriptionAdminView(APIView):
         return Response(CompanySubscriptionSerializer(sub).data)
 
 
+class PlatformWhatsAppAccountView(APIView):
+    """Product Owner: manage the shared WhatsApp account & default limit.
+    GET returns details with the access token masked; PUT updates fields
+    (token only replaced when a non-empty value is sent)."""
+    permission_classes = [IsAuthenticated, IsProductOwner]
+
+    FIELDS = ['name', 'business_account_id', 'phone_number_id',
+              'default_template_name', 'is_active', 'default_daily_limit']
+
+    def _serialize(self, acct):
+        data = {f: getattr(acct, f) for f in self.FIELDS}
+        data['id'] = acct.id
+        token = acct.access_token or ''
+        data['access_token_masked'] = f"…{token[-6:]}" if token else None
+        data['has_access_token'] = bool(token)
+        return data
+
+    def get(self, request):
+        from whatsapp_integration.models import PlatformWhatsAppAccount
+        acct = (PlatformWhatsAppAccount.objects.order_by('id').first() or
+                PlatformWhatsAppAccount.objects.create(name='Default account'))
+        return Response(self._serialize(acct))
+
+    def put(self, request):
+        from whatsapp_integration.models import PlatformWhatsAppAccount
+        acct = (PlatformWhatsAppAccount.objects.order_by('id').first() or
+                PlatformWhatsAppAccount.objects.create(name='Default account'))
+        for f in self.FIELDS:
+            if f in request.data:
+                setattr(acct, f, request.data[f])
+        if request.data.get('access_token'):
+            acct.access_token = request.data['access_token']
+        try:
+            acct.default_daily_limit = int(acct.default_daily_limit)
+        except (TypeError, ValueError):
+            raise ValidationError({'default_daily_limit': 'Must be a number.'})
+        acct.save()
+        AuditLog.objects.create(
+            company=None, user=request.user, action='UPDATE',
+            resource_type='WHATSAPP_ACCOUNT', resource_id=str(acct.id),
+            new_data={'name': acct.name, 'is_active': acct.is_active,
+                      'default_daily_limit': acct.default_daily_limit})
+        return Response(self._serialize(acct))
+
+
 class PlatformAuditLogView(ListAPIView):
     serializer_class = AuditLogSerializer
     permission_classes = [IsAuthenticated, IsProductOwner]

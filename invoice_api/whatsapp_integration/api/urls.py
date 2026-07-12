@@ -1,7 +1,9 @@
 from django.urls import path
 from .views import WhatsAppConfigAPIView, WhatsAppTemplateAPIView, WhatsAppSendTestAPIView, WhatsAppTemplateDetailAPIView, WhatsAppTemplateSyncAPIView, WhatsAppOAuthAPIView
+from .views_mode import WhatsAppModeAPIView
 
 urlpatterns = [
+    path('whatsapp/mode/', WhatsAppModeAPIView.as_view(), name='whatsapp_mode'),
     path('whatsapp/config/', WhatsAppConfigAPIView.as_view(), name='whatsapp_config'),
     path('whatsapp/template/', WhatsAppTemplateAPIView.as_view(), name='whatsapp_template'),
     path('whatsapp/template/sync/', WhatsAppTemplateSyncAPIView.as_view(), name='whatsapp_template_sync'),

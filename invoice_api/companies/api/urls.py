@@ -14,6 +14,7 @@ urlpatterns = [
     path('admin/companies/', views_admin.CompanyListView.as_view()),
     path('admin/companies/<int:company_id>/subscription/', views_admin.CompanySubscriptionAdminView.as_view()),
     path('admin/audit-log/', views_admin.PlatformAuditLogView.as_view()),
+    path('admin/whatsapp-account/', views_admin.PlatformWhatsAppAccountView.as_view()),
 
     path('companies/', CompaniesView.as_view()),
     path('companies/<int:id>/', CompaniesView.as_view()),
