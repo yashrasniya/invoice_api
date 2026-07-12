@@ -9,7 +9,9 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.views import APIView
 
-from invoice_api.permissions import HasFeature
+from invoice_api.limits import LimitExceeded, get_limit
+from invoice_api.permissions import HasFeature, HasMethodPermission
+from invoice_api.scoping import user_scope_q
 
 from bill_share.caption import caption
 from bill_share.models import BillShare
@@ -166,22 +168,27 @@ def list_of_message_templates():
         print("Error:", response.status_code, response.text)
 
 class ShareByWhatsapp(APIView):
-    permission_classes = [IsAuthenticated, HasFeature.with_code('whatsapp_integration')]
+    # plan must include whatsapp_integration AND the user needs whatsapp.send
+    permission_classes = [IsAuthenticated,
+                          HasFeature.with_code('whatsapp_integration'),
+                          HasMethodPermission]
+    required_permissions_map = {'POST': 'whatsapp.send'}
+
+    DEFAULT_DAILY_LIMIT = 20  # used when the plan doesn't define sends_per_day
 
     def get_count(self):
-        now = timezone.now()
+        # company-wide sends in the last 24 hours
+        last_24h = timezone.now() - timedelta(hours=24)
+        return (BillShare.objects
+                .filter(user_scope_q(self.request), created_at__gte=last_24h)
+                .count())
 
-        # 24 hours ago
-        last_24h = now - timedelta(hours=24)
-
-        # Count BillShare objects created in the last 24 hours
-        count_last_24h = BillShare.objects.filter(created_at__gte=last_24h,user=self.request.user).count()
-        return count_last_24h
     def post(self, request):
         data = request.data.copy()
         data["user"] = request.user.id  # ✅ inject the logged-in user
         template_id = data.get("template_id")
-        qs = Invoice.objects.filter(id=data.get("invoice"), user=request.user)
+        # company-scoped: members with permission can share company invoices
+        qs = Invoice.objects.filter(user_scope_q(request), id=data.get("invoice"))
         if not (qs.first() and qs.first().receiver.phone_number):
             return Response({"error": f"Phone number is not set for {qs.first().receiver.name}"}, 400)
         phone_number = qs.first().receiver.phone_number
@@ -203,9 +210,16 @@ class ShareByWhatsapp(APIView):
         if len(phone_number) != 12:
             return Response({"error": "Phone number must be exactly 12 digits (with country code)"}, 400)
         data["to"] = phone_number
+        # daily send limit from the subscription plan — checked BEFORE any
+        # Meta API call (PlanFeature limits, e.g. {"sends_per_day": 30})
+        daily_limit = get_limit(request, 'whatsapp_integration', 'sends_per_day')
+        if daily_limit is None:
+            daily_limit = self.DEFAULT_DAILY_LIMIT
+        if self.get_count() >= daily_limit:
+            raise LimitExceeded(
+                f"Your plan allows {daily_limit} WhatsApp shares per day. "
+                "Please try again tomorrow or upgrade your plan.")
         list_of_message_templates()
-        if self.get_count() > 20:
-            return Response({"error": "You have reached the maximum limit of shares/messages for today. Please try again tomorrow."}, 400)
         ser = BillShareSerializers(data=data)
         if ser.is_valid():
             obj = ser.save()
