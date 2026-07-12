@@ -18,6 +18,8 @@ class Yaml(models.Model):
     auto_save = models.BooleanField(default=False)
     is_html = models.BooleanField(default=False)
     elements = models.JSONField(null=True, blank=True)
+    # company default for PDF export (one per company, enforced in the view)
+    is_default = models.BooleanField(default=False)
 
     def __str__(self):
         if self.template_name != "Untitled Template":

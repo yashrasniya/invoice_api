@@ -15,7 +15,8 @@ class Yaml_serializers(ModelSerializer):
             'template_name',
             'user',
             'company',
-            'is_html'
+            'is_html',
+            'is_default'
         ]
 
     def get_template_name(self, obj):

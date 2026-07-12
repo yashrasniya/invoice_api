@@ -251,6 +251,25 @@ class YamlListView(ListAPIView):
             return Yaml.objects.filter()
         return Yaml.objects.filter(company=self.request.user.user_company.id)
 
+class YamlSetDefaultView(APIView):
+    """Mark a company template as the default for PDF export.
+    POST /api/yaml/<id>/set-default/  (permission: template.manage;
+    no plan feature needed — it's configuration, not designing)."""
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'POST': 'template.manage'}
+
+    def post(self, request, id):
+        company = request.user.user_company
+        template = Yaml.objects.filter(id=id, company=company).first()
+        if template is None:
+            return Response({'error': 'Template not found in your company.'},
+                            status=status.HTTP_400_BAD_REQUEST)
+        Yaml.objects.filter(company=company, is_default=True).update(is_default=False)
+        template.is_default = True
+        template.save(update_fields=['is_default'])
+        return Response({'id': template.id, 'is_default': True})
+
+
 class ImageUploadView(APIView):
     permission_classes = [IsAuthenticated, HasMethodFeature, HasMethodPermission]
     required_features_map = {'POST': 'template_designer'}
