@@ -18,6 +18,7 @@ from rest_framework.parsers import MultiPartParser, FormParser
 
 from accounts.models import ServiceToken, User
 from accounts.authenticate import AdminJWTTokenAuthentication
+from invoice_api.permissions import HasMethodPermission
 from invoice.all_serializers.pipline_seriallzers import InvoiceUploadSerializer
 from invoice.models import InvoiceExtractionLog
 
@@ -25,7 +26,8 @@ from invoice.models import InvoiceExtractionLog
 class InvoiceExtractAPIView(APIView):
 
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'POST': 'invoice.create'}
     serializer_class = InvoiceUploadSerializer
     @swagger_auto_schema(
         operation_description="Upload invoice file",

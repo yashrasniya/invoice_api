@@ -3,6 +3,8 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from invoice_api.permissions import HasMethodPermission
+
 from companies.models import Customers, Vendor
 from ..serializers import CompanySerializer, VendorSerializer
 
@@ -13,7 +15,9 @@ class MyPaginator( pagination.PageNumberPagination):
 
 class CompaniesView(ListAPIView):
     serializer_class = CompanySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'POST': 'customer.manage',
+                                'DELETE': 'customer.manage'}
     pagination_class = MyPaginator
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']
@@ -48,7 +52,9 @@ class CompaniesView(ListAPIView):
 
 class VendorView(ListAPIView):
     serializer_class = VendorSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'POST': 'vendor.manage',
+                                'DELETE': 'vendor.manage'}
     pagination_class = MyPaginator
     filter_backends = [filters.SearchFilter]
     search_fields = ['name']

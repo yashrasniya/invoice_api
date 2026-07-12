@@ -264,6 +264,10 @@ class AuthzTestCase(APITestCase):
 
     def test_invoice_monthly_limit_enforced(self):
         from companies.models import Feature, PlanFeature
+        # member needs invoice.create to get past the permission gate
+        _, member_role = ensure_company_roles(
+            CompanyRole, CompanyPermission, self.company_a)
+        member_role.users.add(self.member_a)
         invoicing, _ = Feature.objects.get_or_create(
             code='invoicing', defaults={'name': 'Invoicing'})
         PlanFeature.objects.update_or_create(
@@ -274,6 +278,26 @@ class AuthzTestCase(APITestCase):
         r = c.post('/api/invoice/', {}, format='json')
         self.assertEqual(r.status_code, 403)
         self.assertEqual(getattr(r.data.get('detail'), 'code', None), 'upgrade_required')
+
+    # permission gating of invoice/purchase endpoints
+    def test_invoice_endpoints_require_permissions(self):
+        # user with no roles at all → no invoice permissions
+        nobody = make_user('nobody', self.company_a)
+        c = self.client_for(nobody)
+        self.assertEqual(c.get('/api/invoice/').status_code, 403)
+        self.assertEqual(c.get('/api/purchase-summary/').status_code, 403)
+        self.assertEqual(c.post('/api/vendors/', {}, format='json').status_code, 403)
+
+        # Member role restores operational access
+        _, member_role = ensure_company_roles(
+            CompanyRole, CompanyPermission, self.company_a)
+        member_role.users.add(nobody)
+        with self.captureOnCommitCallbacks(execute=True):
+            pass  # role m2m signal invalidation
+        cache.clear()
+        self.assertEqual(c.get('/api/invoice/').status_code, 200)
+        # but invoice.delete is not in the Member set
+        self.assertEqual(c.delete('/api/invoice/?id=1').status_code, 403)
 
     # tenant isolation of the authz APIs themselves
     def test_roles_scoped_to_own_company(self):

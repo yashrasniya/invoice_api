@@ -67,6 +67,23 @@ class HasPermission(BasePermission):
         return code in (getattr(request, 'permissions', None) or set())
 
 
+class HasMethodPermission(BasePermission):
+    """Per-HTTP-method permission codes, e.g. on the view:
+
+        required_permissions_map = {'GET': 'invoice.view',
+                                    'POST': 'invoice.create'}
+
+    Methods missing from the map are allowed through.
+    """
+
+    def has_permission(self, request, view):
+        perm_map = getattr(view, 'required_permissions_map', {})
+        code = perm_map.get(request.method)
+        if not code:
+            return True
+        return code in (getattr(request, 'permissions', None) or set())
+
+
 class HasRole(BasePermission):
     role_name = None
 

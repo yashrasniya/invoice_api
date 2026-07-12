@@ -1,6 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
+
+from invoice_api.permissions import HasMethodPermission
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 from django.db.models import Sum
 from datetime import datetime, timedelta
@@ -8,7 +10,8 @@ from dateutil.relativedelta import relativedelta
 from invoice.models import Invoice
 
 class CashFlowReportAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'GET': 'report.view'}
 
     def get(self, request):
         start_date_str = request.query_params.get('start_date')
@@ -117,7 +120,8 @@ class CashFlowReportAPIView(APIView):
 
 
 class PurchaseInvoiceSummaryAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'GET': 'invoice.view'}
 
     def get(self, request):
         today = datetime.now().date()

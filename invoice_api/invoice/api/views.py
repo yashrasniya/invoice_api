@@ -14,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 
 from invoice_api.limits import enforce_limit
-from invoice_api.permissions import HasFeature
+from invoice_api.permissions import HasFeature, HasMethodPermission
 
 from companies.models import Customers
 from companies.serializers import CompanySerializer
@@ -32,7 +32,10 @@ logger = logging.getLogger(__name__)
 
 class InvoiceView(ListAPIView):
     serializer_class = InvoiceSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'GET': 'invoice.view',
+                                'POST': 'invoice.create',
+                                'DELETE': 'invoice.delete'}
     pagination_class = pagination.PageNumberPagination
     queryset = Invoice.objects.filter()
 
@@ -89,7 +92,8 @@ class InvoiceView(ListAPIView):
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
 class Invoice_update(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'POST': 'invoice.update'}
 
     def post(self, request, id, *args, **kwargs):
         obj = Invoice.objects.filter(id=id,user=request.user)
@@ -107,7 +111,8 @@ class Invoice_update(APIView):
 
 
 class Invoice_product_action(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'POST': 'invoice.update'}
 
     def post(self, request,id, action):
         print(id,action,request.data.get('product_id',''))
