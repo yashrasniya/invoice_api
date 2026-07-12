@@ -84,6 +84,25 @@ class HasMethodPermission(BasePermission):
         return code in (getattr(request, 'permissions', None) or set())
 
 
+class HasMethodFeature(BasePermission):
+    """Per-HTTP-method plan-feature codes, e.g. on the view:
+
+        required_features_map = {'POST': 'template_designer'}
+
+    Methods missing from the map are allowed through. Failures surface as
+    403 upgrade_required.
+    """
+    message = 'Your plan does not include this feature.'
+    code = 'upgrade_required'
+
+    def has_permission(self, request, view):
+        feat_map = getattr(view, 'required_features_map', {})
+        code = feat_map.get(request.method)
+        if not code:
+            return True
+        return code in (getattr(request, 'features', None) or set())
+
+
 class HasRole(BasePermission):
     role_name = None
 

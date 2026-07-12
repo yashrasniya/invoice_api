@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 import os
 
+from invoice_api.permissions import HasMethodFeature
+
 from yaml_manager.api.serializer import Yaml_serializers
 from yaml_manager.models import Yaml, YamlVersion
 from yaml_reader import YamalReader, FillValue
@@ -21,7 +23,11 @@ logger = logging.getLogger(__name__)
 # Create your views here.
 
 class YamlView(APIView):
-    permission_classes = [IsAuthenticated]
+    # reads stay open (PDF rendering needs templates); designing requires the plan feature
+    permission_classes = [IsAuthenticated, HasMethodFeature]
+    required_features_map = {'POST': 'template_designer',
+                             'PUT': 'template_designer',
+                             'DELETE': 'template_designer'}
 
     def get(self,request):
         if self.request.user.is_staff:
@@ -242,7 +248,8 @@ class YamlListView(ListAPIView):
         return Yaml.objects.filter(company=self.request.user.user_company.id)
 
 class ImageUploadView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodFeature]
+    required_features_map = {'POST': 'template_designer'}
 
     def post(self, request):
         if 'image' not in request.FILES:
@@ -258,7 +265,8 @@ class ImageUploadView(APIView):
         return Response({"url": url}, status=200)
 
 class WeasyprintPreviewView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodFeature]
+    required_features_map = {'POST': 'template_designer'}
 
     def post(self, request):
         html_content = request.data.get("html_content")
