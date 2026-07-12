@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 import os
 
-from invoice_api.permissions import HasMethodFeature
+from invoice_api.permissions import HasMethodFeature, HasMethodPermission
 
 from yaml_manager.api.serializer import Yaml_serializers
 from yaml_manager.models import Yaml, YamlVersion
@@ -23,11 +23,15 @@ logger = logging.getLogger(__name__)
 # Create your views here.
 
 class YamlView(APIView):
-    # reads stay open (PDF rendering needs templates); designing requires the plan feature
-    permission_classes = [IsAuthenticated, HasMethodFeature]
+    # reads stay open (PDF rendering needs templates); designing requires the
+    # plan feature AND the template.manage permission (tenant-admin granted)
+    permission_classes = [IsAuthenticated, HasMethodFeature, HasMethodPermission]
     required_features_map = {'POST': 'template_designer',
                              'PUT': 'template_designer',
                              'DELETE': 'template_designer'}
+    required_permissions_map = {'POST': 'template.manage',
+                                'PUT': 'template.manage',
+                                'DELETE': 'template.manage'}
 
     def get(self,request):
         if self.request.user.is_staff:
@@ -248,8 +252,9 @@ class YamlListView(ListAPIView):
         return Yaml.objects.filter(company=self.request.user.user_company.id)
 
 class ImageUploadView(APIView):
-    permission_classes = [IsAuthenticated, HasMethodFeature]
+    permission_classes = [IsAuthenticated, HasMethodFeature, HasMethodPermission]
     required_features_map = {'POST': 'template_designer'}
+    required_permissions_map = {'POST': 'template.manage'}
 
     def post(self, request):
         if 'image' not in request.FILES:
@@ -265,8 +270,9 @@ class ImageUploadView(APIView):
         return Response({"url": url}, status=200)
 
 class WeasyprintPreviewView(APIView):
-    permission_classes = [IsAuthenticated, HasMethodFeature]
+    permission_classes = [IsAuthenticated, HasMethodFeature, HasMethodPermission]
     required_features_map = {'POST': 'template_designer'}
+    required_permissions_map = {'POST': 'template.manage'}
 
     def post(self, request):
         html_content = request.data.get("html_content")

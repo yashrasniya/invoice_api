@@ -22,6 +22,7 @@ SYSTEM_PERMISSIONS = [
     ('report.export', 'Export reports'),
     ('whatsapp.send', 'Send WhatsApp messages'),
     ('whatsapp.manage', 'Manage WhatsApp integration'),
+    ('template.manage', 'Manage invoice templates'),
     ('subscription.view', 'View subscription'),
     ('audit.view', 'View audit log'),
 ]
