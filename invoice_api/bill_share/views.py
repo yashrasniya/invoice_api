@@ -185,6 +185,13 @@ class ShareByWhatsapp(APIView):
         data = request.data.copy()
         data["user"] = request.user.id  # ✅ inject the logged-in user
         template_id = data.get("template_id")
+        if not template_id:
+            # fall back to the company's default invoice template (WA Settings)
+            from whatsapp_integration.models import CompanyWhatsAppSettings
+            settings_obj = CompanyWhatsAppSettings.objects.filter(
+                company=getattr(request, 'company', None)).first()
+            if settings_obj and settings_obj.default_invoice_template_id:
+                template_id = settings_obj.default_invoice_template_id
         # company-scoped: members with permission can share company invoices
         qs = Invoice.objects.filter(user_scope_q(request), id=data.get("invoice"))
         invoice = qs.first()

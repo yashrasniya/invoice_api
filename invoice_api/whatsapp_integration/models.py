@@ -81,6 +81,11 @@ class CompanyWhatsAppSettings(models.Model):
         'accounts.UserCompanies', on_delete=models.CASCADE,
         related_name='whatsapp_settings')
     mode = models.CharField(max_length=20, choices=MODE_CHOICES, default='platform')
+    # invoice PDF template used when sharing on WhatsApp without an
+    # explicit choice — saves picking a template on every send
+    default_invoice_template = models.ForeignKey(
+        'yaml_manager.Yaml', on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='+')
     updated_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='+')

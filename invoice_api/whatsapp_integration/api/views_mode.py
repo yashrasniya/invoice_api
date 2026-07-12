@@ -38,8 +38,18 @@ class WhatsAppModeAPIView(APIView):
         if platform_limit is None and account:
             platform_limit = account.default_daily_limit
 
+        settings_obj = CompanyWhatsAppSettings.objects.filter(
+            company=company).select_related('default_invoice_template').first()
+        default_template = None
+        if settings_obj and settings_obj.default_invoice_template:
+            default_template = {
+                'id': settings_obj.default_invoice_template.id,
+                'template_name': settings_obj.default_invoice_template.template_name,
+            }
+
         return Response({
             'mode': get_company_mode(company),
+            'default_invoice_template': default_template,
             'options': {
                 'platform': {
                     'available': PLATFORM_FEATURE in features and bool(
@@ -62,23 +72,53 @@ class WhatsAppModeAPIView(APIView):
         company = request.company
         if company is None:
             return Response({'error': 'No company.'}, status=400)
-        mode = request.data.get('mode')
-        if mode not in ('own', 'platform'):
-            return Response({'error': "mode must be 'own' or 'platform'."},
-                            status=400)
-        features = request.features or set()
-        required = OWN_FEATURE if mode == 'own' else PLATFORM_FEATURE
-        if required not in features:
-            return Response(
-                {'detail': f"Your plan does not include this option.",
-                 'code': 'upgrade_required'},
-                status=status.HTTP_403_FORBIDDEN)
+
+        defaults = {'updated_by': request.user}
+
+        # optional: change the sending mode
+        if 'mode' in request.data:
+            mode = request.data.get('mode')
+            if mode not in ('own', 'platform'):
+                return Response({'error': "mode must be 'own' or 'platform'."},
+                                status=400)
+            features = request.features or set()
+            required = OWN_FEATURE if mode == 'own' else PLATFORM_FEATURE
+            if required not in features:
+                return Response(
+                    {'detail': "Your plan does not include this option.",
+                     'code': 'upgrade_required'},
+                    status=status.HTTP_403_FORBIDDEN)
+            defaults['mode'] = mode
+        else:
+            defaults['mode'] = get_company_mode(company)
+
+        # optional: set/clear the default invoice template for sends
+        if 'default_invoice_template' in request.data:
+            template_id = request.data.get('default_invoice_template')
+            if template_id in (None, '', 0):
+                defaults['default_invoice_template'] = None
+            else:
+                from yaml_manager.models import Yaml
+                template = Yaml.objects.filter(
+                    id=template_id, company=company).first()
+                if template is None:
+                    return Response(
+                        {'error': 'Template not found in your company.'},
+                        status=400)
+                defaults['default_invoice_template'] = template
 
         obj, _ = CompanyWhatsAppSettings.objects.update_or_create(
-            company=company,
-            defaults={'mode': mode, 'updated_by': request.user})
+            company=company, defaults=defaults)
         AuditLog.objects.create(
             company=company, user=request.user, action='UPDATE',
             resource_type='WHATSAPP_MODE', resource_id=str(obj.id),
-            new_data={'mode': mode})
-        return Response({'mode': obj.mode})
+            new_data={'mode': obj.mode,
+                      'default_invoice_template':
+                          obj.default_invoice_template_id})
+        return Response({
+            'mode': obj.mode,
+            'default_invoice_template': (
+                {'id': obj.default_invoice_template.id,
+                 'template_name': obj.default_invoice_template.template_name}
+                if obj.default_invoice_template else None),
+        })
