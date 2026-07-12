@@ -15,3 +15,27 @@ def user_scope_q(request):
     if company is not None:
         return Q(user__user_company=company)
     return Q(user=request.user)
+
+
+def company_config_owner(request):
+    """Canonical owner of company-wide configuration (UI field config,
+    custom fields): the company's first admin. Every member reads and —
+    with permission — writes that same set, so the whole company sees one
+    consistent configuration."""
+    company = getattr(request, 'company', None)
+    if company is not None:
+        from accounts.models import User
+        # prefer the member who actually owns config rows (the company
+        # creator got the default field set at signup)
+        owner = (User.objects
+                 .filter(user_company=company,
+                         new_product_in_frontend__isnull=False)
+                 .order_by('id').first())
+        if owner:
+            return owner
+        owner = (User.objects
+                 .filter(user_company=company, is_company_admin=True)
+                 .order_by('id').first())
+        if owner:
+            return owner
+    return request.user

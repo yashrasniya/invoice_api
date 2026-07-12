@@ -15,7 +15,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 
 from invoice_api.limits import enforce_limit
 from invoice_api.permissions import HasFeature, HasMethodPermission
-from invoice_api.scoping import user_scope_q
+from invoice_api.scoping import company_config_owner, user_scope_q
 
 from companies.models import Customers
 from companies.serializers import CompanySerializer
@@ -138,44 +138,55 @@ class Invoice_product_action(APIView):
 
 
 class new_product_in_frontend_view(ListAPIView):
+    """Company-wide bill-field configuration. Everyone in the company reads
+    the same set (owned by the company's first admin); editing requires the
+    template.manage permission."""
     serializer_class = new_product_in_frontendSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'POST': 'template.manage'}
 
     def get_queryset(self):
+        owner = company_config_owner(self.request)
         if self.kwargs.get('id',''):
-            return new_product_in_frontend.objects.filter(id=self.kwargs.get('id',''),user=self.request.user)
-        return new_product_in_frontend.objects.filter(user=self.request.user)
+            return new_product_in_frontend.objects.filter(id=self.kwargs.get('id',''),user=owner)
+        return new_product_in_frontend.objects.filter(user=owner)
 
     def post(self, request, *args, **kwargs):
         serializer = new_product_in_frontendSerializer(data=request.data)
         if serializer.is_valid():
-            serializer.save(user=self.request.user)
+            serializer.save(user=company_config_owner(request))
             return Response(serializer.data, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class new_product_in_frontend_update_view(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'POST': 'template.manage',
+                                'DELETE': 'template.manage'}
+
     def get_queryset(self):
+        # scoped to the company's shared config set — no foreign ids
+        owner = company_config_owner(self.request)
         if not self.kwargs.get('id',''):
             return Response({'error': 'id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        if not new_product_in_frontend.objects.filter(id=self.kwargs.get('id')):
+        if not new_product_in_frontend.objects.filter(id=self.kwargs.get('id'), user=owner):
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-        return new_product_in_frontend.objects.get(id=self.kwargs.get('id'))
+        return new_product_in_frontend.objects.get(id=self.kwargs.get('id'), user=owner)
 
     def post(self,request,*args, **kwargs):
         serializer = new_product_in_frontendSerializer(self.get_queryset(),data=request.data)
         if serializer.is_valid():
-            serializer.save(user=self.request.user)
+            serializer.save(user=company_config_owner(request))
             return Response(serializer.data, status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self,request,id,*args, **kwargs):
-
-        if not new_product_in_frontend.objects.filter(id=self.kwargs.get('id')):
+        owner = company_config_owner(request)
+        qs = new_product_in_frontend.objects.filter(id=self.kwargs.get('id'), user=owner)
+        if not qs:
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-        new_product_in_frontend.objects.get(id=self.kwargs.get('id')).delete()
+        qs.first().delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
 class ProductViewSet(APIView):
@@ -303,17 +314,23 @@ class BulkExport(APIView):
 
 class CustomFieldViewSet(viewsets.ModelViewSet):
     serializer_class = CustomFieldSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['hidden', 'field_type', 'company']
     search_fields = ['name']
     ordering_fields = ['created_time', 'name']
     ordering = ['-created_time']
 
+    # reads open to the company; writes need template.manage
+    required_permissions_map = {'POST': 'template.manage',
+                                'PUT': 'template.manage',
+                                'PATCH': 'template.manage',
+                                'DELETE': 'template.manage'}
+
     def get_queryset(self):
-        return CustomField.objects.filter(user=self.request.user)
+        return CustomField.objects.filter(user=company_config_owner(self.request))
 
     def perform_create(self, serializer):
-        serializer.save(user=self.request.user)
+        serializer.save(user=company_config_owner(self.request))
 
 
