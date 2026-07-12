@@ -42,7 +42,8 @@ class InvoiceView(ListAPIView):
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     # Exact field filtering (e.g., ?status=paid)
-    filterset_fields = ['receiver', 'date','id', 'invoice_type']
+    filterset_fields = ['receiver', 'date','id', 'invoice_type',
+                        'payment_status', 'payment_method']
 
     # Search (partial match, e.g., ?search=ABC)
     search_fields = ['invoice_number', 'receiver__name',]

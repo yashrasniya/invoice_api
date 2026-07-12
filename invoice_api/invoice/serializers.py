@@ -79,6 +79,8 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'gst_final_amount',
             'total_final_amount',
             'invoice_type',
+            'payment_status',
+            'payment_method',
             'custom_header_field'
         )
         read_only_fields =[

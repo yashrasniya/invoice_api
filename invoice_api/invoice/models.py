@@ -24,6 +24,26 @@ class Invoice(models.Model):
     ]
     invoice_type = models.CharField(max_length=10, choices=INVOICE_TYPE_CHOICES, default='sales')
 
+    PAYMENT_STATUS_CHOICES = [
+        ('unpaid', 'Unpaid'),
+        ('partially_paid', 'Partially Paid'),
+        ('paid', 'Paid'),
+        ('overdue', 'Overdue'),
+    ]
+    payment_status = models.CharField(
+        max_length=20, choices=PAYMENT_STATUS_CHOICES, default='unpaid', db_index=True)
+
+    PAYMENT_METHOD_CHOICES = [
+        ('cash', 'Cash'),
+        ('upi', 'UPI'),
+        ('bank_transfer', 'Bank Transfer'),
+        ('cheque', 'Cheque'),
+        ('card', 'Card'),
+        ('other', 'Other'),
+    ]
+    payment_method = models.CharField(
+        max_length=20, choices=PAYMENT_METHOD_CHOICES, blank=True, null=True)
+
     def __str__(self):
         return str(self.id)+str(self.user)
 
