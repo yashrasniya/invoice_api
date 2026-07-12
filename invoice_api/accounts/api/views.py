@@ -277,6 +277,16 @@ class UserInfo(APIView):
     def get(self,request):
         from datetime import date
         from calendar import monthrange
+        from invoice_api.scoping import user_scope_q
+
+        # no invoice.view → no invoice KPIs (return zeros, keep the name)
+        if 'invoice.view' not in (getattr(request, 'permissions', None) or set()):
+            return Response({
+                'name': request.user.name(),
+                'month_total_final_amount': 0, 'month_gst_final_amount': 0,
+                'percentage_change': 0, 'percentage_gst_amount': 0,
+                'invoices_this_month_count': 0, 'invoices_prv_month_count': 0,
+            })
 
         today = date.today()
 
@@ -297,13 +307,13 @@ class UserInfo(APIView):
 
         # Queries
         invoices = Invoice.objects.filter(
-            user=request.user,
+            user_scope_q(request),   # company-wide, consistent with invoice list
             date__gte=current_month_start,
             date__lte=current_month_end
         )
 
         invoices_prv = Invoice.objects.filter(
-            user=request.user,
+            user_scope_q(request),
             date__gte=prev_month_start,
             date__lte=prev_month_end
         )
