@@ -2,7 +2,7 @@ from django.urls import path, include
 from .views import Register_user, Login, GoogleLogin, Profile, log_out, ContactUs, UserInfo, UserCompaniesViewSet, LoginByToken, CheckMobileNumber
 from rest_framework.routers import DefaultRouter
 
-from . import views_authz
+from . import views_authz, views_invites
 
 authz_router = DefaultRouter()
 authz_router.register(r'roles', views_authz.RoleViewSet, basename='authz-roles')
@@ -18,6 +18,14 @@ urlpatterns = [
     path('authz/users/<int:user_id>/effective-permissions/', views_authz.EffectivePermissionsView.as_view()),
     path('authz/audit-log/', views_authz.CompanyAuditLogView.as_view()),
     path('authz/me/', views_authz.MyAccessView.as_view()),
+
+    # User invites (tenant admin)
+    path('authz/invites/', views_invites.InviteListCreateView.as_view()),
+    path('authz/invites/<int:invite_id>/', views_invites.InviteDetailView.as_view()),
+    path('authz/invites/<int:invite_id>/resend/', views_invites.InviteResendView.as_view()),
+    # Invite accept (public)
+    path('invites/<str:token>/', views_invites.InviteInfoView.as_view()),
+    path('invites/<str:token>/accept/', views_invites.InviteAcceptView.as_view()),
 
     path('register/', Register_user.as_view()),
     path('login/', Login.as_view()),

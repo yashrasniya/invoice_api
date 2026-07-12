@@ -194,6 +194,61 @@ class AuthzTestCase(APITestCase):
         self.assertTrue(AuditLog.objects.filter(
             user=self.admin_a, action='LOGIN_FAILED', resource_type='SESSION').exists())
 
+    # user invites
+    def test_invite_flow(self):
+        from django.test import override_settings
+        from accounts.models import UserInvite
+        admin_role, _ = ensure_company_roles(
+            CompanyRole, CompanyPermission, self.company_a)
+        admin_role.users.add(self.admin_a)
+        c = self.client_for(self.admin_a)
+
+        with override_settings(
+                EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            r = c.post('/api/authz/invites/',
+                       {'email': 'hire@example.com'}, format='json')
+        self.assertEqual(r.status_code, 201)
+        token = UserInvite.objects.get(email='hire@example.com').token
+
+        pub = APIClient()
+        r = pub.get(f'/api/invites/{token}/')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.data['valid'])
+
+        r = pub.post(f'/api/invites/{token}/accept/',
+                     {'username': 'hire1', 'password': 'strongpass1'},
+                     format='json')
+        self.assertEqual(r.status_code, 200)
+        new_user = User.objects.get(username='hire1')
+        self.assertEqual(new_user.user_company_id, self.company_a.id)
+        self.assertTrue(new_user.roles.filter(name='Member').exists())
+
+        # token single-use
+        r = pub.post(f'/api/invites/{token}/accept/',
+                     {'username': 'hire2', 'password': 'strongpass1'},
+                     format='json')
+        self.assertEqual(r.status_code, 403)
+
+    def test_invite_requires_permission_and_blocks_foreign_members(self):
+        from django.test import override_settings
+        # member without user.invite → 403
+        c = self.client_for(self.member_a)
+        r = c.post('/api/authz/invites/', {'email': 'a@b.com'}, format='json')
+        self.assertEqual(r.status_code, 403)
+
+        # inviting someone already in another company → 400
+        admin_role, _ = ensure_company_roles(
+            CompanyRole, CompanyPermission, self.company_a)
+        admin_role.users.add(self.admin_a)
+        self.admin_b.email = 'takenelsewhere@example.com'
+        self.admin_b.save()
+        c = self.client_for(self.admin_a)
+        with override_settings(
+                EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend'):
+            r = c.post('/api/authz/invites/',
+                       {'email': 'takenelsewhere@example.com'}, format='json')
+        self.assertEqual(r.status_code, 400)
+
     # tenant isolation of the authz APIs themselves
     def test_roles_scoped_to_own_company(self):
         for company, admin in ((self.company_a, self.admin_a),

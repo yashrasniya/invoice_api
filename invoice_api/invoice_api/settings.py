@@ -21,6 +21,9 @@ load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
 
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
 
+# Base URL of the React frontend, used in invite emails
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 

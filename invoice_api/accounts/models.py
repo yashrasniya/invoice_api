@@ -195,6 +195,59 @@ class UserDirectPermission(models.Model):
         return f"{sign}{self.permission.code} → {self.user}"
 
 
+class UserInvite(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('revoked', 'Revoked'),
+        ('expired', 'Expired'),
+    ]
+    EXPIRY_DAYS = 7
+
+    company = models.ForeignKey(
+        'UserCompanies', on_delete=models.CASCADE, related_name='invites')
+    email = models.EmailField()
+    role = models.ForeignKey(
+        CompanyRole, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='invites', help_text="Role assigned on accept (default: Member)")
+    invited_by = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, related_name='sent_invites')
+    token = models.CharField(max_length=64, unique=True, db_index=True)
+    status = models.CharField(
+        max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    accepted_user = models.ForeignKey(
+        'User', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    accepted_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            # one live invite per email per company
+            models.UniqueConstraint(
+                fields=['company', 'email'],
+                condition=models.Q(status='pending'),
+                name='one_pending_invite_per_email_per_company',
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.token:
+            self.token = secrets.token_urlsafe(32)
+        if not self.expires_at:
+            from datetime import timedelta
+            from django.utils import timezone
+            self.expires_at = timezone.now() + timedelta(days=self.EXPIRY_DAYS)
+        super().save(*args, **kwargs)
+
+    def is_valid(self):
+        from django.utils import timezone
+        return self.status == 'pending' and timezone.now() <= self.expires_at
+
+    def __str__(self):
+        return f"{self.email} → {self.company} ({self.status})"
+
+
 class AuditLog(models.Model):
     company = models.ForeignKey(
         'UserCompanies', on_delete=models.CASCADE, related_name='audit_logs',
