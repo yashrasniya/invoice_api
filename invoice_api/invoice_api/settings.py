@@ -185,6 +185,7 @@ REST_FRAMEWORK = {
     'PAGE_SIZE': 20,
     'SEARCH_PARAM': 's',
     'DEFAULT_SCHEMA_CLASS': 'rest_framework.schemas.coreapi.AutoSchema',
+    'EXCEPTION_HANDLER': 'invoice_api.exceptions.api_exception_handler',
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'accounts.authenticate.CustomAuthentication',
     ),
