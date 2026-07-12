@@ -339,6 +339,14 @@ class UserCompaniesViewSet(
 
     def post(self,request):
         if request.user.user_company:
+            # editing an existing company profile is admin-only; creating a
+            # first company (onboarding) is open to any authenticated user
+            is_admin = (request.user.is_company_admin or
+                        'role.manage' in (getattr(request, 'permissions', None) or set()))
+            if not is_admin:
+                return Response({'detail': 'Only a company admin can edit the company profile.',
+                                 'code': 'permission_denied'},
+                                status=status.HTTP_403_FORBIDDEN)
             serializer = UserCompaniesSerializer(request.user.user_company,data=request.data)
         else:
             serializer = UserCompaniesSerializer(data=request.data)
