@@ -31,6 +31,16 @@ class SupplierSerializer(serializers.ModelSerializer):
 class ProductSerializer(serializers.ModelSerializer):
     category_name = serializers.ReadOnlyField(source='category.name')
     supplier_name = serializers.ReadOnlyField(source='supplier.name')
+    vendor_name = serializers.ReadOnlyField(source='vendor.name')
+
+    def validate_vendor(self, value):
+        # vendor must belong to the requester's company (vendors are keyed
+        # to their creating user)
+        if value is not None:
+            company = _request_company(self)
+            if value.user.user_company_id != getattr(company, 'id', None):
+                raise serializers.ValidationError('Vendor not found in your company.')
+        return value
 
     class Meta:
         model = Product

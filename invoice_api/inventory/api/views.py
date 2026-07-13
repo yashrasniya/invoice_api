@@ -45,7 +45,7 @@ class ProductViewSet(CompanyScopedViewSet):
     queryset = Product.objects.all()
     serializer_class = ProductSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]
-    filterset_fields = ['category', 'supplier']
+    filterset_fields = ['category', 'supplier', 'vendor']
     search_fields = ['name', 'sku', 'description']
 
 

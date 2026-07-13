@@ -44,7 +44,10 @@ class Product(models.Model):
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='products')
-    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, related_name='products')
+    # legacy standalone supplier — superseded by `vendor` (the same Vendor
+    # records used on the Purchases page)
+    supplier = models.ForeignKey(Supplier, on_delete=models.SET_NULL, null=True, blank=True, related_name='products')
+    vendor = models.ForeignKey('companies.Vendor', on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_products')
     price = models.DecimalField(max_digits=10, decimal_places=2)
     gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=18.00)
     current_stock = models.IntegerField(default=0)
