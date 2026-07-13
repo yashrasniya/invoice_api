@@ -4,6 +4,7 @@ from django.db import models
 from django.utils import timezone
 
 from accounts.models import User
+from invoice_api.softdelete import SoftDeleteModel
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +99,7 @@ class CompanySubscription(models.Model):
         return False
 
 
-class Customers(models.Model):
+class Customers(SoftDeleteModel):
     # Basic Info
     name = models.CharField(max_length=255, default="Unnamed Company")
     legal_name = models.CharField(max_length=255, blank=True, default="", help_text="As per GST/PAN records")
@@ -150,7 +151,7 @@ class Customers(models.Model):
         return self.name or "Unnamed Company"
 
 
-class Vendor(models.Model):
+class Vendor(SoftDeleteModel):
     # Basic Info
     name = models.CharField(max_length=255, default="Unnamed Vendor")
     legal_name = models.CharField(max_length=255, blank=True, default="", help_text="As per GST/PAN records")

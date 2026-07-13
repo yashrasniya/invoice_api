@@ -3,6 +3,8 @@ import secrets
 from django.db import models
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 
+from invoice_api.softdelete import SoftDeleteModel
+
 
 # Create your models here.
 class User_manager(BaseUserManager):
@@ -133,7 +135,7 @@ class CompanyPermission(models.Model):
         return self.code
 
 
-class CompanyRole(models.Model):
+class CompanyRole(SoftDeleteModel):
     # company=NULL → global system role (e.g. Product Owner)
     company = models.ForeignKey(
         'UserCompanies', on_delete=models.CASCADE, null=True, blank=True,
@@ -145,20 +147,31 @@ class CompanyRole(models.Model):
     users = models.ManyToManyField('User', related_name='roles', blank=True)
 
     class Meta:
-        unique_together = ('company', 'name')
+        base_manager_name = 'all_objects'
         constraints = [
             models.UniqueConstraint(
+                fields=['company', 'name'],
+                condition=models.Q(is_deleted=False),
+                name='uniq_role_name_per_company',
+            ),
+            models.UniqueConstraint(
                 fields=['name'],
-                condition=models.Q(company__isnull=True),
+                condition=models.Q(company__isnull=True, is_deleted=False),
                 name='uniq_global_role_name',
             )
         ]
+
+    def delete(self, *args, **kwargs):
+        # a deleted role must stop granting anything immediately
+        self.users.clear()
+        self.permissions.clear()
+        super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} ({self.company or 'global'})"
 
 
-class CompanyGroup(models.Model):
+class CompanyGroup(SoftDeleteModel):
     company = models.ForeignKey(
         'UserCompanies', on_delete=models.CASCADE, related_name='custom_groups')
     name = models.CharField(max_length=255)
@@ -169,7 +182,21 @@ class CompanyGroup(models.Model):
         CompanyPermission, related_name='company_groups', blank=True)
 
     class Meta:
-        unique_together = ('company', 'name')
+        base_manager_name = 'all_objects'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['company', 'name'],
+                condition=models.Q(is_deleted=False),
+                name='uniq_group_name_per_company',
+            )
+        ]
+
+    def delete(self, *args, **kwargs):
+        # a deleted group must stop granting anything immediately
+        self.users.clear()
+        self.roles.clear()
+        self.permissions.clear()
+        super().delete(*args, **kwargs)
 
     def __str__(self):
         return f"{self.name} ({self.company})"

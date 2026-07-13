@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from invoice_api.softdelete import SoftDeleteModel
 
 class WhatsAppIntegration(models.Model):
     STATUS_CHOICES = (
@@ -22,7 +23,7 @@ class WhatsAppIntegration(models.Model):
         return f"{self.user.username} - {self.status}"
 
 
-class WhatsAppTemplate(models.Model):
+class WhatsAppTemplate(SoftDeleteModel):
     CATEGORY_CHOICES = (
         ('utility', 'Utility'),
         ('marketing', 'Marketing'),

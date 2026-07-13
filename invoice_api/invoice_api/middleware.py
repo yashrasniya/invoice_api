@@ -132,10 +132,16 @@ def get_user_permissions(user, company, use_cache=True):
     from accounts.models import CompanyPermission, UserDirectPermission
 
     granted = set(CompanyPermission.objects.filter(
-        Q(roles__users=user, roles__company=company) |
-        Q(roles__users=user, roles__company__isnull=True) |  # global system roles
-        Q(company_groups__users=user, company_groups__company=company) |
-        Q(roles__company_groups__users=user, roles__company_groups__company=company)
+        Q(roles__users=user, roles__company=company,
+          roles__is_deleted=False) |
+        Q(roles__users=user, roles__company__isnull=True,
+          roles__is_deleted=False) |  # global system roles
+        Q(company_groups__users=user, company_groups__company=company,
+          company_groups__is_deleted=False) |
+        Q(roles__company_groups__users=user,
+          roles__company_groups__company=company,
+          roles__is_deleted=False,
+          roles__company_groups__is_deleted=False)
     ).distinct().values_list('code', flat=True))
 
     # direct grants add, direct denies always win

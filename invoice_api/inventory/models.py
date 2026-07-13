@@ -1,8 +1,10 @@
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from invoice_api.softdelete import SoftDeleteModel
 
-class Category(models.Model):
+
+class Category(SoftDeleteModel):
     company = models.ForeignKey(
         'accounts.UserCompanies', on_delete=models.CASCADE,
         null=True, blank=True, related_name='inventory_categories')
@@ -11,9 +13,11 @@ class Category(models.Model):
 
     class Meta:
         verbose_name_plural = "Categories"
+        base_manager_name = 'all_objects'
         constraints = [
-            # unique per company, not globally
+            # unique per company among live rows
             models.UniqueConstraint(fields=['company', 'name'],
+                                    condition=models.Q(is_deleted=False),
                                     name='uniq_category_per_company'),
         ]
 
@@ -21,7 +25,7 @@ class Category(models.Model):
         return self.name
 
 
-class Supplier(models.Model):
+class Supplier(SoftDeleteModel):
     company = models.ForeignKey(
         'accounts.UserCompanies', on_delete=models.CASCADE,
         null=True, blank=True, related_name='inventory_suppliers')
@@ -36,7 +40,7 @@ class Supplier(models.Model):
         return self.name
 
 
-class Product(models.Model):
+class Product(SoftDeleteModel):
     company = models.ForeignKey(
         'accounts.UserCompanies', on_delete=models.CASCADE,
         null=True, blank=True, related_name='inventory_products')
@@ -56,9 +60,11 @@ class Product(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
+        base_manager_name = 'all_objects'
         constraints = [
-            # SKU unique per company, not globally
+            # SKU unique per company among live rows
             models.UniqueConstraint(fields=['company', 'sku'],
+                                    condition=models.Q(is_deleted=False),
                                     name='uniq_sku_per_company'),
         ]
 
@@ -66,7 +72,7 @@ class Product(models.Model):
         return f"{self.name} ({self.sku})"
 
 
-class StockMovement(models.Model):
+class StockMovement(SoftDeleteModel):
     MOVEMENT_CHOICES = (
         ('IN', 'Stock In'),
         ('OUT', 'Stock Out'),
@@ -98,7 +104,9 @@ class StockMovement(models.Model):
 
     def delete(self, *args, **kwargs):
         # reverse the stock adjustment so deleting a movement doesn't leave
-        # phantom stock changes behind
+        # phantom stock changes behind (soft delete via SoftDeleteModel)
+        if self.is_deleted:
+            return
         if self.movement_type == 'IN':
             self.product.current_stock -= self.quantity
         elif self.movement_type == 'OUT':

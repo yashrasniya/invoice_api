@@ -385,6 +385,47 @@ class AuthzTestCase(APITestCase):
         t = self.client_for(self.admin_a)
         self.assertEqual(t.get('/api/admin/whatsapp-account/').status_code, 403)
 
+    # soft delete
+    def test_deletes_are_soft(self):
+        from companies.models import Customers
+        from invoice.models import Invoice
+        admin_role, _ = ensure_company_roles(
+            CompanyRole, CompanyPermission, self.company_a)
+        admin_role.users.add(self.admin_a)
+        c = self.client_for(self.admin_a)
+
+        cust = Customers.objects.create(user=self.admin_a, name='SoftDel Cust')
+        inv = Invoice.objects.create(user=self.admin_a, receiver=cust,
+                                     invoice_type='sales')
+
+        # invoice: hidden from queries, retained in the table
+        r = c.delete(f'/api/invoice/?id={inv.id}')
+        self.assertEqual(r.status_code, 204)
+        self.assertFalse(Invoice.objects.filter(id=inv.id).exists())
+        self.assertTrue(Invoice.all_objects.filter(
+            id=inv.id, is_deleted=True).exists())
+
+        # customer delete does NOT cascade-delete invoices anymore
+        r = c.delete(f'/api/companies/{cust.id}/')
+        self.assertEqual(r.status_code, 204)
+        self.assertFalse(Customers.objects.filter(id=cust.id).exists())
+        self.assertTrue(Invoice.all_objects.filter(id=inv.id).exists())
+
+        # deleted role stops granting permissions and frees its name
+        role = CompanyRole.objects.create(company=self.company_a, name='Ephemeral')
+        perm = CompanyPermission.objects.get(code='invoice.view', company=None)
+        role.permissions.add(perm)
+        role.users.add(self.member_a)
+        role.delete()
+        with self.captureOnCommitCallbacks(execute=True):
+            pass
+        cache.clear()
+        from invoice_api.middleware import get_user_permissions
+        self.assertNotIn('invoice.view', get_user_permissions(
+            self.member_a, self.company_a, use_cache=False))
+        # same name can be reused
+        CompanyRole.objects.create(company=self.company_a, name='Ephemeral')
+
     # tenant isolation of the authz APIs themselves
     def test_roles_scoped_to_own_company(self):
         for company, admin in ((self.company_a, self.admin_a),
