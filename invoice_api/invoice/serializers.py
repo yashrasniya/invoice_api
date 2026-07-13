@@ -61,7 +61,9 @@ class ProductSerializer(serializers.ModelSerializer):
 class InvoiceSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
     receiver_name = serializers.SerializerMethodField()
+    receiver_gst_number = serializers.SerializerMethodField()
     vendor_name = serializers.SerializerMethodField()
+    vendor_gst_number = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
 
     class Meta:
@@ -72,8 +74,10 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'invoice_number',
             'receiver',
             'receiver_name',
+            'receiver_gst_number',
             'vendor',
             'vendor_name',
+            'vendor_gst_number',
             'date',
             'products',
             'gst_final_amount',
@@ -93,9 +97,19 @@ class InvoiceSerializer(serializers.ModelSerializer):
             return obj.receiver.name
         return ''
 
+    def get_receiver_gst_number(self,obj):
+        if obj.receiver:
+            return obj.receiver.gst_number
+        return ''
+
     def get_vendor_name(self, obj):
         if obj.vendor:
             return obj.vendor.name
+        return ''
+
+    def get_vendor_gst_number(self, obj):
+        if obj.vendor:
+            return obj.vendor.gst_number
         return ''
 
     def validate_custom_header_field(self, value):
@@ -166,18 +180,26 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
 class InvoiceSerializerForCSV(serializers.ModelSerializer):
     date = serializers.SerializerMethodField()
     receiver = serializers.SerializerMethodField()
+    receiver_gst_number = serializers.SerializerMethodField()
     vendor = serializers.SerializerMethodField()
+    vendor_gst_number = serializers.SerializerMethodField()
     products_count = serializers.SerializerMethodField()
+    taxable_amount = serializers.SerializerMethodField()
 
     class Meta:
         model = Invoice
         fields = (
             'invoice_number',
             'receiver',
+            'receiver_gst_number',
             'vendor',
+            'vendor_gst_number',
             'date',
+            'taxable_amount',
             'gst_final_amount',
             'total_final_amount',
+            'payment_status',
+            'payment_method',
             'products_count',
             'invoice_type'
         )
@@ -189,10 +211,21 @@ class InvoiceSerializerForCSV(serializers.ModelSerializer):
             return obj.receiver.name
         return ''
         
+    def get_receiver_gst_number(self,obj):
+        if obj.receiver:
+            return obj.receiver.gst_number
+        return ''
+        
     def get_vendor(self, obj):
         if obj.vendor:
             return obj.vendor.name
         return ''
+
+    def get_vendor_gst_number(self, obj):
+        if obj.vendor:
+            return obj.vendor.gst_number
+        return ''
+        
     def get_date(self, obj):
         if obj.date:
             return obj.date.strftime('%d/%m/%Y')
@@ -202,6 +235,12 @@ class InvoiceSerializerForCSV(serializers.ModelSerializer):
         if obj.products:
             return obj.products.all().count()
         return 0
+
+    def get_taxable_amount(self, obj):
+        try:
+            return float(obj.total_final_amount or 0) - float(obj.gst_final_amount or 0)
+        except:
+            return 0
 
 
 class CustomFieldSerializer(serializers.ModelSerializer):
