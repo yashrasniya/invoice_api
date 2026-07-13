@@ -53,6 +53,11 @@ class InvoiceView(ListAPIView):
     ordering = ['-date']
 
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
     def get_queryset(self):
         qs = super().get_queryset()
         # company-wide read: members with invoice.view see all company invoices
@@ -96,6 +101,119 @@ class InvoiceView(ListAPIView):
         qs.first().delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
+
+from invoice.models import Payment, CreditDebitNote
+
+class LedgerAPIView(APIView):
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'GET': 'report.view'}
+
+    def get(self, request, entity_type, entity_id):
+        # entity_type = 'customer' or 'vendor'
+        date_from = request.query_params.get('start_date')
+        date_to = request.query_params.get('end_date')
+
+        if not date_from or not date_to:
+            return Response({'error': 'start_date and end_date are required'}, status=400)
+            
+        company_q = user_scope_q(request)
+        
+        # Base querysets
+        invoices = Invoice.objects.filter(company_q)
+        payments = Payment.objects.filter(company_q)
+        notes = CreditDebitNote.objects.filter(company_q)
+        
+        if entity_type == 'customer':
+            invoices = invoices.filter(receiver_id=entity_id, invoice_type='sales')
+            payments = payments.filter(customer_id=entity_id)
+            notes = notes.filter(customer_id=entity_id)
+        elif entity_type == 'vendor':
+            invoices = invoices.filter(vendor_id=entity_id, invoice_type='purchase')
+            payments = payments.filter(vendor_id=entity_id)
+            notes = notes.filter(vendor_id=entity_id)
+        else:
+            return Response({'error': 'Invalid entity type'}, status=400)
+            
+        # Calculate Opening Balance (before date_from)
+        prev_invoices = invoices.filter(date__lt=date_from)
+        prev_payments = payments.filter(date__lt=date_from)
+        prev_notes = notes.filter(date__lt=date_from)
+        
+        total_inv = sum([i.total_final_amount or 0 for i in prev_invoices])
+        total_pay_received = sum([p.amount or 0 for p in prev_payments if p.payment_type == 'received'])
+        total_pay_made = sum([p.amount or 0 for p in prev_payments if p.payment_type == 'made'])
+        total_credit = sum([n.amount or 0 for n in prev_notes if n.note_type == 'credit'])
+        total_debit = sum([n.amount or 0 for n in prev_notes if n.note_type == 'debit'])
+        
+        if entity_type == 'customer':
+            opening_balance = float(total_inv) - float(total_pay_received) - float(total_credit) + float(total_debit)
+        else:
+            opening_balance = float(total_inv) - float(total_pay_made) - float(total_debit) + float(total_credit)
+
+        # Transactions in range
+        curr_invoices = invoices.filter(date__range=[date_from, date_to])
+        curr_payments = payments.filter(date__range=[date_from, date_to])
+        curr_notes = notes.filter(date__range=[date_from, date_to])
+        
+        transactions = []
+        for inv in curr_invoices:
+            transactions.append({
+                'date': inv.date.strftime('%Y-%m-%d') if inv.date else None,
+                'particulars': f"Invoice #{inv.invoice_number or 'N/A'}",
+                'vch_type': 'Sales' if entity_type == 'customer' else 'Purchase',
+                'vch_no': inv.invoice_number,
+                'debit': float(inv.total_final_amount or 0) if entity_type == 'customer' else 0,
+                'credit': float(inv.total_final_amount or 0) if entity_type == 'vendor' else 0,
+            })
+            
+        for pay in curr_payments:
+            transactions.append({
+                'date': pay.date.strftime('%Y-%m-%d') if pay.date else None,
+                'particulars': f"Payment {pay.payment_type} ({pay.payment_method or 'N/A'})",
+                'vch_type': 'Receipt' if pay.payment_type == 'received' else 'Payment',
+                'vch_no': pay.reference_number,
+                'debit': float(pay.amount or 0) if (entity_type == 'vendor' and pay.payment_type == 'made') else 0,
+                'credit': float(pay.amount or 0) if (entity_type == 'customer' and pay.payment_type == 'received') else 0,
+            })
+            
+        for note in curr_notes:
+            transactions.append({
+                'date': note.date.strftime('%Y-%m-%d') if note.date else None,
+                'particulars': f"Note ({note.reason or ''})",
+                'vch_type': 'Credit Note' if note.note_type == 'credit' else 'Debit Note',
+                'vch_no': note.note_number,
+                'debit': float(note.amount or 0) if (entity_type == 'customer' and note.note_type == 'debit') or (entity_type == 'vendor' and note.note_type == 'credit') else 0,
+                'credit': float(note.amount or 0) if (entity_type == 'customer' and note.note_type == 'credit') or (entity_type == 'vendor' and note.note_type == 'debit') else 0,
+            })
+            
+        # Sort transactions by date
+        transactions.sort(key=lambda x: x['date'] if x['date'] else '')
+        
+        # Calculate running balance
+        running_balance = float(opening_balance)
+        for t in transactions:
+            if entity_type == 'customer':
+                running_balance = running_balance + t['debit'] - t['credit']
+            else:
+                running_balance = running_balance + t['credit'] - t['debit']
+            t['balance'] = running_balance
+            
+        total_sales = sum(t['debit'] for t in transactions if t['vch_type'] == 'Sales')
+        total_receipts = sum(t['credit'] for t in transactions if t['vch_type'] == 'Receipt')
+        total_purchases = sum(t['credit'] for t in transactions if t['vch_type'] == 'Purchase')
+        total_payments_made = sum(t['debit'] for t in transactions if t['vch_type'] == 'Payment')
+        
+        return Response({
+            'opening_balance': opening_balance,
+            'closing_balance': running_balance,
+            'transactions': transactions,
+            'total_sales': total_sales,
+            'total_receipts': total_receipts,
+            'total_purchases': total_purchases,
+            'total_payments_made': total_payments_made
+        })
+
+
 class Invoice_update(APIView):
     permission_classes = [IsAuthenticated, HasMethodPermission]
     required_permissions_map = {'POST': 'invoice.update'}
@@ -105,7 +223,7 @@ class Invoice_update(APIView):
         if not obj.exists():
             return Response({'message': 'id not found'}, status=status.HTTP_404_NOT_FOUND)
         print(request.data)
-        serializer = InvoiceSerializer(obj.first(), data=request.data)
+        serializer = InvoiceSerializer(obj.first(), data=request.data, partial=True)
 
         if serializer.is_valid():
             serializer.save()

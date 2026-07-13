@@ -4,12 +4,12 @@ from rest_framework.routers import DefaultRouter
 from .pipline import InvoiceExtractAPIView, InvoiceExtractionStatusAPIView, InvoiceExtractionPendingJobsAPIView, InvoiceExtractionCallbackAPIView, AdminInvoiceExtractAPIView
 from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
     new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport, \
-    CustomFieldViewSet
+    CustomFieldViewSet, LedgerAPIView
 
 router = DefaultRouter()
 router.register(r'custom-fields', CustomFieldViewSet, basename='custom-field')
 
-from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView
+from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView
 
 urlpatterns = [
     path('invoice/', InvoiceView.as_view()),
@@ -30,6 +30,8 @@ urlpatterns = [
     path('pdf/', PdfMaker.as_view()),
     path('bulk_export/', BulkExport.as_view()),
     path('cash-flow/', CashFlowReportAPIView.as_view()),
+    path('gst-summary/', GSTSummaryAPIView.as_view()),
+    path('ledger/<str:entity_type>/<int:entity_id>/', LedgerAPIView.as_view()),
     path('purchase-summary/', PurchaseInvoiceSummaryAPIView.as_view()),
     path('purchase/upload/', InvoiceExtractAPIView.as_view()),
     path('purchase/upload-admin/', AdminInvoiceExtractAPIView.as_view()),

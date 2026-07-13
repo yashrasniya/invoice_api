@@ -164,3 +164,53 @@ class PurchaseInvoiceSummaryAPIView(APIView):
             "this_month_count": this_month_count,
             "recent_purchases": recent_data
         })
+
+class GSTSummaryAPIView(APIView):
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'GET': 'report.view'}
+
+    def get(self, request):
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+
+        if not start_date_str or not end_date_str:
+            return Response({'error': 'start_date and end_date are required'}, status=400)
+
+        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+
+        invoices = Invoice.objects.filter(
+            user_scope_q(request),
+            date__range=[start_date, end_date]
+        )
+
+        sales_invoices = invoices.filter(invoice_type='sales')
+        purchase_invoices = invoices.filter(invoice_type='purchase')
+
+        # Aggregate Sales
+        sales_data = sales_invoices.aggregate(
+            total_final=Sum('total_final_amount'),
+            total_gst=Sum('gst_final_amount')
+        )
+        sales_total = sales_data['total_final'] or 0
+        sales_gst = sales_data['total_gst'] or 0
+        sales_taxable = float(sales_total) - float(sales_gst)
+
+        # Aggregate Purchases
+        purchases_data = purchase_invoices.aggregate(
+            total_final=Sum('total_final_amount'),
+            total_gst=Sum('gst_final_amount')
+        )
+        purchases_total = purchases_data['total_final'] or 0
+        purchases_gst = purchases_data['total_gst'] or 0
+        purchases_taxable = float(purchases_total) - float(purchases_gst)
+
+        net_gst = float(sales_gst) - float(purchases_gst)
+
+        return Response({
+            'total_sales_taxable': float(sales_taxable),
+            'total_purchases_taxable': float(purchases_taxable),
+            'output_gst': float(sales_gst),
+            'input_gst': float(purchases_gst),
+            'net_gst_payable': float(net_gst)
+        })

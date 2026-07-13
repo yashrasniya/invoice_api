@@ -7,7 +7,10 @@ from django.utils import timezone
 from accounts.models import User
 
 
-class Invoice(models.Model):
+from invoice_api.softdelete import SoftDeleteModel
+
+
+class Invoice(SoftDeleteModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     invoice_number = models.CharField(max_length=30,blank=True,null=True)
     receiver = models.ForeignKey('companies.Customers', on_delete=models.CASCADE,blank=True,null=True)
@@ -66,7 +69,7 @@ class Product_properties(models.Model):
     value = models.CharField(max_length=200,blank=True,null=True)
 
 
-class new_product_in_frontend(models.Model):
+class new_product_in_frontend(SoftDeleteModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     input_title = models.CharField(max_length=30, blank=True)
     size = models.DecimalField(max_digits=20,decimal_places=2)
@@ -103,7 +106,7 @@ class InvoiceExtractionLog(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
-class CustomField(models.Model):
+class CustomField(SoftDeleteModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='custom_fields')
     company = models.ForeignKey('accounts.UserCompanies', on_delete=models.CASCADE, null=True, blank=True, related_name='custom_fields')
     name = models.CharField(max_length=100)
@@ -131,4 +134,59 @@ class CustomField(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.company.company_name if self.company else self.user.username})"
+
+class Payment(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    company = models.ForeignKey('accounts.UserCompanies', on_delete=models.CASCADE, null=True, blank=True)
+    
+    PAYMENT_TYPE_CHOICES = [
+        ('received', 'Received'),
+        ('made', 'Made')
+    ]
+    payment_type = models.CharField(max_length=20, choices=PAYMENT_TYPE_CHOICES, default='received')
+    
+    amount = models.DecimalField(max_digits=20, decimal_places=2)
+    date = models.DateField(default=timezone.now)
+    
+    payment_method = models.CharField(
+        max_length=20, choices=Invoice.PAYMENT_METHOD_CHOICES, blank=True, null=True)
+        
+    reference_number = models.CharField(max_length=100, blank=True, null=True)
+    
+    customer = models.ForeignKey('companies.Customers', on_delete=models.CASCADE, blank=True, null=True)
+    vendor = models.ForeignKey('companies.Vendor', on_delete=models.CASCADE, blank=True, null=True)
+    invoice = models.ForeignKey('Invoice', on_delete=models.SET_NULL, blank=True, null=True, related_name='payments')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def save(self, *args, **kwargs):
+        if not self.company and hasattr(self, 'user') and self.user and hasattr(self.user, 'user_company') and self.user.user_company:
+            self.company = self.user.user_company
+        super().save(*args, **kwargs)
+
+class CreditDebitNote(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    company = models.ForeignKey('accounts.UserCompanies', on_delete=models.CASCADE, null=True, blank=True)
+    
+    NOTE_TYPE_CHOICES = [
+        ('credit', 'Credit Note'),
+        ('debit', 'Debit Note')
+    ]
+    note_type = models.CharField(max_length=20, choices=NOTE_TYPE_CHOICES, default='credit')
+    note_number = models.CharField(max_length=50, blank=True, null=True)
+    
+    amount = models.DecimalField(max_digits=20, decimal_places=2)
+    date = models.DateField(default=timezone.now)
+    reason = models.TextField(blank=True, null=True)
+    
+    customer = models.ForeignKey('companies.Customers', on_delete=models.CASCADE, blank=True, null=True)
+    vendor = models.ForeignKey('companies.Vendor', on_delete=models.CASCADE, blank=True, null=True)
+    invoice = models.ForeignKey('Invoice', on_delete=models.SET_NULL, blank=True, null=True, related_name='notes')
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    def save(self, *args, **kwargs):
+        if not self.company and hasattr(self, 'user') and self.user and hasattr(self.user, 'user_company') and self.user.user_company:
+            self.company = self.user.user_company
+        super().save(*args, **kwargs)
 
