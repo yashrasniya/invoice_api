@@ -1,16 +1,30 @@
+from django.core.exceptions import ValidationError
 from django.db import models
 
+
 class Category(models.Model):
-    name = models.CharField(max_length=255, unique=True)
+    company = models.ForeignKey(
+        'accounts.UserCompanies', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='inventory_categories')
+    name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
 
     class Meta:
         verbose_name_plural = "Categories"
+        constraints = [
+            # unique per company, not globally
+            models.UniqueConstraint(fields=['company', 'name'],
+                                    name='uniq_category_per_company'),
+        ]
 
     def __str__(self):
         return self.name
 
+
 class Supplier(models.Model):
+    company = models.ForeignKey(
+        'accounts.UserCompanies', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='inventory_suppliers')
     name = models.CharField(max_length=255)
     contact_person = models.CharField(max_length=255, blank=True, null=True)
     email = models.EmailField(blank=True, null=True)
@@ -21,8 +35,12 @@ class Supplier(models.Model):
     def __str__(self):
         return self.name
 
+
 class Product(models.Model):
-    sku = models.CharField(max_length=100, unique=True)
+    company = models.ForeignKey(
+        'accounts.UserCompanies', on_delete=models.CASCADE,
+        null=True, blank=True, related_name='inventory_products')
+    sku = models.CharField(max_length=100)
     name = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
     category = models.ForeignKey(Category, on_delete=models.SET_NULL, null=True, related_name='products')
@@ -34,8 +52,16 @@ class Product(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        constraints = [
+            # SKU unique per company, not globally
+            models.UniqueConstraint(fields=['company', 'sku'],
+                                    name='uniq_sku_per_company'),
+        ]
+
     def __str__(self):
         return f"{self.name} ({self.sku})"
+
 
 class StockMovement(models.Model):
     MOVEMENT_CHOICES = (
@@ -51,10 +77,14 @@ class StockMovement(models.Model):
     def __str__(self):
         return f"{self.movement_type} - {self.quantity} x {self.product.name}"
 
+    def clean(self):
+        if self.quantity is None or self.quantity <= 0:
+            raise ValidationError({'quantity': 'Quantity must be a positive number.'})
+
     def save(self, *args, **kwargs):
         is_new = self.pk is None
         super().save(*args, **kwargs)
-        
+
         # We only want to adjust stock on creation, skip on updates for safety
         if is_new:
             if self.movement_type == 'IN':
@@ -62,3 +92,13 @@ class StockMovement(models.Model):
             elif self.movement_type == 'OUT':
                 self.product.current_stock -= self.quantity
             self.product.save()
+
+    def delete(self, *args, **kwargs):
+        # reverse the stock adjustment so deleting a movement doesn't leave
+        # phantom stock changes behind
+        if self.movement_type == 'IN':
+            self.product.current_stock -= self.quantity
+        elif self.movement_type == 'OUT':
+            self.product.current_stock += self.quantity
+        self.product.save()
+        super().delete(*args, **kwargs)
