@@ -238,6 +238,18 @@ class YamlView(APIView):
         
         company = request.user.user_company if not self.request.user.is_superuser else None
         
+        description = request.data.get("description", "")
+        if description is None:
+            description = ""
+            
+        page_size = request.data.get("page_size", "A4")
+        if page_size is None:
+            page_size = "A4"
+            
+        version = request.data.get("version", "1.0")
+        if version is None:
+            version = "1.0"
+        
         obj = Yaml.objects.create(
             user=request.user,
             company=company,
@@ -246,7 +258,10 @@ class YamlView(APIView):
             elements=elements,
             is_global=is_global,
             global_category=global_category,
-            is_published=is_published
+            is_published=is_published,
+            description=description,
+            page_size=page_size,
+            version=version
         )
         
         if is_html:
@@ -427,6 +442,9 @@ class CloneGlobalTemplateView(APIView):
             is_default=False,
             is_global=False,
             global_category='',
+            description=source.description if source.description is not None else '',
+            page_size=source.page_size if source.page_size is not None else 'A4',
+            version=source.version if source.version is not None else '1.0',
         )
         clone.save()
 
