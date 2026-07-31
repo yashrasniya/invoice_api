@@ -10,6 +10,7 @@ router = DefaultRouter()
 router.register(r'custom-fields', CustomFieldViewSet, basename='custom-field')
 
 from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView
+from .sales_report_views import SalesReportAPIView
 
 urlpatterns = [
     path('invoice/', InvoiceView.as_view()),
@@ -29,6 +30,7 @@ urlpatterns = [
     # pdf
     path('pdf/', PdfMaker.as_view()),
     path('bulk_export/', BulkExport.as_view()),
+    path('sales-report/', SalesReportAPIView.as_view()),
     path('cash-flow/', CashFlowReportAPIView.as_view()),
     path('gst-summary/', GSTSummaryAPIView.as_view()),
     path('ledger/<str:entity_type>/<int:entity_id>/', LedgerAPIView.as_view()),

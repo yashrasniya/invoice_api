@@ -62,6 +62,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
     receiver_name = serializers.SerializerMethodField()
     receiver_gst_number = serializers.SerializerMethodField()
+    receiver_state = serializers.SerializerMethodField()
     vendor_name = serializers.SerializerMethodField()
     vendor_gst_number = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
@@ -75,6 +76,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'receiver',
             'receiver_name',
             'receiver_gst_number',
+            'receiver_state',
             'vendor',
             'vendor_name',
             'vendor_gst_number',
@@ -100,6 +102,11 @@ class InvoiceSerializer(serializers.ModelSerializer):
     def get_receiver_gst_number(self,obj):
         if obj.receiver:
             return obj.receiver.gst_number
+        return ''
+
+    def get_receiver_state(self, obj):
+        if obj.receiver:
+            return obj.receiver.state
         return ''
 
     def get_vendor_name(self, obj):
