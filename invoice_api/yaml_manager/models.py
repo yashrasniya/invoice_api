@@ -20,6 +20,13 @@ class Yaml(models.Model):
     elements = models.JSONField(null=True, blank=True)
     # company default for PDF export (one per company, enforced in the view)
     is_default = models.BooleanField(default=False)
+    # Global template gallery fields
+    is_global = models.BooleanField(default=False, help_text="If True, this template appears in the public gallery for all users.")
+    global_category = models.CharField(max_length=100, blank=True, default='', help_text="Gallery category, e.g. Retail, Services, Freelance")
+    is_published = models.BooleanField(default=False, help_text="If False, it remains a draft and is hidden from the public gallery even if is_global=True.")
+    description = models.TextField(blank=True, default='', help_text="Detailed description of the template.")
+    page_size = models.CharField(max_length=50, default='A4', help_text="Page size (e.g., A4, Letter).")
+    version = models.CharField(max_length=50, default='1.0', help_text="Version label.")
 
     def __str__(self):
         if self.template_name != "Untitled Template":

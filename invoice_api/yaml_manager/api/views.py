@@ -12,7 +12,7 @@ import os
 
 from invoice_api.permissions import HasMethodFeature, HasMethodPermission
 
-from yaml_manager.api.serializer import Yaml_serializers
+from yaml_manager.api.serializer import Yaml_serializers, GlobalTemplateSerializer
 from yaml_manager.models import Yaml, YamlVersion
 from yaml_reader import YamalReader, FillValue
 import uuid
@@ -55,8 +55,12 @@ class YamlView(APIView):
                 version_id = request.query_params.get("version_id")
                 if version_id:
                     version_obj = first_obj.versions.filter(id=version_id).first()
-                    if version_obj:
-                        html_content = version_obj.version_data
+                else:
+                    version_obj = first_obj.versions.first()
+                    
+                if version_obj:
+                    html_content = version_obj.version_data
+                    
                 if not html_content and first_obj.yaml_file:
                     first_obj.yaml_file.file.seek(0)
                     html_content = first_obj.yaml_file.file.read().decode('utf-8')
@@ -91,17 +95,24 @@ class YamlView(APIView):
         # Non-HTML / YAML workflow
         version_id = request.query_params.get("version_id")
         template = None
+        
         if version_id:
             version_obj = first_obj.versions.filter(id=version_id).first()
-            if version_obj:
-                try:
-                    yaml_data = yaml.safe_load(version_obj.version_data)
-                    template = YamalReader(yaml_raw_data=yaml_data)
-                except yaml.YAMLError:
-                    pass
-                    
-        if not template:
-            template = YamalReader(first_obj.yaml_file.file)
+        else:
+            version_obj = first_obj.versions.first()
+            
+        if version_obj:
+            try:
+                yaml_data = yaml.safe_load(version_obj.version_data)
+                template = YamalReader(yaml_raw_data=yaml_data)
+            except yaml.YAMLError:
+                pass
+                
+        if not template and first_obj.yaml_file:
+            try:
+                template = YamalReader(first_obj.yaml_file.file)
+            except Exception as e:
+                logger.error(f"Error reading YAML file in GET: {e}")
 
         if self.request.user.is_staff:
             user_company_obj = first_obj.company
@@ -183,15 +194,16 @@ class YamlView(APIView):
             ext = ".yaml"
             
         YamlVersion.objects.create(yaml=obj, version_data=file_content)
-        try:
-            limit = int(os.getenv('TEMPLATE_VERSION_LIMIT', 50))
-        except ValueError:
-            limit = 50
-            
-        versions = obj.versions.all()
-        if versions.count() > limit:
-            versions_to_delete = versions[limit:].values_list('id', flat=True)
-            YamlVersion.objects.filter(id__in=list(versions_to_delete)).delete()
+        if not obj.is_global:
+            try:
+                limit = int(os.getenv('TEMPLATE_VERSION_LIMIT', 50))
+            except ValueError:
+                limit = 50
+                
+            versions = obj.versions.all()
+            if versions.count() > limit:
+                versions_to_delete = versions[limit:].values_list('id', flat=True)
+                YamlVersion.objects.filter(id__in=list(versions_to_delete)).delete()
         
         if template_name:
             obj.template_name = template_name
@@ -220,14 +232,21 @@ class YamlView(APIView):
         is_html = request.data.get("is_html", False)
         elements = request.data.get("elements", None)
         
-        company = request.user.user_company if not self.request.user.is_staff else None
+        is_global = request.data.get("is_global", False) if self.request.user.is_superuser else False
+        global_category = request.data.get("global_category", "") if self.request.user.is_superuser else ""
+        is_published = request.data.get("is_published", False) if self.request.user.is_superuser else False
+        
+        company = request.user.user_company if not self.request.user.is_superuser else None
         
         obj = Yaml.objects.create(
             user=request.user,
             company=company,
             template_name=template_name,
             is_html=is_html,
-            elements=elements
+            elements=elements,
+            is_global=is_global,
+            global_category=global_category,
+            is_published=is_published
         )
         
         if is_html:
@@ -242,6 +261,23 @@ class YamlView(APIView):
         
         return Response({"id": obj.id, "message": "created successfully"}, status=201)
 
+    def delete(self, request):
+        if self.request.user.is_staff:
+            yaml_obj = Yaml.objects.filter()
+        else:
+            yaml_obj = Yaml.objects.filter(company=request.user.user_company.id)
+            
+        yaml_id = request.query_params.get("id", None)
+        if not yaml_id:
+            return Response({"error": "Missing ID"}, status=status.HTTP_400_BAD_REQUEST)
+            
+        obj = yaml_obj.filter(id=yaml_id).first()
+        if not obj:
+            return Response({"error": "Not Found"}, status=status.HTTP_404_NOT_FOUND)
+            
+        obj.delete()
+        return Response({"message": "Template deleted successfully."}, status=status.HTTP_204_NO_CONTENT)
+
 class YamlListView(ListAPIView):
     permission_classes = [IsAuthenticated]
     serializer_class = Yaml_serializers
@@ -252,22 +288,182 @@ class YamlListView(ListAPIView):
         return Yaml.objects.filter(company=self.request.user.user_company.id)
 
 class YamlSetDefaultView(APIView):
-    """Mark a company template as the default for PDF export.
-    POST /api/yaml/<id>/set-default/  (permission: template.manage;
-    no plan feature needed — it's configuration, not designing)."""
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    permission_classes = [IsAuthenticated, HasMethodFeature, HasMethodPermission]
+    required_features_map = {'POST': 'template_designer'}
     required_permissions_map = {'POST': 'template.manage'}
 
     def post(self, request, id):
-        company = request.user.user_company
-        template = Yaml.objects.filter(id=id, company=company).first()
-        if template is None:
-            return Response({'error': 'Template not found in your company.'},
-                            status=status.HTTP_400_BAD_REQUEST)
-        Yaml.objects.filter(company=company, is_default=True).update(is_default=False)
+        template = Yaml.objects.filter(id=id, company=request.user.user_company).first()
+        if not template:
+            return Response({'error': 'Template not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        # Unset others
+        Yaml.objects.filter(company=request.user.user_company).update(is_default=False)
+        # Set this one
         template.is_default = True
         template.save(update_fields=['is_default'])
         return Response({'id': template.id, 'is_default': True})
+
+
+class YamlTogglePublishView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, id):
+        if not request.user.is_superuser:
+            return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        template = Yaml.objects.filter(id=id).first()
+        if not template:
+            return Response({'error': 'Template not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        template.is_published = not template.is_published
+        template.save(update_fields=['is_published'])
+        return Response({'id': template.id, 'is_published': template.is_published})
+
+
+class YamlMetadataUpdateView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request, id):
+        if not request.user.is_superuser:
+            return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        template = Yaml.objects.filter(id=id).first()
+        if not template:
+            return Response({'error': 'Template not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        if 'is_published' in request.data:
+            # handle string "true" / "false" from form data if necessary
+            val = request.data.get('is_published')
+            template.is_published = val == 'true' or val is True
+            
+        if 'template_name' in request.data:
+            template.template_name = request.data.get('template_name')
+            
+        if 'global_category' in request.data:
+            template.global_category = request.data.get('global_category')
+            
+        if 'description' in request.data:
+            template.description = request.data.get('description')
+            
+        if 'page_size' in request.data:
+            template.page_size = request.data.get('page_size')
+            
+        if 'version' in request.data:
+            template.version = request.data.get('version')
+            
+        if 'pdf_template' in request.FILES:
+            template.pdf_template = request.FILES['pdf_template']
+            
+        template.save()
+        return Response({'id': template.id, 'message': 'Metadata updated successfully'})
+
+
+class AdminGlobalTemplateListView(ListAPIView):
+    """GET /api/yaml/admin-list/ — browse all global templates including drafts (Superuser only)."""
+    permission_classes = [IsAuthenticated]
+    serializer_class = GlobalTemplateSerializer
+
+    def get_queryset(self):
+        if not self.request.user.is_superuser:
+            return Yaml.objects.none()
+        return Yaml.objects.filter(is_global=True).order_by('-id')
+
+
+class AdminGlobalTemplateDetailView(APIView):
+    """GET /api/yaml/admin-detail/<id>/ — get single global template with metadata (Superuser only)."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        if not request.user.is_superuser:
+            return Response({'error': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        template = Yaml.objects.filter(id=id, is_global=True).first()
+        if not template:
+            return Response({'error': 'Template not found.'}, status=status.HTTP_404_NOT_FOUND)
+            
+        serializer = GlobalTemplateSerializer(template, context={'request': request})
+        return Response(serializer.data)
+
+
+class GlobalTemplateGalleryView(ListAPIView):
+    """GET /api/yaml/gallery/ — browse all global templates.
+    Any authenticated user can view the gallery. Optional ?category= filter."""
+    permission_classes = [IsAuthenticated]
+    serializer_class = GlobalTemplateSerializer
+
+    def get_queryset(self):
+        qs = Yaml.objects.filter(is_global=True, is_published=True)
+        category = self.request.query_params.get('category')
+        if category:
+            qs = qs.filter(global_category__iexact=category)
+        return qs.order_by('-id')
+
+
+class CloneGlobalTemplateView(APIView):
+    """POST /api/yaml/gallery/<id>/clone/ — copy a global template
+    into the requesting user's company templates."""
+    permission_classes = [IsAuthenticated, HasMethodFeature, HasMethodPermission]
+    required_features_map = {'POST': 'template_designer'}
+    required_permissions_map = {'POST': 'template.manage'}
+
+    def post(self, request, id):
+        source = Yaml.objects.filter(id=id, is_global=True).first()
+        if source is None:
+            return Response({'error': 'Global template not found.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        company = request.user.user_company if not request.user.is_staff else None
+
+        # Create the clone
+        clone = Yaml(
+            template_name=f"{source.template_name}",
+            user=request.user,
+            company=company,
+            auto_scale=source.auto_scale,
+            auto_save=source.auto_save,
+            is_html=source.is_html,
+            elements=source.elements,
+            is_default=False,
+            is_global=False,
+            global_category='',
+        )
+        clone.save()
+
+        # Duplicate the yaml_file
+        print(source.yaml_file)
+        if source.yaml_file:
+            try:
+                source.yaml_file.file.seek(0)
+                file_content = source.yaml_file.file.read()
+                ext = '.html' if source.is_html else '.yaml'
+                clone.yaml_file.save(f"{uuid.uuid4()}{ext}",
+                                     ContentFile(file_content), save=True)
+                
+            except Exception as e:
+                logger.error(f"Error cloning yaml_file: {e}")
+
+        # Duplicate the pdf_template (preview thumbnail)
+        if source.pdf_template:
+            try:
+                source.pdf_template.file.seek(0)
+                thumb_content = source.pdf_template.file.read()
+                thumb_ext = os.path.splitext(source.pdf_template.name)[1] or '.jpg'
+                clone.pdf_template.save(f"{uuid.uuid4()}{thumb_ext}",
+                                        ContentFile(thumb_content), save=True)
+            except Exception as e:
+                logger.error(f"Error cloning pdf_template: {e}")
+
+        # Copy the latest version as the first version of the clone
+        latest_version = source.versions.first()
+        if latest_version:
+            YamlVersion.objects.create(yaml=clone, version_data=latest_version.version_data)
+
+        return Response({
+            'id': clone.id,
+            'template_name': clone.template_name,
+            'message': 'Template cloned successfully.',
+        }, status=status.HTTP_201_CREATED)
 
 
 class ImageUploadView(APIView):
