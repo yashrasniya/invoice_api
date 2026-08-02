@@ -91,7 +91,11 @@ class CompanySubscription(models.Model):
         return f"{self.company} → {self.subscription_plan} ({self.status})"
 
     def is_working(self):
-        today = timezone.now().date()
+        # localdate(), not now().date(): with USE_TZ and TIME_ZONE='Asia/Kolkata'
+        # the latter yields the UTC date, so between 00:00 and 05:30 IST a
+        # subscription starting today reads as not-yet-started and a customer
+        # who just paid is locked out of the plan they bought.
+        today = timezone.localdate()
         if self.status in ('active', 'trialing'):
             return self.start_date <= today <= self.end_date
         if self.status == 'past_due':  # grace period

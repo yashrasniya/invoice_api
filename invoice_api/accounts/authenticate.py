@@ -17,8 +17,6 @@ def enforce_csrf(request):
 
 class CustomAuthentication(JWTAuthentication):
     def authenticate(self, request):
-        if 'login' in request.build_absolute_uri().split('/'):
-            return None
         header = self.get_header(request)
 
         if header is None:
@@ -68,6 +66,14 @@ class ServiceTokenAuthentication(BaseAuthentication):
 
         if not service_token:
             raise AuthenticationFailed("Invalid token")
+            
+        from invoice_api.middleware import get_active_subscription, get_enabled_features
+        company = getattr(service_token.user, 'user_company', None)
+        if company:
+            sub = get_active_subscription(company)
+            features = get_enabled_features(sub)
+            if 'api_access' not in features:
+                raise AuthenticationFailed("Your plan does not include API access.")
 
         return (service_token.user, None)
 

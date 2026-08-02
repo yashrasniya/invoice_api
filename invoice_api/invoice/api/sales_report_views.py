@@ -6,12 +6,12 @@ from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
-from invoice_api.permissions import HasMethodPermission
+from invoice_api.permissions import HasMethodPermission, HasFeature
 from invoice_api.scoping import user_scope_q
 from invoice.models import Invoice, CreditDebitNote
 
 class SalesReportAPIView(APIView):
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('advanced_reports')]
     required_permissions_map = {'GET': 'report.view'}
 
     def get(self, request):

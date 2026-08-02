@@ -18,7 +18,8 @@ from rest_framework.parsers import MultiPartParser, FormParser
 
 from accounts.models import ServiceToken, User
 from accounts.authenticate import AdminJWTTokenAuthentication
-from invoice_api.permissions import HasMethodPermission
+from invoice_api.permissions import HasMethodPermission, HasFeature
+from invoice_api.limits import enforce_limit
 from invoice.all_serializers.pipline_seriallzers import InvoiceUploadSerializer
 from invoice.models import InvoiceExtractionLog
 
@@ -26,7 +27,7 @@ from invoice.models import InvoiceExtractionLog
 class InvoiceExtractAPIView(APIView):
 
     parser_classes = [MultiPartParser, FormParser]
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('purchases_invoice')]
     required_permissions_map = {'POST': 'invoice.create'}
     serializer_class = InvoiceUploadSerializer
     @swagger_auto_schema(
@@ -61,6 +62,17 @@ class InvoiceExtractAPIView(APIView):
                     {"error": "File is required"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+
+            # -----------------------------------
+            # Plan Limit Check
+            # -----------------------------------
+            today = timezone.now().date()
+            month_count = InvoiceExtractionLog.objects.filter(
+                user__user_company=getattr(request, 'company', None),
+                created_at__year=today.year,
+                created_at__month=today.month
+            ).count()
+            enforce_limit(request, 'ocr_purchase_invoice', 'ocr_scans_per_month', month_count)
 
             # -----------------------------------
             # Daily Limit Check
@@ -216,7 +228,8 @@ class InvoiceExtractAPIView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 class InvoiceExtractionStatusAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('purchases_invoice')]
+    required_permissions_map = {'GET': 'invoice.view'}
 
     @swagger_auto_schema(
         operation_description="Check extraction job status",
@@ -267,7 +280,8 @@ class InvoiceExtractionStatusAPIView(APIView):
             )
 
 class InvoiceExtractionPendingJobsAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('purchases_invoice')]
+    required_permissions_map = {'GET': 'invoice.view'}
 
     @swagger_auto_schema(
         operation_description="Get all pending extraction jobs for the user",
@@ -369,5 +383,4 @@ class InvoiceExtractionCallbackAPIView(APIView):
 
 class AdminInvoiceExtractAPIView(InvoiceExtractAPIView):
     authentication_classes = [AdminJWTTokenAuthentication]
-    permission_classes = [IsAuthenticated]
 

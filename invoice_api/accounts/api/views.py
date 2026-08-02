@@ -232,8 +232,9 @@ class Profile(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self,request):
-        user_detail.update(user_detail(),request.user,validated_data=request.data)
-
+        s = user_detail(request.user, data=request.data, partial=True)
+        s.is_valid(raise_exception=True)
+        s.save()
         return Response(user_detail(request.user,context={'request':request}).data)
 
     def get(self,request):
@@ -272,73 +273,65 @@ class ContactUs(APIView):
 
 
 class UserInfo(APIView):
+    """Dashboard KPI header.
+
+    Sales/GST totals cover *sales* invoices only (purchases are excluded so
+    they can no longer inflate revenue), and growth percentages are `None`
+    when the comparison period has no data, rather than a fabricated number
+    derived from a placeholder denominator.
+    """
     permission_classes = [IsAuthenticated]
 
-    def get(self,request):
-        from datetime import date
-        from calendar import monthrange
+    EMPTY = {
+        'month_total_final_amount': 0, 'month_gst_final_amount': 0,
+        'prv_total_final_amount': 0, 'prv_gst_final_amount': 0,
+        'percentage_change': None, 'percentage_gst_amount': None,
+        'invoices_this_month_count': 0, 'invoices_prv_month_count': 0,
+        'receivable_amount': 0, 'receivable_count': 0,
+        'overdue_amount': 0, 'overdue_count': 0, 'overdue_after_days': 0,
+        'range': 'this_month', 'range_label': '', 'has_any_invoice': False,
+    }
+
+    def get(self, request):
+        from invoice_api.dashboard import (
+            period_bounds, pct_change, sales_totals, outstanding_totals)
         from invoice_api.scoping import user_scope_q
+
+        name = str(request.user.name())
 
         # no invoice.view → no invoice KPIs (return zeros, keep the name)
         if 'invoice.view' not in (getattr(request, 'permissions', None) or set()):
-            return Response({
-                'name': request.user.name(),
-                'month_total_final_amount': 0, 'month_gst_final_amount': 0,
-                'percentage_change': 0, 'percentage_gst_amount': 0,
-                'invoices_this_month_count': 0, 'invoices_prv_month_count': 0,
-            })
+            return Response({'name': name, **self.EMPTY})
 
-        today = date.today()
+        rng = request.query_params.get('range') or 'this_month'
+        (start, end), (prev_start, prev_end), label = period_bounds(rng)
 
-        # Current month start and end
-        current_month_start = today.replace(day=1)
-        current_month_end = today.replace(day=monthrange(today.year, today.month)[1])
+        scope = user_scope_q(request)
+        base = Invoice.objects.filter(scope, invoice_type='sales')
 
-        # Previous month start and end
-        if today.month == 1:
-            prev_month_year = today.year - 1
-            prev_month = 12
-        else:
-            prev_month_year = today.year
-            prev_month = today.month - 1
-
-        prev_month_start = date(prev_month_year, prev_month, 1)
-        prev_month_end = date(prev_month_year, prev_month, monthrange(prev_month_year, prev_month)[1])
-
-        # Queries
-        invoices = Invoice.objects.filter(
-            user_scope_q(request),   # company-wide, consistent with invoice list
-            date__gte=current_month_start,
-            date__lte=current_month_end
-        )
-
-        invoices_prv = Invoice.objects.filter(
-            user_scope_q(request),
-            date__gte=prev_month_start,
-            date__lte=prev_month_end
-        )
-
-        month_total_final_amount = round(sum([i[0] for i in invoices.values_list('total_final_amount', ) if i[0]]))
-        month_gst_final_amount = round(sum([i[0] for i in invoices.values_list('gst_final_amount', ) if i[0]]))
-        prv_total_final_amount = round(sum([i[0] for i in invoices_prv.values_list('total_final_amount',) if i[0]  ]))
-        prv_gst_final_amount = round(sum([i[0] for i in invoices_prv.values_list('gst_final_amount',) if i[0]  ]))
-        prv_total_final_amount = 1 if prv_total_final_amount == 0 else prv_total_final_amount
-        prv_gst_final_amount = 1 if prv_gst_final_amount == 0 else prv_gst_final_amount
-        month_gst_final_amount = 1 if month_gst_final_amount == 0 else month_gst_final_amount
-        month_total_final_amount = 1 if month_total_final_amount == 0 else month_total_final_amount
-        percentage_change_sale = ((month_total_final_amount - prv_total_final_amount) / prv_total_final_amount) * 100
-        percentage_gst_amount = ((month_gst_final_amount - prv_gst_final_amount) / prv_gst_final_amount) * 100
+        cur = sales_totals(base, start, end)
+        prv = sales_totals(base, prev_start, prev_end)
+        outstanding = outstanding_totals(base)
+        # "have they ever billed anything" drives the first-run screen, so
+        # ask across all invoice types — a purchase-only tenant is not a
+        # brand-new account and shouldn't be shown the onboarding empty state
+        has_any = Invoice.objects.filter(scope).exists()
 
         return Response({
-            "name":str(request.user.name()),
-            "month_total_final_amount":month_total_final_amount,
-            "prv_total_final_amount":prv_total_final_amount,
-            "percentage_change":percentage_change_sale,
-            "month_gst_final_amount":month_gst_final_amount,
-            "prv_gst_final_amount":prv_gst_final_amount,
-            "percentage_gst_amount":percentage_gst_amount,
-            "invoices_prv_month_count":invoices_prv.count(),
-            "invoices_this_month_count":invoices.count(),
+            "name": name,
+            "range": rng,
+            "range_label": label,
+            "month_total_final_amount": cur['total'],
+            "month_gst_final_amount": cur['gst'],
+            "prv_total_final_amount": prv['total'],
+            "prv_gst_final_amount": prv['gst'],
+            # None (not 0, not a fake %) when there is nothing to compare to
+            "percentage_change": pct_change(cur['total'], prv['total']),
+            "percentage_gst_amount": pct_change(cur['gst'], prv['gst']),
+            "invoices_this_month_count": cur['count'],
+            "invoices_prv_month_count": prv['count'],
+            **outstanding,
+            "has_any_invoice": has_any,
         })
 
 class UserCompaniesViewSet(

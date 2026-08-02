@@ -54,6 +54,9 @@ class AuthzTestCase(APITestCase):
         feat, _ = Feature.objects.get_or_create(
             code='whatsapp_integration', defaults={'name': 'WhatsApp'})
         PlanFeature.objects.create(subscription_plan=self.plan, feature=feat)
+        feat_purchase, _ = Feature.objects.get_or_create(
+            code='purchases_invoice', defaults={'name': 'Purchase Invoices'})
+        PlanFeature.objects.create(subscription_plan=self.plan, feature=feat_purchase)
         today = timezone.now().date()
         self.sub = CompanySubscription.objects.create(
             company=self.company_a, subscription_plan=self.plan,

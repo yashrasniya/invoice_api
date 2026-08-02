@@ -20,12 +20,13 @@ class CompaniesView(ListAPIView):
     required_permissions_map = {'POST': 'customer.manage',
                                 'DELETE': 'customer.manage'}
     pagination_class = MyPaginator
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name']
-
+    ordering_fields = ['id', 'name']
+    ordering = ['-id']
 
     def get_queryset(self):
-        return Customers.objects.filter(user_scope_q(self.request)).order_by('id')
+        return Customers.objects.filter(user_scope_q(self.request))
 
     def post(self,request,*args,**kwargs):
         print(request.POST)
@@ -57,12 +58,13 @@ class VendorView(ListAPIView):
     required_permissions_map = {'POST': 'vendor.manage',
                                 'DELETE': 'vendor.manage'}
     pagination_class = MyPaginator
-    filter_backends = [filters.SearchFilter]
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['name']
-
+    ordering_fields = ['id', 'name']
+    ordering = ['-id']
 
     def get_queryset(self):
-        return Vendor.objects.filter(user_scope_q(self.request)).order_by('id')
+        return Vendor.objects.filter(user_scope_q(self.request))
 
     def post(self,request,*args,**kwargs):
         print(request.POST)

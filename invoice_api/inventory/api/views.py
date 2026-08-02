@@ -3,19 +3,20 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 
-from invoice_api.permissions import HasFeature
+from invoice_api.permissions import HasFeature, HasPermission
 
 from inventory.models import Category, Supplier, Product, StockMovement
 from .serializers import CategorySerializer, SupplierSerializer, ProductSerializer, StockMovementSerializer
 
 # subscription gate: plan must include the inventory feature
 InventoryFeature = HasFeature.with_code('inventory')
+InventoryManage = HasPermission.with_code('inventory.manage')
 
 
 class CompanyScopedViewSet(viewsets.ModelViewSet):
     """Every read/write is limited to the requester's company; new rows are
     stamped with it automatically."""
-    permission_classes = [IsAuthenticated, InventoryFeature]
+    permission_classes = [IsAuthenticated, InventoryFeature, InventoryManage]
 
     def _company(self):
         return getattr(self.request, 'company', None) or self.request.user.user_company
@@ -51,7 +52,7 @@ class ProductViewSet(CompanyScopedViewSet):
 
 class StockMovementViewSet(viewsets.ModelViewSet):
     """Scoped through the product's company."""
-    permission_classes = [IsAuthenticated, InventoryFeature]
+    permission_classes = [IsAuthenticated, InventoryFeature, InventoryManage]
     queryset = StockMovement.objects.all()
     serializer_class = StockMovementSerializer
     filter_backends = [DjangoFilterBackend, filters.SearchFilter]

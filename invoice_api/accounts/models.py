@@ -91,10 +91,10 @@ class UserCompanies(models.Model):
     ifsc_code = models.CharField(max_length=30, blank=True, null=True)
     subscriptions_plan = models.ForeignKey('Subscriptions',on_delete=models.CASCADE,null=True,blank=True)
 
-    def logo_scaled_height(self,desired_width):
-        if self.company_logo and hasattr(self.company_logo, 'width'):
+    def logo_scaled_height(self, desired_width):
+        if self.company_logo and getattr(self.company_logo, 'width', None) and getattr(self.company_logo, 'height', None):
             return int((self.company_logo.height / self.company_logo.width) * desired_width)
-        return None
+        return int(desired_width)
 
     def __str__(self):
         return self.company_name

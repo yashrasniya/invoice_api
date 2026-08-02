@@ -31,13 +31,18 @@ from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, 
 logger = logging.getLogger(__name__)
 
 
+class InvoicePaginator(pagination.PageNumberPagination):
+    page_size = 15
+    page_size_query_param = 'page_size'
+    max_page_size = 1000
+
 class InvoiceView(ListAPIView):
     serializer_class = InvoiceSerializer
     permission_classes = [IsAuthenticated, HasMethodPermission]
     required_permissions_map = {'GET': 'invoice.view',
                                 'POST': 'invoice.create',
                                 'DELETE': 'invoice.delete'}
-    pagination_class = pagination.PageNumberPagination
+    pagination_class = InvoicePaginator
     queryset = Invoice.objects.filter()
 
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
@@ -62,6 +67,16 @@ class InvoiceView(ListAPIView):
         qs = super().get_queryset()
         # company-wide read: members with invoice.view see all company invoices
         qs = qs.filter(user_scope_q(self.request))
+        # `payment_status` is an exact filter; the dashboard's Outstanding and
+        # Overdue cards need sets it can't express, so they deep-link with
+        # ?status_group=open / =overdue. Both use the same helper the cards
+        # are computed from, so the list and the card always agree.
+        status_group = self.request.query_params.get('status_group')
+        if status_group in ('open', 'overdue'):
+            from invoice_api.dashboard import open_invoices_qs
+            qs = open_invoices_qs(qs)
+            if status_group == 'overdue':
+                qs = qs.filter(is_overdue=True)
         date_from = self.request.query_params.get('date_from')
         date_to = self.request.query_params.get('date_to')
         customers = self.request.query_params.get('customer')
@@ -80,10 +95,16 @@ class InvoiceView(ListAPIView):
     def post(self, request, *args, **kwargs):
         # plan limit: invoices created this month across the whole company
         today = datetime.date.today()
+        inv_type = request.data.get('invoice_type', 'sales')
         month_count = Invoice.objects.filter(
-            user__user_company=getattr(request, 'company', None),
+            user_scope_q(request),
+            invoice_type=inv_type,
             date__year=today.year, date__month=today.month).count()
-        enforce_limit(request, 'invoicing', 'invoices_per_month', month_count)
+            
+        if inv_type == 'purchase':
+            enforce_limit(request, 'purchases_invoice', 'purchases_per_month', month_count)
+        else:
+            enforce_limit(request, 'invoicing', 'invoices_per_month', month_count)
 
         serializer = InvoiceSerializer(data=request.data)
         if serializer.is_valid():
@@ -105,112 +126,159 @@ class InvoiceView(ListAPIView):
 from invoice.models import Payment, CreditDebitNote
 
 class LedgerAPIView(APIView):
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    """Party ledger + receivables analysis.
+
+    Response is a superset of the old one — `opening_balance`,
+    `closing_balance`, `transactions`, `total_sales`, `total_receipts`,
+    `total_purchases` and `total_payments_made` are unchanged, so the
+    Supplier Ledger page keeps working.
+    """
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('advanced_reports')]
     required_permissions_map = {'GET': 'report.view'}
 
+    PERIODS = ('this_month', 'last_month', 'this_quarter', 'this_fy', 'all_time')
+
     def get(self, request, entity_type, entity_id):
-        # entity_type = 'customer' or 'vendor'
+        from decimal import Decimal
+
+        from companies.models import Customers, Vendor
+        from invoice_api import ledger as L
+        from invoice_api.gst import gst_period_bounds
+
+        if entity_type not in ('customer', 'vendor'):
+            return Response({'error': 'Invalid entity type'}, status=400)
+
+        today = datetime.date.today()
+        period = request.query_params.get('period')
         date_from = request.query_params.get('start_date')
         date_to = request.query_params.get('end_date')
 
-        if not date_from or not date_to:
-            return Response({'error': 'start_date and end_date are required'}, status=400)
-            
-        company_q = user_scope_q(request)
-        
-        # Base querysets
-        invoices = Invoice.objects.filter(company_q)
-        payments = Payment.objects.filter(company_q)
-        notes = CreditDebitNote.objects.filter(company_q)
-        
-        if entity_type == 'customer':
-            invoices = invoices.filter(receiver_id=entity_id, invoice_type='sales')
-            payments = payments.filter(customer_id=entity_id)
-            notes = notes.filter(customer_id=entity_id)
-        elif entity_type == 'vendor':
-            invoices = invoices.filter(vendor_id=entity_id, invoice_type='purchase')
-            payments = payments.filter(vendor_id=entity_id)
-            notes = notes.filter(vendor_id=entity_id)
+        # ── period resolution (dates used to 500 on anything malformed) ──
+        if period == 'all_time':
+            start, end, label = datetime.date(1970, 1, 1), today, 'All time'
+        elif period in self.PERIODS:
+            start, end, label = gst_period_bounds(period, today)
+        elif date_from or date_to:
+            if not (date_from and date_to):
+                return Response(
+                    {'error': 'Both start_date and end_date are required.'}, status=400)
+            try:
+                start = datetime.datetime.strptime(date_from, '%Y-%m-%d').date()
+                end = datetime.datetime.strptime(date_to, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'error': 'Dates must be in YYYY-MM-DD format.'}, status=400)
+            if end < start:
+                return Response(
+                    {'error': 'end_date cannot be before start_date.'}, status=400)
+            label = f'{start} to {end}'
         else:
-            return Response({'error': 'Invalid entity type'}, status=400)
-            
-        # Calculate Opening Balance (before date_from)
-        prev_invoices = invoices.filter(date__lt=date_from)
-        prev_payments = payments.filter(date__lt=date_from)
-        prev_notes = notes.filter(date__lt=date_from)
-        
-        total_inv = sum([i.total_final_amount or 0 for i in prev_invoices])
-        total_pay_received = sum([p.amount or 0 for p in prev_payments if p.payment_type == 'received'])
-        total_pay_made = sum([p.amount or 0 for p in prev_payments if p.payment_type == 'made'])
-        total_credit = sum([n.amount or 0 for n in prev_notes if n.note_type == 'credit'])
-        total_debit = sum([n.amount or 0 for n in prev_notes if n.note_type == 'debit'])
-        
-        if entity_type == 'customer':
-            opening_balance = float(total_inv) - float(total_pay_received) - float(total_credit) + float(total_debit)
-        else:
-            opening_balance = float(total_inv) - float(total_pay_made) - float(total_debit) + float(total_credit)
+            start, end, label = gst_period_bounds('this_month', today)
+            period = 'this_month'
 
-        # Transactions in range
-        curr_invoices = invoices.filter(date__range=[date_from, date_to])
-        curr_payments = payments.filter(date__range=[date_from, date_to])
-        curr_notes = notes.filter(date__range=[date_from, date_to])
-        
-        transactions = []
-        for inv in curr_invoices:
-            transactions.append({
-                'date': inv.date.strftime('%Y-%m-%d') if inv.date else None,
-                'particulars': f"Invoice #{inv.invoice_number or 'N/A'}",
-                'vch_type': 'Sales' if entity_type == 'customer' else 'Purchase',
-                'vch_no': inv.invoice_number,
-                'debit': float(inv.total_final_amount or 0) if entity_type == 'customer' else 0,
-                'credit': float(inv.total_final_amount or 0) if entity_type == 'vendor' else 0,
-            })
-            
-        for pay in curr_payments:
-            transactions.append({
-                'date': pay.date.strftime('%Y-%m-%d') if pay.date else None,
-                'particulars': f"Payment {pay.payment_type} ({pay.payment_method or 'N/A'})",
-                'vch_type': 'Receipt' if pay.payment_type == 'received' else 'Payment',
-                'vch_no': pay.reference_number,
-                'debit': float(pay.amount or 0) if (entity_type == 'vendor' and pay.payment_type == 'made') else 0,
-                'credit': float(pay.amount or 0) if (entity_type == 'customer' and pay.payment_type == 'received') else 0,
-            })
-            
-        for note in curr_notes:
-            transactions.append({
-                'date': note.date.strftime('%Y-%m-%d') if note.date else None,
-                'particulars': f"Note ({note.reason or ''})",
-                'vch_type': 'Credit Note' if note.note_type == 'credit' else 'Debit Note',
-                'vch_no': note.note_number,
-                'debit': float(note.amount or 0) if (entity_type == 'customer' and note.note_type == 'debit') or (entity_type == 'vendor' and note.note_type == 'credit') else 0,
-                'credit': float(note.amount or 0) if (entity_type == 'customer' and note.note_type == 'credit') or (entity_type == 'vendor' and note.note_type == 'debit') else 0,
-            })
-            
-        # Sort transactions by date
-        transactions.sort(key=lambda x: x['date'] if x['date'] else '')
-        
-        # Calculate running balance
-        running_balance = float(opening_balance)
-        for t in transactions:
-            if entity_type == 'customer':
-                running_balance = running_balance + t['debit'] - t['credit']
-            else:
-                running_balance = running_balance + t['credit'] - t['debit']
-            t['balance'] = running_balance
-            
-        total_sales = sum(t['debit'] for t in transactions if t['vch_type'] == 'Sales')
-        total_receipts = sum(t['credit'] for t in transactions if t['vch_type'] == 'Receipt')
-        total_purchases = sum(t['credit'] for t in transactions if t['vch_type'] == 'Purchase')
-        total_payments_made = sum(t['debit'] for t in transactions if t['vch_type'] == 'Payment')
-        
+        # ── scope ──
+        scope = user_scope_q(request)
+        model = Customers if entity_type == 'customer' else Vendor
+        party = model.objects.filter(scope, id=entity_id).first()
+        if party is None:
+            return Response({'error': f'{entity_type.title()} not found.'}, status=404)
+
+        f = L.party_filters(entity_type, entity_id)
+        # `.distinct()` because the payment/note filters OR across an
+        # invoice join, which can otherwise duplicate rows
+        invoices = Invoice.objects.filter(scope).filter(f['invoice'])
+        payments = Payment.objects.filter(scope).filter(f['payment']).distinct()
+        notes = CreditDebitNote.objects.filter(scope).filter(f['note']).distinct()
+
+        opening = L.opening_balance(entity_type, invoices, payments, notes, start)
+
+        in_period = dict(date__gte=start, date__lte=end)
+        cur_invoices = list(invoices.filter(**in_period))
+        cur_payments = list(payments.filter(**in_period))
+        cur_notes = list(notes.filter(**in_period))
+
+        rows = L.build_transactions(entity_type, cur_invoices, cur_payments, cur_notes)
+        closing = L.apply_running_balance(rows, opening, entity_type)
+
+        # ── analysis (all-time, not window-limited: what is owed is owed) ──
+        paid_by_invoice = {}
+        direction = 'received' if entity_type == 'customer' else 'made'
+        for pay in payments:
+            if pay.invoice_id and pay.payment_type == direction:
+                paid_by_invoice[pay.invoice_id] = (
+                    paid_by_invoice.get(pay.invoice_id, Decimal('0'))
+                    + Decimal(str(pay.amount or 0)))
+
+        open_rows = L.outstanding_by_invoice(invoices, paid_by_invoice, today)
+        buckets = L.ageing(open_rows)
+        behaviour = L.payment_behaviour(invoices, payments, today)
+        trend = L.monthly_activity(invoices, payments, months=6, today=today)
+        lifetime = L.lifetime_totals(entity_type, list(invoices), list(payments), notes)
+
+        def num(v):
+            return float(v or 0)
+
+        totals = {
+            'total_sales': sum(num(r['debit']) for r in rows if r['vch_type'] == 'Sales'),
+            'total_receipts': sum(num(r['credit']) for r in rows if r['vch_type'] == 'Receipt'),
+            'total_purchases': sum(num(r['credit']) for r in rows if r['vch_type'] == 'Purchase'),
+            'total_payments_made': sum(num(r['debit']) for r in rows if r['vch_type'] == 'Payment'),
+        }
+
         return Response({
-            'opening_balance': opening_balance,
-            'closing_balance': running_balance,
-            'transactions': transactions,
-            'total_sales': total_sales,
-            'total_receipts': total_receipts,
-            'total_purchases': total_purchases,
-            'total_payments_made': total_payments_made
+            # ── unchanged contract ──
+            'opening_balance': num(opening),
+            'closing_balance': num(closing),
+            'transactions': [
+                {**r,
+                 'debit': num(r['debit']), 'credit': num(r['credit']),
+                 'balance': num(r['balance'])}
+                for r in rows
+            ],
+            **totals,
+
+            # ── added ──
+            'entity_type': entity_type,
+            'period': period or 'custom',
+            'period_label': label,
+            'start_date': start.isoformat(),
+            'end_date': end.isoformat(),
+
+            'party': {
+                'id': party.id,
+                'name': party.name,
+                'legal_name': getattr(party, 'legal_name', '') or '',
+                'gst_number': getattr(party, 'gst_number', '') or '',
+                'email': getattr(party, 'email', '') or '',
+                'phone_number': getattr(party, 'phone_number', '') or '',
+                'city': getattr(party, 'city', '') or '',
+                'state': getattr(party, 'state', '') or '',
+                'state_code': getattr(party, 'state_code', None),
+                'address': getattr(party, 'address', '') or '',
+            },
+
+            'outstanding_total': num(sum((r['due'] for r in open_rows), Decimal('0'))),
+            'outstanding_count': len(open_rows),
+            'ageing': [{**b, 'amount': num(b['amount'])} for b in buckets],
+            'ageing_basis': 'days since invoice date (no due-date column exists)',
+            'open_invoices': [
+                {**r, 'billed': num(r['billed']), 'paid': num(r['paid']),
+                 'due': num(r['due'])}
+                for r in open_rows[:25]
+            ],
+
+            'behaviour': behaviour,
+            'trend': [{**t, 'billed': num(t['billed']),
+                       'collected': num(t['collected'])} for t in trend],
+            'lifetime': {
+                **lifetime,
+                'billed': num(lifetime['billed']),
+                'gst': num(lifetime['gst']),
+                'settled': num(lifetime['settled']),
+                'largest_invoice': num(lifetime['largest_invoice']),
+                'first_invoice_date': (lifetime['first_invoice_date'].isoformat()
+                                       if lifetime['first_invoice_date'] else None),
+            },
         })
 
 
@@ -261,7 +329,7 @@ class new_product_in_frontend_view(ListAPIView):
     the same set (owned by the company's first admin); editing requires the
     template.manage permission."""
     serializer_class = new_product_in_frontendSerializer
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('template_designer')]
     required_permissions_map = {'POST': 'template.manage'}
 
     def get_queryset(self):
@@ -279,7 +347,7 @@ class new_product_in_frontend_view(ListAPIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 class new_product_in_frontend_update_view(APIView):
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('template_designer')]
     required_permissions_map = {'POST': 'template.manage',
                                 'DELETE': 'template.manage'}
 
@@ -376,7 +444,7 @@ class ProductPropertiesViewsSet(APIView):
 
 
 class PdfMaker(APIView):
-    permission_classes = [AllowAny]
+    permission_classes = [IsAuthenticated]
     def get(self,request,format=None,*args, **kwargs):
         if not request.GET.get("id"):return Response({"status":400},400)
         qs = Invoice.objects.filter(user_scope_q(request), id__in=request.GET.get('id').split(','))
@@ -384,8 +452,8 @@ class PdfMaker(APIView):
 
 
 class BulkExport(APIView):
-    # subscription gate: bulk export is part of advanced reporting
-    permission_classes = [IsAuthenticated, HasFeature.with_code('advanced_reports')]
+    # subscription gate: bulk export is its own feature
+    permission_classes = [IsAuthenticated, HasFeature.with_code('bulk_export')]
 
     def post(self,request):
         # Extract values from request data

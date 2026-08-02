@@ -21,7 +21,7 @@ class Command(BaseCommand):
     help = "Expire subscriptions past end_date / grace period and clear caches."
 
     def handle(self, *args, **options):
-        today = timezone.now().date()
+        today = timezone.localdate()  # UTC date expires plans ~5.5h early in IST
         grace = timedelta(days=CompanySubscription.GRACE_PERIOD_DAYS)
         touched_companies = set()
 

@@ -20,21 +20,11 @@ def get_limit(request, feature_code, limit_key):
     plan_id = sub.get('plan_id')
     if not plan_id:
         return 0
-    key = f"plan_limits:{plan_id}:{feature_code}"
-    try:
-        limits = cache.get(key)
-    except Exception:
-        limits = None
-    if limits is None:
-        from companies.models import PlanFeature
-        pf = (PlanFeature.objects
-              .filter(subscription_plan_id=plan_id, feature__code=feature_code)
-              .first())
-        limits = (pf.limits if pf else {})
-        try:
-            cache.set(key, limits, timeout=3600)
-        except Exception:
-            pass
+    from companies.models import PlanFeature
+    pf = (PlanFeature.objects
+          .filter(subscription_plan_id=plan_id, feature__code=feature_code)
+          .first())
+    limits = (pf.limits if pf else {})
     return limits.get(limit_key)
 
 

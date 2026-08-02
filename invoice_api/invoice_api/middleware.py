@@ -82,7 +82,8 @@ def get_active_subscription(company):
         return data
 
     from companies.models import CompanySubscription
-    today = timezone.now().date()
+    # localdate(): a UTC date excludes subscriptions that start today IST.
+    today = timezone.localdate()
     sub = (CompanySubscription.objects
            .filter(company=company,
                    status__in=['active', 'trialing', 'past_due'],

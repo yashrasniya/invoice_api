@@ -2,7 +2,7 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
-from invoice_api.permissions import HasMethodPermission
+from invoice_api.permissions import HasMethodPermission, HasFeature
 from invoice_api.scoping import user_scope_q
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 from django.db.models import Sum
@@ -11,7 +11,7 @@ from dateutil.relativedelta import relativedelta
 from invoice.models import Invoice
 
 class CashFlowReportAPIView(APIView):
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('advanced_reports')]
     required_permissions_map = {'GET': 'report.view'}
 
     def get(self, request):
@@ -121,7 +121,7 @@ class CashFlowReportAPIView(APIView):
 
 
 class PurchaseInvoiceSummaryAPIView(APIView):
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('purchases_invoice')]
     required_permissions_map = {'GET': 'invoice.view'}
 
     def get(self, request):
@@ -166,51 +166,110 @@ class PurchaseInvoiceSummaryAPIView(APIView):
         })
 
 class GSTSummaryAPIView(APIView):
-    permission_classes = [IsAuthenticated, HasMethodPermission]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('advanced_reports')]
     required_permissions_map = {'GET': 'report.view'}
 
+    #: filing periods. A rolling window is deliberately not offered — it can
+    #: coincidentally equal a real period and then silently drift the next day.
+    PERIODS = ('this_month', 'last_month', 'this_quarter', 'last_quarter', 'this_fy')
+
     def get(self, request):
+        from invoice.models import CreditDebitNote
+        from invoice_api.gst import (data_quality, gst_period_bounds,
+                                     note_totals, rupees, split_tax)
+
+        period = request.query_params.get('period')
         start_date_str = request.query_params.get('start_date')
         end_date_str = request.query_params.get('end_date')
 
-        if not start_date_str or not end_date_str:
-            return Response({'error': 'start_date and end_date are required'}, status=400)
+        if period in self.PERIODS:
+            start_date, end_date, label = gst_period_bounds(period)
+        elif start_date_str or end_date_str:
+            if not (start_date_str and end_date_str):
+                return Response(
+                    {'error': 'Both start_date and end_date are required.'},
+                    status=400)
+            try:
+                start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+            except ValueError:
+                # previously an uncaught ValueError → 500
+                return Response(
+                    {'error': 'Dates must be in YYYY-MM-DD format.'}, status=400)
+            if end_date < start_date:
+                return Response(
+                    {'error': 'end_date cannot be before start_date.'}, status=400)
+            period, label = 'custom', f'{start_date} to {end_date}'
+        else:
+            # default to the current filing month, not a rolling 30 days
+            period = 'this_month'
+            start_date, end_date, label = gst_period_bounds(period)
 
-        start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date()
-        end_date = datetime.strptime(end_date_str, '%Y-%m-%d').date()
+        scope = user_scope_q(request)
+        in_period = Invoice.objects.filter(scope, date__range=[start_date, end_date])
+        sales_invoices = in_period.filter(invoice_type='sales')
+        purchase_invoices = in_period.filter(invoice_type='purchase')
 
-        invoices = Invoice.objects.filter(
-            user_scope_q(request),
-            date__range=[start_date, end_date]
-        )
-
-        sales_invoices = invoices.filter(invoice_type='sales')
-        purchase_invoices = invoices.filter(invoice_type='purchase')
-
-        # Aggregate Sales
         sales_data = sales_invoices.aggregate(
-            total_final=Sum('total_final_amount'),
-            total_gst=Sum('gst_final_amount')
-        )
+            total_final=Sum('total_final_amount'), total_gst=Sum('gst_final_amount'))
         sales_total = sales_data['total_final'] or 0
         sales_gst = sales_data['total_gst'] or 0
-        sales_taxable = float(sales_total) - float(sales_gst)
 
-        # Aggregate Purchases
         purchases_data = purchase_invoices.aggregate(
-            total_final=Sum('total_final_amount'),
-            total_gst=Sum('gst_final_amount')
-        )
+            total_final=Sum('total_final_amount'), total_gst=Sum('gst_final_amount'))
         purchases_total = purchases_data['total_final'] or 0
         purchases_gst = purchases_data['total_gst'] or 0
-        purchases_taxable = float(purchases_total) - float(purchases_gst)
 
-        net_gst = float(sales_gst) - float(purchases_gst)
+        company = getattr(request, 'company', None)
+        home_state = getattr(company, 'state_code', None) if company else None
+        split = split_tax(sales_invoices, home_state)
+
+        notes = note_totals(CreditDebitNote.objects.filter(scope),
+                            start_date, end_date)
+
+        # data-quality checks look wider than the period: a purchase with no
+        # GST recorded is worth flagging whenever it happened
+        issues = data_quality(
+            company,
+            Invoice.objects.filter(scope, invoice_type='sales'),
+            Invoice.objects.filter(scope, invoice_type='purchase'),
+            split)
 
         return Response({
-            'total_sales_taxable': float(sales_taxable),
-            'total_purchases_taxable': float(purchases_taxable),
-            'output_gst': float(sales_gst),
-            'input_gst': float(purchases_gst),
-            'net_gst_payable': float(net_gst)
+            'period': period,
+            'period_label': label,
+            'start_date': start_date.isoformat(),
+            'end_date': end_date.isoformat(),
+
+            # headline figures, in whole rupees as returns are filed
+            'total_sales_taxable': rupees(float(sales_total) - float(sales_gst)),
+            'total_purchases_taxable': rupees(float(purchases_total) - float(purchases_gst)),
+            'output_gst': rupees(sales_gst),
+            'input_gst': rupees(purchases_gst),
+            'net_gst_payable': rupees(float(sales_gst) - float(purchases_gst)),
+
+            'sales_invoice_count': sales_invoices.count(),
+            'purchase_invoice_count': purchase_invoices.count(),
+
+            'tax_split': {
+                'cgst': rupees(split['cgst']),
+                'sgst': rupees(split['sgst']),
+                'igst': rupees(split['igst']),
+                'unclassified': rupees(split['unclassified']),
+                'intra_taxable': rupees(split['intra_taxable']),
+                'inter_taxable': rupees(split['inter_taxable']),
+                'unclassified_taxable': rupees(split['unclassified_taxable']),
+                'unclassified_invoices': split['unclassified_invoices'],
+            },
+
+            **notes,
+            # the notes carry no tax component in the data model, so they are
+            # reported alongside the liability rather than netted into it
+            'notes_reduce_liability': False,
+
+            # rate-wise (GSTR-1 table 12) needs per-line tax that the invoice
+            # line items don't reliably carry — see `rate_breakdown_available`
+            'rate_breakdown_available': False,
+
+            'data_quality': issues,
         })

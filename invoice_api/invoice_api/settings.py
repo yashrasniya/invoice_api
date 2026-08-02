@@ -21,6 +21,17 @@ load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
 
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
 
+# --- Razorpay -------------------------------------------------------------
+# The .env historically used the bare names `key_id` / `key_secret`, which are
+# collision-prone; the namespaced names take precedence when both are present.
+RAZORPAY_KEY_ID = os.environ.get('RAZORPAY_KEY_ID') or os.environ.get('key_id', '')
+RAZORPAY_KEY_SECRET = (os.environ.get('RAZORPAY_KEY_SECRET')
+                       or os.environ.get('key_secret', ''))
+# Set this to the same value configured at Dashboard → Settings → Webhooks.
+# Without it the webhook endpoint refuses every request (503) rather than
+# accepting unverified state changes.
+RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '')
+
 # Base URL of the React frontend, used in invite emails
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
@@ -75,6 +86,7 @@ INSTALLED_APPS = [
     'django_filters',
     'inventory',
     'whatsapp_integration',
+    'billing',
 ]
 
 MIDDLEWARE = [
@@ -251,6 +263,11 @@ LOGGING = {
         "accounts": {
             "handlers": ["console", "file","Info"],
             "level": "DEBUG",  # you can set different level
+            "propagate": False,
+        },
+        "billing": {
+            "handlers": ["console", "file", "Info"],
+            "level": "INFO",
             "propagate": False,
         },
         # Add filters if needed

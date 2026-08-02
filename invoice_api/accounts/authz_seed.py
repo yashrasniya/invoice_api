@@ -24,6 +24,7 @@ SYSTEM_PERMISSIONS = [
     ('whatsapp.manage', 'Manage WhatsApp integration'),
     ('template.manage', 'Manage invoice templates'),
     ('subscription.view', 'View subscription'),
+    ('subscription.manage', 'Manage subscription & billing'),
     ('audit.view', 'View audit log'),
 ]
 
