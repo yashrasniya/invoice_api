@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 
 from pathlib import Path
 import os
+import sys
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -160,6 +161,44 @@ USE_I18N = True
 
 USE_TZ = True
 
+# ── Cache ──────────────────────────────────────────────────────────────
+#
+# This MUST be a backend shared by every worker process.
+#
+# Tenant plan/permission resolution caches its answers (see
+# invoice_api/middleware.py) and relies on `cache.delete()` to invalidate
+# them when a subscription changes. With Django's default LocMemCache the
+# cache is a dict inside a single process, so that delete only reaches the
+# one worker that ran it — every other worker keeps serving the old plan
+# for up to an hour. The visible symptom is a Pro customer intermittently
+# being treated as Free, depending on which worker answers the request.
+#
+# DatabaseCache is shared by all workers with no extra infrastructure.
+# Create its table once per environment:
+#
+#     python manage.py createcachetable
+#
+# If Redis becomes available, swap BACKEND for
+# 'django.core.cache.backends.redis.RedisCache' with LOCATION set to the
+# Redis URL — nothing else needs to change.
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.db.DatabaseCache',
+        'LOCATION': 'django_cache',
+        'TIMEOUT': 300,
+        'OPTIONS': {
+            # tenant caches are small; keep well clear of the cull threshold
+            'MAX_ENTRIES': 10000,
+            'CULL_FREQUENCY': 4,
+        },
+    },
+}
+
+# The test suite calls cache.clear() between cases and must not depend on a
+# cache table existing.
+if 'test' in sys.argv:
+    CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
+
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.0/howto/static-files/
 
@@ -189,8 +228,7 @@ SIMPLE_JWT = {
 
 }
 
-import sys
-IS_TESTING = 'test' in sys.argv
+IS_TESTING = 'test' in sys.argv  # `sys` imported at the top of this module
 
 REST_FRAMEWORK = {
     # 'DEFAULT_PAGINATION_CLASS': ['rest_framework.pagination.PageNumberPagination'],
