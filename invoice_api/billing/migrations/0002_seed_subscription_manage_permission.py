@@ -34,7 +34,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('billing', '0001_initial'),
-        ('accounts', '0010_alter_companygroup_options_alter_companyrole_options_and_more'),
+        # ('accounts', '0010_alter_companygroup_options_alter_companyrole_options_and_more'),
     ]
 
     operations = [
