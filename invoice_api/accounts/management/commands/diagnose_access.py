@@ -17,6 +17,7 @@ A break anywhere in that chain looks identical from the browser, so this
 prints each link and names the one that failed.
 """
 from django.core.cache import cache
+from django.db.models import Q
 from django.core.management.base import BaseCommand, CommandError
 
 DEFAULT_PERM = 'subscription.manage'
@@ -27,7 +28,10 @@ class Command(BaseCommand):
     help = "Trace how a permission resolves for a user, and say why it doesn't."
 
     def add_arguments(self, parser):
-        parser.add_argument('--user', required=True, help='username or email')
+        parser.add_argument('--user', help='username or email')
+        parser.add_argument('--company',
+                            help='UserCompanies id or exact name — summarises every '
+                                 'user in it, for when you do not know the username')
         parser.add_argument('--perm', default=DEFAULT_PERM,
                             help=f'permission code to trace (default {DEFAULT_PERM})')
         parser.add_argument('--fix-admin-role', action='store_true',
@@ -35,6 +39,65 @@ class Command(BaseCommand):
                                  'is not in the Company Admin role, add them')
 
     def handle(self, *args, **opts):
+        if opts['company'] and not opts['user']:
+            return self.summarise_company(opts)
+        if not opts['user']:
+            raise CommandError('Pass --user <username|email> or --company <id|name>.')
+        return self.trace_user(opts)
+
+    # ── company-wide summary ──────────────────────────────────────────
+
+    def summarise_company(self, opts):
+        from accounts.models import CompanyRole, User, UserCompanies
+        from invoice_api.middleware import get_user_permissions
+
+        ident, code = opts['company'], opts['perm']
+        company = (UserCompanies.objects.filter(pk=ident).first()
+                   if str(ident).isdigit() else None)
+        company = company or UserCompanies.objects.filter(company_name=ident).first()
+        if not company:
+            raise CommandError(f'No company matches {ident!r}.')
+
+        w, err, ok = self.stdout.write, self.style.ERROR, self.style.SUCCESS
+        w(self.style.MIGRATE_HEADING(
+            f'{company.company_name} (id {company.id}) — who can {code}?'))
+
+        granting = [r.name for r in CompanyRole.objects.filter(
+            company=company, is_deleted=False, permissions__code=code)]
+        w(f'  roles granting it: {granting or "NONE"}')
+        if not granting:
+            w(err('  No role in this company grants it, so nobody can — regardless of\n'
+                  '  who is a member of what.'))
+            self.migration_hint()
+
+        users = User.objects.filter(user_company=company).order_by('username')
+        if not users:
+            w(err('  This company has no users.'))
+            return
+
+        w('')
+        for u in users:
+            perms = get_user_permissions(u, company, use_cache=False)
+            has = code in perms
+            # scoped to this company (+ global system roles), because that is
+            # exactly what get_user_permissions() counts. Listing another
+            # company's roles here would suggest access the user doesn't have.
+            roles = sorted({
+                r.name if r.company_id else f'{r.name} (global)'
+                for r in CompanyRole.objects
+                .filter(users=u, is_deleted=False)
+                .filter(Q(company=company) | Q(company__isnull=True))
+                .distinct()})
+            line = (f'  {u.username:<18} {"HAS" if has else "no ":<4} '
+                    f'perms={len(perms):<3} legacy_admin={str(u.is_company_admin):<5} '
+                    f'roles={roles or "NONE"}')
+            w(ok(line) if has else err(line))
+
+        w(f'\n  Trace one of them:  --user <username> --perm {code}')
+
+    # ── single-user trace ─────────────────────────────────────────────
+
+    def trace_user(self, opts):
         from accounts.models import (CompanyPermission, CompanyRole, User,
                                      UserDirectPermission)
         from invoice_api.middleware import get_user_permissions
