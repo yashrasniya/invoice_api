@@ -49,6 +49,10 @@ class Command(BaseCommand):
                             help='when Razorpay says "Validation failed" without '
                                  'naming a field, retry from a minimal payload and '
                                  'add one parameter at a time to find the culprit')
+        parser.add_argument('--plan-id', dest='plan_id_override',
+                            help='bypass the local mapping and use this Razorpay plan '
+                                 'id directly — e.g. a throwaway ₹1 plan, to prove '
+                                 'whether the failure is plan-specific or account-wide')
 
     def handle(self, *args, **opts):
         try:
@@ -78,15 +82,22 @@ class Command(BaseCommand):
         plan = SubscriptionPlan.objects.filter(code=code, is_active=True).first()
         if not plan:
             raise CommandError(f'No active local SubscriptionPlan with code {code!r}.')
+        override = opts.get('plan_id_override')
+        if override:
+            plan_ref = override
+            w(warn(f'  using --plan-id {override} (local mapping bypassed)'))
+        else:
+            plan_ref = None
         mapping = RazorpayPlan.objects.filter(
             subscription_plan=plan, period=period, is_active=True).first()
-        if not mapping:
+        if not mapping and not override:
             w(err(f'  No RazorpayPlan mapping for {code}/{period}.'))
             w(err('  Checkout calls ensure_razorpay_plan(allow_create=False), so it\n'
                   '  cannot create one on demand. Run: manage.py sync_razorpay_plans'))
             return
-        w(f'  local mapping    : {mapping.razorpay_plan_id} '
-          f'({mapping.amount_paise} paise)')
+        if not override:
+            plan_ref = mapping.razorpay_plan_id
+            w(f'  local mapping    : {plan_ref} ({mapping.amount_paise} paise)')
 
         total_count = TOTAL_COUNT[period]
         w(f'  total_count      : {total_count}')
@@ -108,7 +119,7 @@ class Command(BaseCommand):
             w(warn('\n  --dry-run: stopping before any network call.'))
             return
 
-        r = requests.get(f'{API}/plans/{mapping.razorpay_plan_id}', auth=auth, timeout=20)
+        r = requests.get(f'{API}/plans/{plan_ref}', auth=auth, timeout=20)
         if r.status_code == 200:
             body = r.json()
             w(ok(f'  plan exists upstream: {body.get("period")}/'
@@ -119,7 +130,7 @@ class Command(BaseCommand):
                 w(err(f'  MISMATCH: upstream plan period is {body.get("period")!r} '
                       f'but we are subscribing as {period!r}.'))
         else:
-            w(err(f'  plan {mapping.razorpay_plan_id} NOT found upstream '
+            w(err(f'  plan {plan_ref} NOT found upstream '
                   f'(HTTP {r.status_code}).'))
             w(err(self._pretty(r)))
             w(err('  The stored mapping points at a plan that does not exist in this\n'
@@ -130,7 +141,7 @@ class Command(BaseCommand):
 
         # ── the real call ──
         payload = {
-            'plan_id': mapping.razorpay_plan_id,
+            'plan_id': plan_ref,
             'total_count': total_count,
             'quantity': 1,
             'customer_notify': 1,
@@ -164,6 +175,14 @@ class Command(BaseCommand):
         # ── the payoff: the full error body ──
         w(err('  FAILED. Razorpay\'s full response — this is what the SDK hides:'))
         w(err(self._pretty(r)))
+        self._request_id(r)
+
+        # Does READ access to Subscriptions work? If listing succeeds while
+        # creating fails, the product is reachable but not permitted to create
+        # mandates — which is an account entitlement, not a payload problem.
+        lst = requests.get(f'{API}/subscriptions?count=1', auth=auth, timeout=20)
+        w(f'  GET /v1/subscriptions (read access): HTTP {lst.status_code}'
+          + ('  <-- read works, create does not' if lst.status_code == 200 else ''))
 
         try:
             error = r.json().get('error', {})
@@ -187,7 +206,7 @@ class Command(BaseCommand):
         else:
             w(warn('\n  Razorpay named no field.'))
             if opts['bisect']:
-                self.bisect(requests, auth, mapping.razorpay_plan_id, period,
+                self.bisect(requests, auth, plan_ref, period,
                             total_count, opts['cancel'])
             else:
                 w(warn('  Re-run with --bisect to find the offending parameter '
@@ -266,6 +285,15 @@ class Command(BaseCommand):
             w(err(f'  Razorpay said: {detail}'))
             w('  The parameter introduced by that variant is the culprit — every\n'
               '  simpler payload above it was accepted.')
+
+    def _request_id(self, response):
+        """Razorpay support cannot investigate without this."""
+        rid = (response.headers.get('X-Razorpay-Request-Id')
+               or response.headers.get('x-razorpay-request-id'))
+        if rid:
+            self.stdout.write(self.style.WARNING(
+                f'  X-Razorpay-Request-Id: {rid}\n'
+                '  Quote this in a support ticket — it identifies the exact request.'))
 
     @staticmethod
     def _pretty(response):

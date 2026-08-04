@@ -93,19 +93,50 @@ class Command(BaseCommand):
                 f"{item['item']['name']}")
 
         # 3. Subscriptions enabled
+        #
+        # Plans and Subscriptions are separate APIs with separate entitlements.
+        # Creating a plan proves only that the Plans API works — an account can
+        # create plans all day and still be unable to create a single
+        # subscription. So the probe must actually create a SUBSCRIPTION, or the
+        # PASS is worthless.
         if options['probe_subscriptions']:
+            probe_plan = None
             try:
-                probe = client.plan.create({
+                probe_plan = client.plan.create({
                     'period': 'monthly', 'interval': 1,
                     'item': {'name': f"__connectivity_probe_{int(time.time())}",
                              'amount': 100, 'currency': 'INR'},
-                    'notes': {'purpose': 'verify_razorpay probe — safe to ignore'},
+                    'notes': {'purpose': 'verify_razorpay probe - safe to ignore'},
                 })
-                self._ok(f"Subscriptions enabled (created probe plan {probe['id']})")
+                self._ok(f"Plans API works (created probe plan {probe_plan['id']})")
             except Exception as exc:  # noqa: BLE001
-                self._fail(f"Subscriptions may not be enabled: {exc}")
-                self.stdout.write(
-                    "        Enable it at Dashboard → Subscriptions, then re-run.")
+                self._fail(f"Plans API failed: {exc}")
+
+            if probe_plan:
+                try:
+                    sub = client.subscription.create({
+                        'plan_id': probe_plan['id'],
+                        'total_count': 12,
+                        'customer_notify': 1,
+                    })
+                    self._ok("Subscriptions API works — a subscription can be "
+                             f"created ({sub['id']})")
+                    try:
+                        client.subscription.cancel(sub['id'], {'cancel_at_cycle_end': 0})
+                    except Exception:  # noqa: BLE001
+                        self._warn(f"could not cancel probe subscription {sub['id']} "
+                                   "— cancel it in the dashboard")
+                except Exception as exc:  # noqa: BLE001
+                    self._fail(f"Subscriptions API cannot CREATE: {exc}")
+                    self.stdout.write(
+                        "        Plans work but subscriptions do not, against a ₹1\n"
+                        "        throwaway plan and a minimal payload — so this is not\n"
+                        "        a payload or pricing problem. Recurring payments are\n"
+                        "        not enabled for this mode on the account.\n"
+                        "        Ask Razorpay support to enable Subscriptions /\n"
+                        "        recurring payments for LIVE, and confirm at least one\n"
+                        "        recurring-capable method (UPI Autopay, card eMandate\n"
+                        "        or eNACH) is active.")
         else:
             self._warn("skipped Subscriptions probe (pass --probe-subscriptions)")
 
