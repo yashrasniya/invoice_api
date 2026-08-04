@@ -36,28 +36,91 @@ RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '')
 # Base URL of the React frontend, used in invite emails
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
+# ── Environment / security ─────────────────────────────────────────────
+#
+# Everything below is env-driven and defaults to the SAFE value, so a
+# missing variable degrades to "locked down" rather than "wide open".
+#
+# Required in production .env:
+#   DJANGO_DEBUG=False
+#   DJANGO_SECRET_KEY=<50+ random chars>
+#   DJANGO_ALLOWED_HOSTS=invoice.orvine.in
+#   DJANGO_CSRF_TRUSTED_ORIGINS=https://invoice.orvine.in
+#   DJANGO_CORS_ALLOWED_ORIGINS=https://invoice.orvine.in
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-ek$w%80pal+0$dygovaza-4fc!fedaex=+(wrl)s_*z3d03$yd'
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
-CORS_URLS_REGEX = r'^/api/.*$'
-CORS_ORIGIN_ALLOW_ALL = True
-CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
+def _env_bool(name, default=False):
+    return os.environ.get(name, str(default)).strip().lower() in ('1', 'true', 'yes', 'on')
 
-ALLOWED_HOSTS = ['*', 'yashadvertisinggroup.com', 'api.yashadvertisinggroup.com']
-CORS_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://localhost:5173', 'http://192.168.29.29:3000',
-                        'https://api.yashadvertisinggroup.com', 'https://yashadvertisinggroup.com']
 
-CSRF_TRUSTED_ORIGINS = [
+def _env_list(name, default=''):
+    return [item.strip() for item in os.environ.get(name, default).split(',') if item.strip()]
+
+
+# Defaults to False: a forgotten env var must not expose tracebacks, settings
+# and SQL on a live site.
+DEBUG = _env_bool('DJANGO_DEBUG', False)
+
+INSECURE_FALLBACK_KEY = 'django-insecure-ek$w%80pal+0$dygovaza-4fc!fedaex=+(wrl)s_*z3d03$yd'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or INSECURE_FALLBACK_KEY
+
+# SECRET_KEY signs session cookies AND (via SimpleJWT) every access token, so a
+# published key means anyone can mint a token for any user. The fallback above
+# is committed to git and must never be used off a developer machine.
+if not DEBUG and SECRET_KEY == INSECURE_FALLBACK_KEY and 'test' not in sys.argv:
+    sys.stderr.write(
+        '\n*** SECURITY: DJANGO_SECRET_KEY is not set, so the committed '
+        'development key is in use.\n'
+        '    It signs session cookies and JWTs — anyone with the repo can '
+        'forge a login.\n'
+        '    Set DJANGO_SECRET_KEY in .env and restart. Rotating it logs every '
+        'user out once.\n\n')
+
+ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS') or (
+    ['*'] if DEBUG else ['invoice.orvine.in', 'yashadvertisinggroup.com',
+                         'api.yashadvertisinggroup.com'])
+
+# Django 4+ requires the scheme here. Missing entries are what produce
+# "Origin checking failed - <origin> does not match any trusted origins".
+CSRF_TRUSTED_ORIGINS = _env_list('DJANGO_CSRF_TRUSTED_ORIGINS') or [
+    'https://invoice.orvine.in',
+    'https://yashadvertisinggroup.com',
+    'https://api.yashadvertisinggroup.com',
+    'http://localhost:5173',
     'http://localhost:3000',
-    "http://localhost",
-    "https://yashadvertisinggroup.com"
+    'http://localhost',
 ]
+
+# ── CORS ──
+# `CORS_ALLOW_ALL_ORIGINS` together with `CORS_ALLOW_CREDENTIALS` lets any site
+# on the internet call this API with the visitor's cookies attached and read
+# the reply. SameSite=Lax on the auth cookie blunts it, but that is one setting
+# away from being the only thing standing in the way — so allow-all is now
+# confined to DEBUG.
+CORS_URLS_REGEX = r'^/api/.*$'
+CORS_ALLOW_CREDENTIALS = True
+CORS_ALLOWED_ORIGINS = _env_list('DJANGO_CORS_ALLOWED_ORIGINS') or [
+    'https://invoice.orvine.in',
+    'https://yashadvertisinggroup.com',
+    'https://api.yashadvertisinggroup.com',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'http://192.168.29.29:3000',
+]
+CORS_ALLOW_ALL_ORIGINS = DEBUG
+CORS_ORIGIN_ALLOW_ALL = DEBUG
+
+# ── Cookie / transport hardening (HTTPS only) ──
+_SECURE_COOKIES = _env_bool('DJANGO_SECURE_COOKIES', not DEBUG)
+SESSION_COOKIE_SECURE = _SECURE_COOKIES
+CSRF_COOKIE_SECURE = _SECURE_COOKIES
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_REFERRER_POLICY = 'same-origin'
+# Behind a TLS-terminating proxy, tell Django the original request was HTTPS.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 STATIC_ROOT = os.environ.get('STATIC_ROOT', os.path.join(BASE_DIR, 'static'))
 STATIC = '/static/'
@@ -220,7 +283,9 @@ SIMPLE_JWT = {
         'rest_framework_simplejwt.tokens.AccessToken', 'rest_framework_simplejwt.tokens.RefreshToken',),
     'AUTH_COOKIE': 'access_token',  # Cookie name. Enables cookies if value is set.
     'AUTH_COOKIE_DOMAIN': None,  # A string like "example.com", or None for standard domain cookie.
-    'AUTH_COOKIE_SECURE': False,  # Whether the auth cookies should be secure (https:// only).
+    # Follows DEBUG: on an HTTPS site the auth cookie must never be allowed
+    # out over plain HTTP, or a downgraded request leaks the session.
+    'AUTH_COOKIE_SECURE': _SECURE_COOKIES,
     'AUTH_COOKIE_HTTP_ONLY': True,  # Http only cookie flag.It's not fetch by javascript.
     'AUTH_COOKIE_PATH': '/',  # The path of the auth cookie.
     'AUTH_COOKIE_SAMESITE': 'Lax',

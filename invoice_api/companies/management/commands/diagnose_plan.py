@@ -41,6 +41,10 @@ class Command(BaseCommand):
                             help='with --watch, stop after N seconds (default 60)')
         parser.add_argument('--clear', action='store_true',
                             help='delete this company\'s cached subscription and exit')
+        parser.add_argument('--history', action='store_true',
+                            help='show WHO/WHAT changed the plan: audit trail, the '
+                                 'Razorpay-side subscription, and webhook events. Use '
+                                 'this when the DB itself holds the wrong plan.')
 
     def handle(self, *args, **opts):
         company = self.resolve_company(opts)
@@ -55,6 +59,9 @@ class Command(BaseCommand):
             return
 
         self.report_db(company)
+
+        if opts['history']:
+            self.report_history(company)
 
         if not opts['watch']:
             self.report_resolved(company)
@@ -228,3 +235,118 @@ class Command(BaseCommand):
                     'they are separate processes.')
 
         return (plan_code, tuple(features))
+
+    # ── history: who changed the plan? ────────────────────────────────
+
+    def report_history(self, company):
+        """The forensic view, for when the DB itself holds the wrong plan.
+
+        A cancelled Pro row plus a fresh Free row means something called
+        `revert_to_free()` (or the admin plan-change endpoint). These three
+        tables say which, and whether Razorpay was ever involved at all.
+        """
+        from accounts.models import AuditLog
+        from billing.models import (BillingSubscription, PaymentRecord,
+                                    ScheduledPlanChange, WebhookEvent)
+
+        w = self.stdout.write
+        err, ok, warn = self.style.ERROR, self.style.SUCCESS, self.style.WARNING
+
+        # 1. audit trail
+        w(self.style.MIGRATE_HEADING('\nAUDIT TRAIL (SUBSCRIPTION events)'))
+        events = (AuditLog.objects
+                  .filter(company=company, resource_type='SUBSCRIPTION')
+                  .select_related('user').order_by('timestamp'))
+        if not events:
+            w(warn('  No SUBSCRIPTION audit rows.\n'
+                   '  The signal that writes them fires on every CompanySubscription\n'
+                   '  save, so an empty trail means the rows were changed without\n'
+                   '  going through the ORM — a manual SQL edit, a fixture load, or a\n'
+                   '  migration.'))
+        for e in events:
+            actor = e.user.username if e.user else 'system/anonymous'
+            w(f'  {e.timestamp:%Y-%m-%d %H:%M:%S}  {e.action:<7} sub#{e.resource_id:<5} '
+              f'by {actor:<16} {e.new_data}')
+
+        # 2. Razorpay-side subscription
+        w(self.style.MIGRATE_HEADING('\nRAZORPAY SUBSCRIPTION (BillingSubscription)'))
+        subs = (BillingSubscription.objects.filter(company=company)
+                .select_related('subscription_plan').order_by('created_at'))
+        if not subs:
+            w(err('  No BillingSubscription rows at all.'))
+            w(err('  So no paid mandate was ever created through Razorpay for this\n'
+                  '  company. Any Pro entitlement it had was set directly — by the\n'
+                  '  admin plan-change endpoint, a management action, or a manual edit —\n'
+                  '  and nothing in the billing flow was keeping it alive.'))
+        for s in subs:
+            w(f'  {s.created_at:%Y-%m-%d %H:%M}  {s.subscription_plan.code:<11} '
+              f'{s.period:<8} status={s.status:<12} paid={s.paid_count}/{s.total_count or "-"}')
+            w(f'      razorpay_subscription_id={s.razorpay_subscription_id or "—"}')
+            if s.ended_at:
+                w(f'      ended_at={s.ended_at}')
+            if s.cancel_at_cycle_end:
+                w(warn('      cancel_at_cycle_end=True'))
+            if s.status in ('created', 'authenticated'):
+                w(err('      status is pre-charge: the mandate was approved but never\n'
+                      '      billed, so no entitlement was earned. Razorpay expires these,\n'
+                      '      and the resulting webhook reverts the company to Free.'))
+
+        # 3. webhooks
+        w(self.style.MIGRATE_HEADING('\nWEBHOOK EVENTS'))
+        total = WebhookEvent.objects.count()
+        mine = WebhookEvent.objects.filter(company=company).order_by('received_at')
+        w(f'  {total} webhook events stored overall, {mine.count()} for this company')
+        if total == 0:
+            w(err('  Razorpay has never delivered a webhook to this deployment.'))
+            w(err('  The webhook is the source of truth for activation and renewal, so\n'
+                  '  without it a subscription is never confirmed and never renewed.\n'
+                  '  Check the webhook URL and secret in the Razorpay dashboard.'))
+        for e in mine[:15]:
+            flag = '' if e.status == 'processed' else f'  <-- {e.status}'
+            w(f'  {e.received_at:%Y-%m-%d %H:%M:%S}  {e.event:<34} {e.status}{flag}')
+            if e.error:
+                w(err(f'      error: {e.error[:160]}'))
+
+        # 4. payments actually taken
+        w(self.style.MIGRATE_HEADING('\nPAYMENTS CAPTURED'))
+        pays = PaymentRecord.objects.filter(company=company).order_by('created_at')
+        if not pays:
+            w(err('  No PaymentRecord rows — no money was ever captured for this company.'))
+            w('  A Pro entitlement with no payment behind it was granted manually.')
+        for p in pays:
+            # amounts are stored in paise
+            w(f'  {p.created_at:%Y-%m-%d %H:%M}  '
+              f'{(p.amount_paise or 0) / 100:,.2f} {p.currency} '
+              f'{p.status:<10} {p.method or "—":<8} {p.razorpay_payment_id}')
+            if p.error_description:
+                w(err(f'      error: {p.error_description[:160]}'))
+
+        # 5. pending scheduled changes
+        pending = ScheduledPlanChange.objects.filter(company=company)
+        if pending:
+            w(self.style.MIGRATE_HEADING('\nSCHEDULED PLAN CHANGES'))
+            for s in pending:
+                frm = s.from_plan.code if s.from_plan_id else '?'
+                to = s.to_plan.code if s.to_plan_id else '?'
+                w(f'  {s.status:<10} {frm} -> {to} ({s.period}) '
+                  f'effective {s.effective_date}'
+                  + (f' applied {s.applied_at:%Y-%m-%d %H:%M}' if s.applied_at else ''))
+
+        # ── conclusion ──
+        w(self.style.MIGRATE_HEADING('\nWHAT THIS MEANS'))
+        if not subs and not pays:
+            w(err('  This company never had a paid subscription. The Pro row was granted\n'
+                  '  outside the billing flow and later superseded by a Free row — most\n'
+                  '  likely the admin plan-change endpoint, which cancels the working\n'
+                  '  subscription and inserts a new one.\n'
+                  '  Re-granting Pro by hand will work, but nothing will stop it being\n'
+                  '  reverted again until the company subscribes through checkout.'))
+        elif subs and subs.last().status in ('created', 'authenticated'):
+            w(err('  The latest Razorpay mandate was never charged, so the company is\n'
+                  '  correctly on Free. Send the customer back through checkout.'))
+        elif total == 0:
+            w(err('  A mandate exists but no webhook ever arrived, so activation was\n'
+                  '  never confirmed. Fix the webhook before re-granting anything.'))
+        else:
+            w(ok('  Follow the audit timestamps above against the webhook events to see\n'
+                 '  which call flipped the plan.'))
