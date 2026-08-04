@@ -45,6 +45,10 @@ class Command(BaseCommand):
                             help='cancel the subscription again if it is created')
         parser.add_argument('--dry-run', action='store_true',
                             help='run the local pre-checks only, call nothing')
+        parser.add_argument('--bisect', action='store_true',
+                            help='when Razorpay says "Validation failed" without '
+                                 'naming a field, retry from a minimal payload and '
+                                 'add one parameter at a time to find the culprit')
 
     def handle(self, *args, **opts):
         try:
@@ -181,8 +185,87 @@ class Command(BaseCommand):
             if hint:
                 w(err(f'  {hint}'))
         else:
-            w(warn('\n  Razorpay named no field. Compare the payload above against\n'
-                   '  https://razorpay.com/docs/api/payments/subscriptions/#create-a-subscription'))
+            w(warn('\n  Razorpay named no field.'))
+            if opts['bisect']:
+                self.bisect(requests, auth, mapping.razorpay_plan_id, period,
+                            total_count, opts['cancel'])
+            else:
+                w(warn('  Re-run with --bisect to find the offending parameter '
+                       'empirically.'))
+
+    # ── bisect ────────────────────────────────────────────────────────
+
+    def bisect(self, requests, auth, plan_id, period, total_count, cancel):
+        """Add one parameter at a time until Razorpay rejects the request.
+
+        Razorpay sometimes returns "Validation failed" with no `field`, which
+        leaves nothing to read. Building the payload up from the documented
+        minimum turns that into a bisection: the first variant that fails
+        names the culprit by construction.
+        """
+        w, ok, err, warn = (self.stdout.write, self.style.SUCCESS,
+                            self.style.ERROR, self.style.WARNING)
+        w(self.style.MIGRATE_HEADING('\nBISECTING the payload'))
+        w('  Each line is a real POST. Successes are cancelled immediately.\n')
+
+        base = {'plan_id': plan_id, 'total_count': total_count}
+        variants = [
+            ('plan_id + total_count only', base),
+            ('total_count=1', {**base, 'total_count': 1}),
+            ('total_count=12', {**base, 'total_count': 12}),
+            ('+ quantity=1', {**base, 'quantity': 1}),
+            ('+ customer_notify=1', {**base, 'customer_notify': 1}),
+            ('+ notes (plain ascii)', {**base, 'notes': {'purpose': 'probe'}}),
+            # the earlier attempt carried an em-dash; Razorpay is fussy about
+            # non-ASCII in notes, so prove whether that alone is fatal
+            ('+ notes (non-ascii em-dash)', {**base, 'notes': {'purpose': 'probe — x'}}),
+            ('full payload as start_subscription sends it', {
+                **base, 'quantity': 1, 'customer_notify': 1,
+                'notes': {'company_id': '1', 'company_name': 'Probe Co',
+                          'plan_code': 'pro', 'period': period}}),
+        ]
+
+        first_failure = None
+        for label, payload in variants:
+            r = requests.post(f'{API}/subscriptions', auth=auth,
+                              json=payload, timeout=30)
+            if r.status_code in (200, 201):
+                sid = r.json()['id']
+                w(ok(f'  OK    {label}  -> {sid}'))
+                c = requests.post(f'{API}/subscriptions/{sid}/cancel', auth=auth,
+                                  json={'cancel_at_cycle_end': 0}, timeout=30)
+                if c.status_code != 200:
+                    w(warn(f'        could not cancel {sid} — remove it in the dashboard'))
+            else:
+                try:
+                    detail = r.json().get('error', {})
+                except ValueError:
+                    detail = {'raw': r.text[:200]}
+                desc = detail.get('description', '?')
+                fld = f" field={detail['field']!r}" if detail.get('field') else ''
+                w(err(f'  FAIL  {label}  ({r.status_code}: {desc}{fld})'))
+                if first_failure is None:
+                    first_failure = (label, payload, detail)
+
+        w(self.style.MIGRATE_HEADING('\nCONCLUSION'))
+        if first_failure is None:
+            w(ok('  Every variant was accepted, including the full payload.'))
+            w('  So the request start_subscription builds is valid. The failure you\n'
+              '  saw through /billing/subscribe/ must come from something around the\n'
+              '  call rather than the call itself — check the server log for the\n'
+              '  "billing: Razorpay ..." line, which records the raw description.')
+        elif first_failure[0] == 'plan_id + total_count only':
+            w(err('  Even the minimal documented payload is rejected, so no parameter\n'
+                  '  is at fault — this is account-level. Most likely Subscriptions is\n'
+                  '  not fully activated for LIVE mode on this account (test and live\n'
+                  '  are enabled separately, and live often needs Razorpay support).\n'
+                  '  Confirm with: manage.py verify_razorpay --probe-subscriptions'))
+        else:
+            label, payload, detail = first_failure
+            w(err(f'  First variant to fail: {label}'))
+            w(err(f'  Razorpay said: {detail}'))
+            w('  The parameter introduced by that variant is the culprit — every\n'
+              '  simpler payload above it was accepted.')
 
     @staticmethod
     def _pretty(response):
