@@ -29,10 +29,6 @@ import json
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-# Razorpay caps total_count by period. Exceeding it is reported only as
-# "Validation failed" with field=total_count.
-MAX_TOTAL_COUNT = {'daily': 365, 'weekly': 52, 'monthly': 100, 'yearly': 10}
-
 API = 'https://api.razorpay.com/v1'
 
 
@@ -56,7 +52,7 @@ class Command(BaseCommand):
         except ImportError as exc:
             raise CommandError('The `requests` package is required.') from exc
 
-        from billing.models import TOTAL_COUNT, RazorpayPlan
+        from billing.models import MAX_TOTAL_COUNT, TOTAL_COUNT, RazorpayPlan
         from companies.models import SubscriptionPlan
 
         key_id = getattr(settings, 'RAZORPAY_KEY_ID', '')

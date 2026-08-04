@@ -12,6 +12,7 @@ Design notes
 * Webhooks drive entitlement. Client-side checkout callbacks are treated as a
   hint only (they trigger a re-sync), never as proof of payment.
 """
+from django.core.exceptions import ImproperlyConfigured
 from django.db import models
 from django.utils import timezone
 
@@ -26,9 +27,27 @@ BILLING_PERIOD_CHOICES = [
     (YEARLY, 'Yearly'),
 ]
 
-# Razorpay caps a subscription at 100 years; we bound it well below that so a
-# runaway mandate cannot outlive the business relationship.
-TOTAL_COUNT = {MONTHLY: 120, YEARLY: 10}
+# Razorpay's `total_count` is the number of BILLING CYCLES a mandate covers —
+# not years — and it is capped per period. Exceeding the cap is rejected with
+# nothing more descriptive than "Validation failed", and the SDK discards the
+# `field` that would tell you which parameter was at fault, so getting this
+# wrong is very expensive to debug. It was previously 120 for monthly (read as
+# "10 years"), which silently broke every monthly checkout.
+MAX_TOTAL_COUNT = {MONTHLY: 100, YEARLY: 10}
+
+# Sit at the ceiling: the longest mandate Razorpay will accept, after which the
+# customer re-subscribes. 100 monthly cycles is ~8.3 years.
+TOTAL_COUNT = {MONTHLY: 100, YEARLY: 10}
+
+# Fail at startup rather than at a customer's checkout.
+for _period, _count in TOTAL_COUNT.items():
+    _cap = MAX_TOTAL_COUNT[_period]
+    if _count > _cap:
+        raise ImproperlyConfigured(
+            f"TOTAL_COUNT[{_period!r}] is {_count}, above Razorpay's maximum of "
+            f"{_cap} for a {_period} plan. Razorpay would reject every "
+            f"subscription create with an opaque 'Validation failed'."
+        )
 
 
 def price_for(plan: SubscriptionPlan, period: str):
