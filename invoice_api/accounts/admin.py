@@ -3,6 +3,7 @@ from django.contrib.auth.admin import UserAdmin
 from .models import User, Superuser, CR, UserCompanies
 from .utils import actions
 from django.db.models import Q
+from .models import ServiceToken
 
 # Register your models here.
 
@@ -63,3 +64,30 @@ class UserAdmin(actions,UserAdmin):
 @admin.register(UserCompanies)
 class UserCompaniesAdmin(admin.ModelAdmin):
     list_display = ['company_name','is_varified']
+
+
+@admin.register(ServiceToken)
+class ServiceTokenAdmin(admin.ModelAdmin):
+    # Columns to display in the list view
+    list_display = ('name', 'user', 'is_active', 'created_at', 'token')
+
+    # Add search and filtering capabilities
+    search_fields = ('name', 'token', 'user__username', 'user__email')
+    list_filter = ('is_active', 'created_at')
+
+    # Prevent creating new tokens via the admin panel
+    def has_add_permission(self, request):
+        return False
+
+    # Prevent modifying existing tokens via the admin panel
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    # Prevent deleting tokens via the admin panel
+    # (If you want super admins to be able to delete them, you can remove this method)
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    # As long as you don't override has_view_permission to return False,
+    # Django will automatically allow super admins to click into the object
+    # and view all fields in a read-only state.

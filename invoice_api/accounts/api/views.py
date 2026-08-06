@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from invoice.models import Invoice, new_product_in_frontend
 from yaml_manager.models import Yaml
-from ..authenticate import ServiceTokenAuthentication, AdminJWTTokenAuthentication
+from ..authenticate import ServiceTokenAuthentication, AdminJWTTokenAuthentication, ServiceTokenAuthenticationInternal
 from ..models import UserCompanies
 from rest_framework import generics
 from rest_framework.permissions import IsAuthenticated
@@ -180,6 +180,9 @@ class GoogleLogin(APIView):
                         Yaml.objects.create(
                             yaml_file=File(f, name="default_template.yaml"),
                             user=user,
+                            # same as RegisterSerializer: new account's only
+                            # template is its default, no manual pick needed
+                            is_default=True,
                         )
                 else:
                     logging.warning("default_template.yaml not found at static root.")
@@ -362,6 +365,11 @@ class UserCompaniesViewSet(
             if yaml_obj:
                 yaml_obj.company = company
                 yaml_obj.save()
+            # accounts registered before templates were defaulted at signup have
+            # none flagged — guarantee the company always has exactly one default
+            company_templates = Yaml.objects.filter(company=company)
+            if company_templates.exists() and not company_templates.filter(is_default=True).exists():
+                company_templates.filter(pk=company_templates.first().pk).update(is_default=True)
             user.user_company = company
             company.is_varified = True
             company.save()
@@ -380,8 +388,7 @@ class UserCompaniesViewSet(
         return Response()
 
 class LoginByToken(APIView):
-
-    authentication_classes = [ServiceTokenAuthentication]
+    authentication_classes = [ServiceTokenAuthenticationInternal]
     permission_classes = [IsAuthenticated]
 
     def post(self, request):

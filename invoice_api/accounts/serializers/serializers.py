@@ -83,6 +83,9 @@ class RegisterSerializer(serializers.ModelSerializer):
             Yaml.objects.create(
                 yaml_file=File(f, name="default_template.yaml"),  # attach file
                 user=user,
+                # first template of a brand-new account is the company default,
+                # so nothing has to be picked before the first PDF export
+                is_default=True,
             )
 
         new_product_in_frontend.objects.create(user= user,input_title='Description',size=3,is_calculable=False,is_show=True)

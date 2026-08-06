@@ -14,7 +14,7 @@ from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
 
 from invoice_api.limits import enforce_limit
-from invoice_api.permissions import HasFeature, HasMethodPermission
+from invoice_api.permissions import HasFeature, HasMethodFeature, HasMethodPermission
 from invoice_api.scoping import company_config_owner, user_scope_q
 
 from companies.models import Customers
@@ -327,10 +327,16 @@ class Invoice_product_action(APIView):
 class new_product_in_frontend_view(ListAPIView):
     """Company-wide bill-field configuration. Everyone in the company reads
     the same set (owned by the company's first admin); editing requires the
-    template.manage permission."""
+    template.manage permission.
+
+    Reads stay open on every plan – the same convention as yaml_manager – because
+    the bill columns are needed to render a bill and to fill in the line items of
+    an extracted purchase invoice. Gating GET behind template_designer made every
+    imported row come back empty on plans without that feature."""
     serializer_class = new_product_in_frontendSerializer
-    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('template_designer')]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasMethodFeature]
     required_permissions_map = {'POST': 'template.manage'}
+    required_features_map = {'POST': 'template_designer'}
 
     def get_queryset(self):
         owner = company_config_owner(self.request)

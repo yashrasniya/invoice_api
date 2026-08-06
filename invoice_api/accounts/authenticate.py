@@ -43,6 +43,15 @@ class CustomAuthentication(JWTAuthentication):
 
 class ServiceTokenAuthentication(BaseAuthentication):
 
+    def access_check(self, service_token):
+        from invoice_api.middleware import get_active_subscription, get_enabled_features
+        company = getattr(service_token.user, 'user_company', None)
+        if company:
+            sub = get_active_subscription(company)
+            features = get_enabled_features(sub)
+            if 'api_access' not in features:
+                raise AuthenticationFailed("Your plan does not include API access.")
+        return True
     def authenticate(self, request):
 
         auth_header = request.headers.get("Authorization")
@@ -66,16 +75,14 @@ class ServiceTokenAuthentication(BaseAuthentication):
 
         if not service_token:
             raise AuthenticationFailed("Invalid token")
-            
-        from invoice_api.middleware import get_active_subscription, get_enabled_features
-        company = getattr(service_token.user, 'user_company', None)
-        if company:
-            sub = get_active_subscription(company)
-            features = get_enabled_features(sub)
-            if 'api_access' not in features:
-                raise AuthenticationFailed("Your plan does not include API access.")
+
+        self.access_check(service_token)
 
         return (service_token.user, None)
+
+class ServiceTokenAuthenticationInternal(ServiceTokenAuthentication):
+    def access_check(self, service_token):
+        return True
 
 
 class AdminJWTTokenAuthentication(JWTAuthentication):

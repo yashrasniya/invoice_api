@@ -123,12 +123,14 @@ class SubscribeView(_CompanyMixin, APIView):
         company = self.get_company()
 
         try:
+            print(company.company_email_id,serializer.validated_data['plan_code'],serializer.validated_data['period'])
             sub = services.start_subscription(
                 company,
                 serializer.validated_data['plan_code'],
                 serializer.validated_data['period'],
                 user=request.user)
         except RazorpayNotConfigured as exc:
+            print(exc)
             return Response({'detail': str(exc)},
                             status=status.HTTP_503_SERVICE_UNAVAILABLE)
         except BillingUnavailable as exc:

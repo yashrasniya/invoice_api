@@ -6,6 +6,7 @@ import requests
 
 from django.conf import settings
 from django.core.files.storage import default_storage
+from django.db.models import Q
 from django.utils import timezone
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
@@ -19,9 +20,79 @@ from rest_framework.parsers import MultiPartParser, FormParser
 from accounts.models import ServiceToken, User
 from accounts.authenticate import AdminJWTTokenAuthentication
 from invoice_api.permissions import HasMethodPermission, HasFeature
-from invoice_api.limits import enforce_limit
+from invoice_api.limits import enforce_limit, get_limit
+from invoice_api.scoping import user_scope_q
 from invoice.all_serializers.pipline_seriallzers import InvoiceUploadSerializer
 from invoice.models import InvoiceExtractionLog
+
+# Per-user cap on uploads per calendar day, on top of the plan's monthly quota.
+DAILY_UPLOAD_LIMIT = 10
+
+# Pipeline statuses that mean the job finished successfully / failed. Anything
+# else ("Extraction Started", "queued", …) is still in flight.
+DONE_STATUSES = ("done", "success")
+FAILED_STATUSES = ("error", "failed")
+
+
+def status_match_q(values):
+    """Case-insensitive `status IN values`, so counting happens in the DB."""
+    q = Q()
+    for value in values:
+        q |= Q(status__iexact=value)
+    return q
+
+
+def extraction_state(status_value):
+    """Collapse the pipeline's free-form status into completed/processing/failed."""
+    value = (status_value or "").strip().lower()
+    if value in DONE_STATUSES:
+        return "completed"
+    if value in FAILED_STATUSES:
+        return "failed"
+    return "processing"
+
+
+def extracted_summary(log):
+    """Pull the headline invoice fields out of a log's stored payloads.
+
+    The callback writes the pipeline's final payload to `meta_data`, while
+    `response_data` holds the initial /extract reply (and any status polls),
+    so prefer meta_data and fall back to response_data.
+    """
+    top_level = [s for s in (log.meta_data, log.response_data) if isinstance(s, dict)]
+    # some pipeline versions nest the invoice under `data`/`invoice`/`result`
+    nested = [s[key] for s in top_level
+              for key in ("data", "invoice", "result")
+              if isinstance(s.get(key), dict)]
+    sources = top_level + nested
+
+    def pick(*keys):
+        for source in sources:
+            for key in keys:
+                value = source.get(key)
+                if value not in (None, "", []):
+                    return value
+        return None
+
+    # `vendor` may hold either a name or a Vendor pk depending on which stage
+    # of the pipeline wrote it — keep them apart so an id never renders as a name
+    vendor = pick("vendor_name", "vendor", "party_name", "seller_name")
+    vendor_name, vendor_id = vendor, None
+    if isinstance(vendor, bool):
+        vendor_name = None
+    elif isinstance(vendor, int):
+        vendor_name, vendor_id = None, vendor
+    elif isinstance(vendor, str) and vendor.strip().isdigit():
+        vendor_name, vendor_id = None, int(vendor.strip())
+
+    return {
+        "invoice_number": pick("invoice_number", "invoiceNumber", "bill_number"),
+        "date": pick("date", "invoice_date"),
+        "vendor_name": vendor_name,
+        "vendor_id": vendor_id,
+        "total_amount": pick("total_final_amount", "total_amount", "grand_total"),
+        "gst_amount": pick("gst_final_amount", "gst_amount", "tax_amount"),
+    }
 
 
 class InvoiceExtractAPIView(APIView):
@@ -66,7 +137,10 @@ class InvoiceExtractAPIView(APIView):
             # -----------------------------------
             # Plan Limit Check
             # -----------------------------------
-            today = timezone.now().date()
+            # localdate(), not now().date(): the latter yields the UTC date,
+            # while the __date/__month lookups convert to TIME_ZONE — so they
+            # disagree for the first 5.5h of every IST day.
+            today = timezone.localdate()
             month_count = InvoiceExtractionLog.objects.filter(
                 user__user_company=getattr(request, 'company', None),
                 created_at__year=today.year,
@@ -77,15 +151,14 @@ class InvoiceExtractAPIView(APIView):
             # -----------------------------------
             # Daily Limit Check
             # -----------------------------------
-            today = timezone.now().date()
             daily_count = InvoiceExtractionLog.objects.filter(
                 user=request.user,
                 created_at__date=today
             ).count()
             
-            if daily_count >= 10:
+            if daily_count >= DAILY_UPLOAD_LIMIT:
                 return Response(
-                    {"error": "Daily limit of 10 invoice uploads reached. Please try again tomorrow."},
+                    {"error": f"Daily limit of {DAILY_UPLOAD_LIMIT} invoice uploads reached. Please try again tomorrow."},
                     status=status.HTTP_429_TOO_MANY_REQUESTS
                 )
 
@@ -313,6 +386,125 @@ class InvoiceExtractionPendingJobsAPIView(APIView):
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class InvoiceExtractionJobsAPIView(APIView):
+    """Full OCR extraction history + quota usage, for the OCR Invoices page.
+
+    `purchase/pending-jobs/` deliberately returns only unfinished jobs (it
+    backs a notification dropdown). This one returns everything, company-wide,
+    with the extracted fields so the page can show what OCR actually read.
+    """
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('purchases_invoice')]
+    required_permissions_map = {'GET': 'invoice.view'}
+
+    MAX_PAGE = 200
+
+    @swagger_auto_schema(
+        operation_description="List OCR extraction jobs with extracted data and plan usage",
+    )
+    def get(self, request):
+        try:
+            logs = (InvoiceExtractionLog.objects
+                    .filter(user_scope_q(request))
+                    .order_by('-created_at'))
+
+            try:
+                limit = int(request.query_params.get('limit') or 50)
+            except (TypeError, ValueError):
+                limit = 50
+            limit = max(1, min(limit, self.MAX_PAGE))
+
+            state_filter = (request.query_params.get('state') or '').strip().lower()
+
+            # localdate() to match the __date/__month lookups below, which
+            # convert to TIME_ZONE; now().date() would give the UTC date and
+            # report 0 uploads during the first 5.5h of every IST day.
+            today = timezone.localdate()
+            # counts/usage are aggregated in the DB over the whole history, so
+            # they stay correct no matter which page or filter is requested
+            this_month = logs.filter(created_at__year=today.year,
+                                     created_at__month=today.month).count()
+            today_count = InvoiceExtractionLog.objects.filter(
+                user=request.user, created_at__date=today).count()
+
+            done_q = status_match_q(DONE_STATUSES)
+            failed_q = status_match_q(FAILED_STATUSES)
+            total = logs.count()
+            completed_count = logs.filter(done_q).count()
+            failed_count = logs.filter(failed_q).count()
+            counts = {
+                "completed": completed_count,
+                "failed": failed_count,
+                # everything not terminal is still in flight (incl. null status)
+                "processing": total - completed_count - failed_count,
+            }
+
+            page = logs
+            if state_filter == 'completed':
+                page = logs.filter(done_q)
+            elif state_filter == 'failed':
+                page = logs.filter(failed_q)
+            elif state_filter == 'processing':
+                page = logs.exclude(done_q).exclude(failed_q)
+
+            jobs = []
+            for log in page.select_related('user')[:limit]:
+                state = extraction_state(log.status)
+
+                file_name, file_url = "Unknown File", None
+                if log.file:
+                    file_name = os.path.basename(log.file.name)
+                    try:
+                        file_url = request.build_absolute_uri(log.file.url)
+                    except ValueError:
+                        file_url = None
+
+                jobs.append({
+                    "id": log.id,
+                    "job_id": log.job_id,
+                    "file_name": file_name,
+                    "file_url": file_url,
+                    "status": log.status,
+                    "state": state,
+                    "invoice_type": log.invoice_type,
+                    "created_at": log.created_at,
+                    "uploaded_by": log.user.username if log.user else None,
+                    "extracted": extracted_summary(log),
+                })
+
+            # resolve any vendor pks the pipeline stored into display names,
+            # in one query rather than one per job
+            vendor_ids = {j["extracted"]["vendor_id"] for j in jobs
+                          if j["extracted"].get("vendor_id")}
+            if vendor_ids:
+                from companies.models import Vendor
+                names = dict(Vendor.objects
+                             .filter(user_scope_q(request), id__in=vendor_ids)
+                             .values_list('id', 'name'))
+                for job in jobs:
+                    ex = job["extracted"]
+                    if ex.get("vendor_id") and not ex.get("vendor_name"):
+                        ex["vendor_name"] = names.get(ex["vendor_id"])
+
+            return Response({
+                "usage": {
+                    "this_month": this_month,
+                    # None => unlimited, 0 => no active plan
+                    "monthly_limit": get_limit(request, 'ocr_purchase_invoice', 'ocr_scans_per_month'),
+                    "today": today_count,
+                    "daily_limit": DAILY_UPLOAD_LIMIT,
+                    "total": total,
+                },
+                "counts": counts,
+                "jobs": jobs,
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 
 def send_conformation_message(invoice_payload, user):
     message = f"""

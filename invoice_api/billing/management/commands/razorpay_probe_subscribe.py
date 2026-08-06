@@ -275,10 +275,10 @@ class Command(BaseCommand):
               '  "billing: Razorpay ..." line, which records the raw description.')
         elif first_failure[0] == 'plan_id + total_count only':
             w(err('  Even the minimal documented payload is rejected, so no parameter\n'
-                  '  is at fault — this is account-level. Most likely Subscriptions is\n'
-                  '  not fully activated for LIVE mode on this account (test and live\n'
-                  '  are enabled separately, and live often needs Razorpay support).\n'
-                  '  Confirm with: manage.py verify_razorpay --probe-subscriptions'))
+                  '  is at fault. Combined with reads succeeding, the Subscriptions API\n'
+                  '  is reachable and authorised but will not create a mandate — an\n'
+                  '  account entitlement, not anything in this codebase.'))
+            self.check_methods(requests, auth)
         else:
             label, payload, detail = first_failure
             w(err(f'  First variant to fail: {label}'))
@@ -301,3 +301,74 @@ class Command(BaseCommand):
             return '  ' + json.dumps(response.json(), indent=2).replace('\n', '\n  ')
         except ValueError:
             return '  ' + (response.text or '(empty body)')[:800]
+
+    # ── account capability ────────────────────────────────────────────
+
+    def check_methods(self, requests, auth):
+        """Ask Razorpay which payment methods this account has enabled.
+
+        A subscription is a mandate, so the account needs at least one
+        recurring-capable method (UPI Autopay, card eMandate, eNACH). If none
+        are enabled, `POST /v1/subscriptions` is refused — and Razorpay
+        reports that as a bare "Validation failed" rather than saying so.
+
+        `/v1/methods` is the endpoint Checkout itself uses; it is keyed by
+        key_id rather than requiring the secret.
+        """
+        w, ok, err, warn = (self.stdout.write, self.style.SUCCESS,
+                            self.style.ERROR, self.style.WARNING)
+        w(self.style.MIGRATE_HEADING('\nACCOUNT PAYMENT METHODS'))
+
+        key_id = auth[0]
+        try:
+            r = requests.get(f'{API}/methods', params={'key_id': key_id}, timeout=20)
+        except Exception as exc:                                # noqa: BLE001
+            w(warn(f'  could not reach /v1/methods ({exc})'))
+            return
+
+        if r.status_code != 200:
+            w(warn(f'  /v1/methods returned HTTP {r.status_code}; skipping.'))
+            return
+
+        try:
+            body = r.json()
+        except ValueError:
+            w(warn('  /v1/methods did not return JSON.'))
+            return
+
+        # surface anything mandate-related, whatever shape Razorpay uses
+        interesting = {k: v for k, v in body.items()
+                       if any(t in k.lower() for t in
+                              ('recurring', 'emandate', 'nach', 'upi', 'subscription'))}
+        if interesting:
+            w('  mandate-capable methods reported:')
+            for k, v in interesting.items():
+                w(f'    {k}: {json.dumps(v)[:220]}')
+        else:
+            w(warn('  Nothing recurring/eMandate/NACH/UPI in the response.'))
+
+        recurring = body.get('recurring')
+        if recurring in (False, {}, None) and 'recurring' in body:
+            w(err('\n  recurring is DISABLED on this account. That is almost certainly\n'
+                  '  why subscriptions cannot be created.'))
+        elif recurring:
+            w(ok('\n  recurring appears enabled — so the block is more specific than\n'
+                 '  "no mandate method". Razorpay support will need to look.'))
+
+        w(self.style.MIGRATE_HEADING('\nWHAT TO SEND RAZORPAY SUPPORT'))
+        for line in (
+            f'account: {key_id} (LIVE)',
+            'POST /v1/subscriptions -> 400 BAD_REQUEST_ERROR "Validation failed",',
+            '  with NO `field` in the error body',
+            'fails with the minimal documented payload: {plan_id, total_count}',
+            'fails against a freshly created 100-paise monthly plan too',
+            'GET  /v1/subscriptions -> 200   (read works)',
+            'GET  /v1/plans/<id>    -> 200   (plans work)',
+            'POST /v1/plans         -> 200   (plan creation works)',
+            'reproduced from two different machines/IPs with the same keys',
+            'ask: enable Subscriptions / recurring payments for LIVE mode, and',
+            '  confirm a recurring-capable method (UPI Autopay / card eMandate /',
+            '  eNACH) is active on the account',
+        ):
+            w(f'  {line}')
+        w(warn('  Include the X-Razorpay-Request-Id printed above.'))

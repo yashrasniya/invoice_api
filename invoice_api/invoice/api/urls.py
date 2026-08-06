@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from .pipline import InvoiceExtractAPIView, InvoiceExtractionStatusAPIView, InvoiceExtractionPendingJobsAPIView, InvoiceExtractionCallbackAPIView, AdminInvoiceExtractAPIView
+from .pipline import InvoiceExtractAPIView, InvoiceExtractionStatusAPIView, InvoiceExtractionPendingJobsAPIView, InvoiceExtractionCallbackAPIView, AdminInvoiceExtractAPIView, InvoiceExtractionJobsAPIView
 from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
     new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport, \
     CustomFieldViewSet, LedgerAPIView
@@ -39,5 +39,6 @@ urlpatterns = [
     path('purchase/upload-admin/', AdminInvoiceExtractAPIView.as_view()),
     path('purchase/status/<str:job_id>/', InvoiceExtractionStatusAPIView.as_view()),
     path('purchase/pending-jobs/', InvoiceExtractionPendingJobsAPIView.as_view()),
+    path('purchase/ocr-jobs/', InvoiceExtractionJobsAPIView.as_view()),
     path('purchase/callback/<str:job_id>/', InvoiceExtractionCallbackAPIView.as_view(), name='purchase-callback')
 ] + router.urls
