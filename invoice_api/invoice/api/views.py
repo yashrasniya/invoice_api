@@ -20,6 +20,7 @@ from invoice_api.scoping import company_config_owner, user_scope_q
 from companies.models import Customers
 from companies.serializers import CompanySerializer
 from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties, CustomField
+from invoice.numbering import next_invoice_number
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
@@ -106,9 +107,22 @@ class InvoiceView(ListAPIView):
         else:
             enforce_limit(request, 'invoicing', 'invoices_per_month', month_count)
 
-        serializer = InvoiceSerializer(data=request.data)
+        # Auto-number sales invoices that arrive without a number. A purchase
+        # bill carries the vendor's own number, so it never draws from the
+        # series. Any value the client supplied wins and leaves the counter
+        # untouched -- manual entry must keep working.
+        data = request.data
+        raw = data.get('invoice_number')
+        supplied = str(raw).strip() if raw is not None else ''
+        # FormData.append(k, null) in the browser serialises to the string "null"
+        if inv_type != 'purchase' and supplied.lower() in ('', 'null', 'undefined', 'none'):
+            generated = next_invoice_number(getattr(request, 'company', None))
+            if generated:
+                data = data.copy()          # QueryDict is immutable on the multipart path
+                data['invoice_number'] = generated
+
+        serializer = InvoiceSerializer(data=data, context={'request': request})
         if serializer.is_valid():
-            print(serializer.validated_data)
             serializer.save(user=self.request.user)
             return Response(serializer.data)
         else:

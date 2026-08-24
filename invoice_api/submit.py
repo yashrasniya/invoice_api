@@ -12,6 +12,7 @@ from reportlab.lib.utils import ImageReader
 from PIL import Image
 
 from invoice.models import Font
+import pdf_fonts
 logger = logging.getLogger(__name__)
 
 class Submit:
@@ -30,10 +31,45 @@ class Submit:
 
 
     def add_fonts(self):
+        # The bundled Devanagari faces are registered up front: the default
+        # Times-Roman has no Hindi glyphs, and ReportLab draws a missing glyph
+        # as nothing at all, so an address in Hindi used to disappear from the
+        # invoice without any error. Other scripts load on first use.
+        pdf_fonts.register_reportlab_fonts()
         for i in Font.objects.all():
             if i.name == "default":
                 self.font = i.name
             pdfmetrics.registerFont(TTFont(i.name, i.font.path))
+
+    def draw_text(self, x, y, text):
+        """drawString, but each script is drawn with a font that has its glyphs.
+
+        The string is split by script rather than drawn wholesale in one
+        fallback font, so Latin text keeps the typeface the template asked
+        for and only the characters it cannot render are substituted.
+        """
+        if not text:
+            return
+        if not pdf_fonts.has_bundled_script(text):
+            self.canvas_obj.drawString(x, y, text)
+            return
+
+        base_font = self.canvas_obj._fontname
+        size = self.canvas_obj._fontsize
+        bold = 'bold' in base_font.lower()
+
+        for chunk, script in pdf_fonts.runs(text):
+            font = base_font
+            if script is not None:
+                # None means the face could not be loaded; drawing with the
+                # base font at least leaves a trace of where the text was.
+                font = pdf_fonts.reportlab_font(script, bold=bold) or base_font
+                chunk = pdf_fonts.reorder(chunk, script)
+                pdf_fonts.warn_unshaped(script)
+            self.canvas_obj.setFont(font, size)
+            self.canvas_obj.drawString(x, y, chunk)
+            x += self.canvas_obj.stringWidth(chunk, font, size)
+        self.canvas_obj.setFont(base_font, size)
 
     def add_template(self):
         """Draws the bill template image for the current page."""
@@ -84,7 +120,13 @@ class Submit:
                 if isinstance(obj.fill, str) else obj.fill
             )
         stroke = obj.raw.get('stroke',1)
-        if obj.src:
+        src_image = getattr(obj, 'src_image', None)
+        if getattr(obj, 'rectangles_type', None) == 'image' and not obj.src and src_image is None:
+            # An image slot with nothing to put in it — an opted-out UPI QR,
+            # or a logo the company never uploaded. Falling through would
+            # stamp an empty outlined box onto the invoice.
+            return
+        if obj.src or src_image is not None:
             points = obj.points
             xs = [p[0] for p in points]
             ys = [p[1] for p in points]
@@ -94,22 +136,35 @@ class Submit:
             width = max(xs) - x
             height = max(ys) - y
             try:
-                response = requests.get(obj.src)
-                response.raise_for_status()
+                if src_image is not None:
+                    # Generated in-process (UPI QR) — nothing to fetch.
+                    pil_img = src_image
+                else:
+                    response = requests.get(obj.src)
+                    response.raise_for_status()
 
-                # Wrap in BytesIO
-                img_data = BytesIO(response.content)
-                pil_img = Image.open(img_data)
+                    # Wrap in BytesIO
+                    img_data = BytesIO(response.content)
+                    pil_img = Image.open(img_data)
                 
                 # Calculate target size for 150 DPI resolution
                 target_w = int(width * 150.0 / 72.0)
                 target_h = int(height * 150.0 / 72.0)
                 
                 if pil_img.width > target_w or pil_img.height > target_h:
-                    try:
-                        resample_filter = Image.Resampling.LANCZOS
-                    except AttributeError:
-                        resample_filter = getattr(Image, 'LANCZOS', 1)
+                    if src_image is not None:
+                        # QR modules are hard-edged pixel art: interpolating
+                        # them greys the module boundaries and the code stops
+                        # scanning. Nearest-neighbour keeps the edges sharp.
+                        try:
+                            resample_filter = Image.Resampling.NEAREST
+                        except AttributeError:
+                            resample_filter = getattr(Image, 'NEAREST', 0)
+                    else:
+                        try:
+                            resample_filter = Image.Resampling.LANCZOS
+                        except AttributeError:
+                            resample_filter = getattr(Image, 'LANCZOS', 1)
                     
                     pil_img = pil_img.resize((max(1, target_w), max(1, target_h)), resample_filter)
 
@@ -198,7 +253,7 @@ class Submit:
                     
                     
                     if obj.limit and text_len > obj.limit and line < max_lines:
-                        self.canvas_obj.drawString(x, y, ' '.join(draw_value[:-1]))
+                        self.draw_text(x, y, ' '.join(draw_value[:-1]))
                         draw_value.clear()
                         draw_value.append(text)
                         text_len = len(text) + 1
@@ -214,7 +269,7 @@ class Submit:
                     if obj.limit and text_len > obj.limit:
                         font_size = obj.next_line.get("font_size", obj.font_size or self.font_size) if obj.next_line else (obj.font_size or self.font_size)
                         self.canvas_obj.setFontSize(float(font_size))
-                    self.canvas_obj.drawString(x, y, ' '.join(draw_value))
+                    self.draw_text(x, y, ' '.join(draw_value))
                     
                     # Prepare for the next explicit raw_line
                     x = obj.next_line.get("x", obj.x) if obj.next_line else obj.x
@@ -224,7 +279,7 @@ class Submit:
                     line += 1
                     
         else:
-            self.canvas_obj.drawString(obj.x, obj.y, value_str)
+            self.draw_text(obj.x, obj.y, value_str)
 
 
 

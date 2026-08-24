@@ -263,6 +263,25 @@ Bill:
         y: 100.11923230588434
         value: "(Authorised Signatory) "
 
+    # UPI payment block, bottom-left opposite the signatory. Both entries stay
+    # blank unless the company has set a UPI id and switched the QR on in
+    # Company Details; the QR itself encodes this invoice's grand total.
+    - upi_qr:
+        type: rectangles
+        x: 39
+        y: 58
+        width: 82
+        height: 82
+        rectangles_type: image
+        label: 'upi_qr'
+
+    - upi_id:
+        x: 128
+        y: 105
+        font_size: 9
+        label: 'upi_id'
+        prefix: "Scan to pay \u2014 UPI : "
+
 
 
 

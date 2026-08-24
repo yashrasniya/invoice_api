@@ -9,6 +9,7 @@ from .views import InvoiceView, Invoice_update, Invoice_product_action, new_prod
 router = DefaultRouter()
 router.register(r'custom-fields', CustomFieldViewSet, basename='custom-field')
 
+from .views_numbering import InvoiceNumberingAPIView
 from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView
 from .sales_report_views import SalesReportAPIView
 
@@ -16,6 +17,7 @@ urlpatterns = [
     path('invoice/', InvoiceView.as_view()),
     path('invoice/<int:id>/', InvoiceView.as_view()),
     path('invoice/<int:id>/update/', Invoice_update.as_view()),
+    path('invoice-numbering/', InvoiceNumberingAPIView.as_view(), name='invoice-numbering'),
     path('invoice/<int:id>/product/<str:action>/', Invoice_product_action.as_view()),
     # new_product_in_frontend_view
     path('new/product/in/frontend/', new_product_in_frontend_view.as_view()),

@@ -12,9 +12,30 @@ from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
 from yaml_reader import num2words
+from upi_qr import company_upi_link, make_qr_data_uri
+from pdf_fonts import inject_font_css
 import pandas as pd
 
 loger = logging.getLogger(__name__)
+
+
+class TemplateProps(dict):
+    """A template context dict where an unknown key renders empty.
+
+    The keys here are user-defined — product column names, custom header
+    fields — so a template can legitimately reference one that a given invoice
+    does not carry. Django tolerates that for a plain `{{ x.missing }}` but NOT
+    for a filter argument: `{{ item.rate|default:item.amount }}` resolves
+    `item.amount` strictly and raises VariableDoesNotExist, which aborted the
+    entire PDF over a single unrecognised name. Returning '' keeps the rest of
+    the invoice renderable.
+
+    Only __getitem__ is affected; .get() still reports a missing key as None,
+    so calculation code that distinguishes absent from empty is unchanged.
+    """
+
+    def __missing__(self, key):
+        return ''
 
 def pdf_generator(qs, request, return_bytes=False,template_id=None):
     yaml_obj = Yaml.objects.filter(company=request.user.user_company.id)
@@ -44,11 +65,22 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
         pages_html = ""
         for obj in qs:
             ser_obj = InvoiceSerializerForPDF(obj)
-            invoice_data = ser_obj.data
+            invoice_data = TemplateProps(ser_obj.data)
             
+            # The serializer carries `receiver` as a bare id, so the customer
+            # block of a template would otherwise have nothing to print.
             if obj.receiver:
                 invoice_data['receiver_name'] = obj.receiver.name
-                
+                invoice_data['receiver_address'] = obj.receiver.address or ''
+                invoice_data['receiver_gst_number'] = obj.receiver.gst_number or ''
+                invoice_data['receiver_phone'] = obj.receiver.phone_number or ''
+                invoice_data['receiver_state'] = obj.receiver.state or ''
+                invoice_data['receiver_state_code'] = obj.receiver.state_code or ''
+
+            invoice_data['payment_method'] = (obj.get_payment_method_display()
+                                              if obj.payment_method else '')
+            invoice_data['payment_status'] = obj.get_payment_status_display()
+
             custom_header = invoice_data.get('custom_header_field')
             if isinstance(custom_header, str):
                 import json
@@ -64,7 +96,7 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                 invoice_data[k.lower()] = v
                     
             for p in invoice_data.get('products', []):
-                props = {}
+                props = TemplateProps()
                 total = 1.0
                 extra_cal = 0.0
                 
@@ -136,14 +168,32 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                     for word in title.split():
                         props[word] = display_val
                 
+                # `amount`/`total` only exist as props if the user happened to
+                # name a product column that way; templates ask for them
+                # regardless. Fall back to the line total the product already
+                # carries so the amount column shows a figure, not a blank.
+                for alias in ('amount', 'total'):
+                    if not props.get(alias):
+                        props[alias] = p.get('total_amount')
+
                 p['props'] = props
                 
             django_template = Template(inner_html)
             
             company_data = {}
             if request.user.user_company:
+                company = request.user.user_company
                 company_data = {
-                    'company_name': request.user.user_company.company_name,
+                    'company_name': company.company_name,
+                    'company_address': company.company_address or '',
+                    'company_gst_number': company.company_gst_number or '',
+                    'company_state': company.state or '',
+                    'company_state_code': company.state_code or '',
+                    'company_email_id': company.company_email_id or '',
+                    'bank_name': company.bank_name or '',
+                    'account_number': company.account_number or '',
+                    'branch': company.branch or '',
+                    'ifsc_code': company.ifsc_code or '',
                 }
                 if request.user.user_company.company_logo:
                     company_data['company_logo'] = request.build_absolute_uri(request.user.user_company.company_logo.url)
@@ -166,6 +216,22 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             footer_data["gst"] = round(avg_gst, 2)
             footer_data["center_gst"] = round(avg_gst / 2, 2)
             footer_data["state_gst"] = round(avg_gst / 2, 2)
+
+            # The QR encodes this invoice's grand total, so it is built per
+            # page rather than once per request. As a data: URI it survives
+            # WeasyPrint rendering a bare string with no asset base URL.
+            upi_link = company_upi_link(
+                request.user.user_company,
+                total_amount_with_gst,
+                note=invoice_data.get('invoice_number') or None,
+            )
+            # upi_id rides on the same gate as the QR: one toggle controls the
+            # whole payment block, so a template can never print the VPA next
+            # to a QR that isn't there.
+            company_data['upi_id'] = (request.user.user_company.upi_id
+                                      if upi_link else '') or ''
+            company_data['upi_link'] = upi_link or ''
+            company_data['upi_qr'] = make_qr_data_uri(upi_link) or ''
 
             context_dict = {
                 'invoice': invoice_data,
@@ -214,7 +280,20 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
         
         try:
             import weasyprint
-            pdf_file_bytes = weasyprint.HTML(string=full_html).write_pdf()
+            # presentational_hints: honour plain HTML sizing attributes such as
+            # <img height="50">. Without it WeasyPrint ignores them, so an
+            # unsized image keeps its intrinsic pixel size and gets silently
+            # dropped when it no longer fits the fixed-height page box. Author
+            # CSS still wins — hints only fill in where no rule applies.
+            #
+            # inject_font_css: the bundled Devanagari face has to be declared
+            # inside the document. WeasyPrint only registers the @font-face
+            # files it sees while parsing the HTML, so the same CSS handed to
+            # write_pdf(stylesheets=…) is ignored and Hindi keeps rendering
+            # blank on any host that has no Devanagari font of its own.
+            pdf_file_bytes = weasyprint.HTML(
+                string=inject_font_css(full_html)).write_pdf(
+                presentational_hints=True)
             pdf_file = io.BytesIO(pdf_file_bytes)
             pdf_file.seek(0)
             
@@ -307,7 +386,8 @@ def pdf_data_generator(qs, request):
 
     html_string = render_to_string('html_template_one.html', context)
     import weasyprint
-    pdf_file = weasyprint.HTML(string=html_string).write_pdf()
+    pdf_file = weasyprint.HTML(
+        string=inject_font_css(html_string)).write_pdf()
 
     response = HttpResponse(pdf_file, content_type='application/pdf')
     response['Content-Disposition'] = 'attachment; filename="invoices_export_data.pdf"'

@@ -119,6 +119,13 @@ class InvoiceSerializer(serializers.ModelSerializer):
             return obj.vendor.gst_number
         return ''
 
+    def validate_invoice_number(self, value):
+        # A cleared number stores as NULL, matching existing rows, rather than
+        # introducing '' as a second empty representation.
+        if value is not None and not str(value).strip():
+            return None
+        return value
+
     def validate_custom_header_field(self, value):
         import json
         if isinstance(value, str):

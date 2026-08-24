@@ -538,6 +538,23 @@ class WeasyprintPreviewView(APIView):
             'company_email': "billing@acme.com",
             'gst_number': "22AAAAA0000A1Z5",
         }
+
+        # Preview the QR against the dummy total so the designer can see and
+        # position it. If the company has not set up UPI yet, fall back to a
+        # sample VPA — an empty box would look like a broken template.
+        from upi_qr import build_upi_link, company_upi_link, make_qr_data_uri
+        preview_company = getattr(request.user, 'user_company', None)
+        preview_upi_link = company_upi_link(
+            preview_company, 1180.00, note="INV-2026-0001")
+        if preview_upi_link:
+            company_data['upi_id'] = preview_company.upi_id
+        else:
+            company_data['upi_id'] = "acme@okaxis"
+            preview_upi_link = build_upi_link(
+                "acme@okaxis", payee_name=company_name,
+                amount=1180.00, note="INV-2026-0001")
+        company_data['upi_link'] = preview_upi_link or ''
+        company_data['upi_qr'] = make_qr_data_uri(preview_upi_link) or ''
         
         dummy_products = [
             {
@@ -587,6 +604,17 @@ class WeasyprintPreviewView(APIView):
             'state_gst': 9.00
         }
         
+        # Same forgiving lookup as the real export, so the designer preview
+        # cannot 500 (or worse, silently succeed) on a field name the dummy
+        # data lacks while the exported invoice behaves differently.
+        from invoice.export import TemplateProps
+        for _p in dummy_products:
+            _p['props'] = TemplateProps(_p['props'])
+            for _alias in ('amount', 'total'):
+                if not _p['props'].get(_alias):
+                    _p['props'][_alias] = _p.get('total_amount')
+        invoice_data = TemplateProps(invoice_data)
+
         context_dict = {
             'invoice': invoice_data,
             'company': company_data,
@@ -601,7 +629,13 @@ class WeasyprintPreviewView(APIView):
             logger.error(f"Error rendering preview template: {e}")
 
         try:
-            pdf_file = weasyprint.HTML(string=html_content).write_pdf()
+            # Same flag and the same Devanagari @font-face injection as the
+            # real export, so the preview cannot look right while the
+            # exported invoice silently drops an image or a line of Hindi.
+            from pdf_fonts import inject_font_css
+            pdf_file = weasyprint.HTML(
+                string=inject_font_css(html_content)).write_pdf(
+                presentational_hints=True)
             buffer = io.BytesIO(pdf_file)
             buffer.seek(0)
             return FileResponse(buffer, as_attachment=False, filename='preview.pdf', content_type='application/pdf')

@@ -9,12 +9,17 @@ safe fallback to the requesting user when no company is resolved.
 from django.db.models import Q
 
 
-def user_scope_q(request):
-    """Q filter: rows created by any member of the requester's company."""
+def user_scope_q(request, prefix=''):
+    """Q filter: rows created by any member of the requester's company.
+
+    `prefix` walks the same check across a relation, e.g.
+    `user_scope_q(request, 'invoice__')` keeps a joined invoice inside the
+    requester's company instead of trusting the join to stay in-tenant.
+    """
     company = getattr(request, 'company', None)
     if company is not None:
-        return Q(user__user_company=company)
-    return Q(user=request.user)
+        return Q(**{f'{prefix}user__user_company': company})
+    return Q(**{f'{prefix}user': request.user})
 
 
 def company_config_owner(request):

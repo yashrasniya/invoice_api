@@ -8,6 +8,8 @@ from accounts.models import User
 
 
 from invoice_api.softdelete import SoftDeleteModel
+# numbering imports models lazily (inside functions), so this is not a cycle
+from invoice import numbering
 
 
 class Invoice(SoftDeleteModel):
@@ -190,3 +192,39 @@ class CreditDebitNote(models.Model):
             self.company = self.user.user_company
         super().save(*args, **kwargs)
 
+
+
+class CompanyInvoiceNumbering(models.Model):
+    """Per-company auto-numbering settings and running counter.
+
+    A separate one-to-one table rather than columns on UserCompanies: that row
+    is read by the tenant middleware on essentially every request, and a hot
+    per-invoice counter does not belong on it.
+
+    Sales and purchase invoices share this single counter; only sales invoices
+    draw from it (see InvoiceView.post).
+    """
+    DEFAULT_TEMPLATE = numbering.DEFAULT_TEMPLATE
+    RESET_CHOICES = numbering.RESET_CHOICES
+
+    company = models.OneToOneField('accounts.UserCompanies', on_delete=models.CASCADE,
+                                   related_name='invoice_numbering')
+    enabled = models.BooleanField(default=False)
+    template = models.CharField(max_length=60, default=DEFAULT_TEMPLATE)
+    reset_period = models.CharField(max_length=10, choices=RESET_CHOICES, default='never')
+    # The value that will be used NEXT, not the last one issued.
+    next_number = models.PositiveIntegerField(default=1)
+    # The period the counter is currently counting inside ('', '2026-08',
+    # '2026', 'FY2026'). Recomputed from the clock on every generation, so
+    # year rollover needs no cron.
+    period_key = models.CharField(max_length=16, blank=True, default='')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Invoice numbering settings'
+        verbose_name_plural = 'Invoice numbering settings'
+
+    def __str__(self):
+        return '%s -> %s (next %s)' % (self.company, self.template, self.next_number)

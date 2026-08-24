@@ -89,7 +89,23 @@ class UserCompanies(models.Model):
     account_number = models.CharField(max_length=30, blank=True, null=True)
     branch = models.CharField(max_length=30, blank=True, null=True)
     ifsc_code = models.CharField(max_length=30, blank=True, null=True)
+
+    # UPI collection: the VPA is stored regardless, but the QR only reaches
+    # invoices once the company opts in, so a saved id can be kept on file
+    # without every exported bill suddenly showing a payment code.
+    upi_id = models.CharField(
+        max_length=255, blank=True, null=True,
+        help_text="UPI id / VPA to collect payments on, e.g. acme@okaxis")
+    show_upi_qr = models.BooleanField(
+        default=False,
+        help_text="Print a UPI QR for the invoice total on exported invoices")
+
     subscriptions_plan = models.ForeignKey('Subscriptions',on_delete=models.CASCADE,null=True,blank=True)
+
+    def upi_payment_link(self, amount, note=None):
+        """UPI deep link for `amount`, or None when this company has no QR."""
+        from upi_qr import company_upi_link
+        return company_upi_link(self, amount, note=note)
 
     def logo_scaled_height(self, desired_width):
         if self.company_logo and getattr(self.company_logo, 'width', None) and getattr(self.company_logo, 'height', None):
