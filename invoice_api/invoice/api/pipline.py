@@ -227,7 +227,8 @@ class InvoiceExtractAPIView(APIView):
                         "company_address": comp.company_address,
                         "company_gst_number": comp.company_gst_number,
                         "state": comp.state,
-                        "company_email_id": comp.company_email_id
+                        "company_email_id": comp.company_email_id,
+                        "company_phone": comp.company_phone
                     }
 
             # -----------------------------------

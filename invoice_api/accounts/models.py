@@ -84,6 +84,7 @@ class UserCompanies(models.Model):
     state = models.CharField(max_length=30, blank=True, null=True)
     state_code = models.IntegerField(null=True, blank=True)
     company_email_id = models.EmailField(max_length=30, blank=True, null=True)
+    company_phone = models.CharField(max_length=20, blank=True, null=True)
     company_logo = models.ImageField(upload_to='accounts',null=True,blank=True)
     bank_name = models.CharField(max_length=30, blank=True, null=True)
     account_number = models.CharField(max_length=30, blank=True, null=True)
@@ -99,6 +100,14 @@ class UserCompanies(models.Model):
     show_upi_qr = models.BooleanField(
         default=False,
         help_text="Print a UPI QR for the invoice total on exported invoices")
+
+    # Off by default even on a plan that includes the `line_item_images`
+    # feature — the feature flag says the plan *allows* it, this says the
+    # company actually wants it, so invoice creation stays uncluttered for
+    # everyone who never opted in.
+    enable_line_item_images = models.BooleanField(
+        default=False,
+        help_text="Let line items carry an attached photo on invoices (Pro plans only)")
 
     subscriptions_plan = models.ForeignKey('Subscriptions',on_delete=models.CASCADE,null=True,blank=True)
 

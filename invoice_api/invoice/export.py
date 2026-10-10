@@ -1,12 +1,15 @@
+import base64
 import io
 import datetime
 import logging
+import mimetypes
 import traceback
 
 from django.http import FileResponse, HttpResponse
 from django.template.loader import render_to_string
 from rest_framework.response import Response
 
+from invoice.models import ProductImage
 from invoice.serializers import InvoiceSerializerForPDF, InvoiceSerializerForCSV
 from submit import Submit
 from yaml_manager.models import Yaml
@@ -17,6 +20,33 @@ from pdf_fonts import inject_font_css
 import pandas as pd
 
 loger = logging.getLogger(__name__)
+
+
+def _product_image_data_uri(product_image_id):
+    """Base64 `data:` URI for a line-item image, same reasoning as the UPI
+    QR (upi_qr.make_qr_data_uri): WeasyPrint renders this HTML from a bare
+    string with no base_url, so it fetches any <img src> that isn't a data
+    URI as a real HTTP request back to this server. That request has no
+    tunnel/proxy in front of it, so an absolute URL built for the browser
+    (which may carry PUBLIC_URL_PREFIX) 404s. Reading the file directly and
+    inlining it sidesteps that fetch entirely.
+    """
+    if not product_image_id:
+        return ''
+    img = ProductImage.objects.filter(id=product_image_id).first()
+    if not img or not img.image:
+        return ''
+    try:
+        img.image.open('rb')
+        try:
+            raw = img.image.read()
+        finally:
+            img.image.close()
+        mime = mimetypes.guess_type(img.image.name)[0] or 'image/jpeg'
+        return f"data:{mime};base64,{base64.b64encode(raw).decode('ascii')}"
+    except Exception as e:
+        loger.error(f"Line-item image encoding failed: {e}")
+        return ''
 
 
 class TemplateProps(dict):
@@ -176,6 +206,14 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                     if not props.get(alias):
                         props[alias] = p.get('total_amount')
 
+                # Line-item image, if one was attached — inlined as a data
+                # URI (see _product_image_data_uri), so it works directly as
+                # an <img src> for both the flat products_data templates
+                # (product.image) and the block designer's product_table
+                # (product.props.image).
+                image_obj = p.get('image')
+                props['image'] = _product_image_data_uri((image_obj or {}).get('id'))
+
                 p['props'] = props
                 
             django_template = Template(inner_html)
@@ -190,6 +228,7 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                     'company_state': company.state or '',
                     'company_state_code': company.state_code or '',
                     'company_email_id': company.company_email_id or '',
+                    'company_phone': company.company_phone or '',
                     'bank_name': company.bank_name or '',
                     'account_number': company.account_number or '',
                     'branch': company.branch or '',

@@ -415,6 +415,54 @@ class GlobalTemplateGalleryView(ListAPIView):
         return qs.order_by('-id')
 
 
+def clone_global_template(source, user, company):
+    """Copy a global template into `user`'s own templates and return the clone."""
+    clone = Yaml(
+        template_name=f"{source.template_name}",
+        user=user,
+        company=company,
+        auto_scale=source.auto_scale,
+        auto_save=source.auto_save,
+        is_html=source.is_html,
+        elements=source.elements,
+        is_default=False,
+        is_global=False,
+        global_category='',
+        description=source.description if source.description is not None else '',
+        page_size=source.page_size if source.page_size is not None else 'A4',
+        version=source.version if source.version is not None else '1.0',
+    )
+    clone.save()
+
+    # Duplicate the yaml_file
+    if source.yaml_file:
+        try:
+            source.yaml_file.file.seek(0)
+            file_content = source.yaml_file.file.read()
+            ext = '.html' if source.is_html else '.yaml'
+            clone.yaml_file.save(f"{uuid.uuid4()}{ext}",
+                                 ContentFile(file_content), save=True)
+        except Exception as e:
+            logger.error(f"Error cloning yaml_file: {e}")
+
+    # Duplicate the pdf_template (preview thumbnail)
+    if source.pdf_template:
+        try:
+            source.pdf_template.file.seek(0)
+            thumb_content = source.pdf_template.file.read()
+            thumb_ext = os.path.splitext(source.pdf_template.name)[1] or '.jpg'
+            clone.pdf_template.save(f"{uuid.uuid4()}{thumb_ext}",
+                                    ContentFile(thumb_content), save=True)
+        except Exception as e:
+            logger.error(f"Error cloning pdf_template: {e}")
+
+    # Copy the latest version as the first version of the clone
+    latest_version = source.versions.first()
+    if latest_version:
+        YamlVersion.objects.create(yaml=clone, version_data=latest_version.version_data)
+    return clone
+
+
 class CloneGlobalTemplateView(APIView):
     """POST /api/yaml/gallery/<id>/clone/ — copy a global template
     into the requesting user's company templates."""
@@ -429,58 +477,55 @@ class CloneGlobalTemplateView(APIView):
                             status=status.HTTP_404_NOT_FOUND)
 
         company = request.user.user_company if not request.user.is_staff else None
-
-        # Create the clone
-        clone = Yaml(
-            template_name=f"{source.template_name}",
-            user=request.user,
-            company=company,
-            auto_scale=source.auto_scale,
-            auto_save=source.auto_save,
-            is_html=source.is_html,
-            elements=source.elements,
-            is_default=False,
-            is_global=False,
-            global_category='',
-            description=source.description if source.description is not None else '',
-            page_size=source.page_size if source.page_size is not None else 'A4',
-            version=source.version if source.version is not None else '1.0',
-        )
-        clone.save()
-
-        # Duplicate the yaml_file
-        print(source.yaml_file)
-        if source.yaml_file:
-            try:
-                source.yaml_file.file.seek(0)
-                file_content = source.yaml_file.file.read()
-                ext = '.html' if source.is_html else '.yaml'
-                clone.yaml_file.save(f"{uuid.uuid4()}{ext}",
-                                     ContentFile(file_content), save=True)
-                
-            except Exception as e:
-                logger.error(f"Error cloning yaml_file: {e}")
-
-        # Duplicate the pdf_template (preview thumbnail)
-        if source.pdf_template:
-            try:
-                source.pdf_template.file.seek(0)
-                thumb_content = source.pdf_template.file.read()
-                thumb_ext = os.path.splitext(source.pdf_template.name)[1] or '.jpg'
-                clone.pdf_template.save(f"{uuid.uuid4()}{thumb_ext}",
-                                        ContentFile(thumb_content), save=True)
-            except Exception as e:
-                logger.error(f"Error cloning pdf_template: {e}")
-
-        # Copy the latest version as the first version of the clone
-        latest_version = source.versions.first()
-        if latest_version:
-            YamlVersion.objects.create(yaml=clone, version_data=latest_version.version_data)
-
+        clone = clone_global_template(source, request.user, company)
         return Response({
             'id': clone.id,
             'template_name': clone.template_name,
             'message': 'Template cloned successfully.',
+        }, status=status.HTTP_201_CREATED)
+
+
+class OnboardingTemplateView(APIView):
+    """Signup template step.
+
+    GET  /api/yaml/onboarding/  — the user's starter template (shown by default)
+                                  plus the published global gallery to choose from.
+    POST /api/yaml/onboarding/  — {"template_id": <global id>} copies that global
+                                  template into the account and makes it the default.
+                                  Skipping (never calling this) keeps the starter default.
+
+    Only needs authentication: a new user has no company/plan yet, so the
+    template_designer / template.manage gates of the normal clone endpoint
+    don't apply. Editing the chosen template afterwards goes through the
+    regular yaml editor endpoints."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ctx = {'request': request}
+        default = Yaml.objects.filter(user=request.user, is_default=True).first()
+        gallery = Yaml.objects.filter(is_global=True, is_published=True).order_by('-id')
+        return Response({
+            'default_template': GlobalTemplateSerializer(default, context=ctx).data if default else None,
+            'global_templates': GlobalTemplateSerializer(gallery, many=True, context=ctx).data,
+        })
+
+    def post(self, request):
+        source = Yaml.objects.filter(id=request.data.get('template_id'),
+                                     is_global=True, is_published=True).first()
+        if source is None:
+            return Response({'error': 'Global template not found.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        clone = clone_global_template(source, request.user, request.user.user_company)
+        # the chosen template replaces the starter as the account's default
+        Yaml.objects.filter(user=request.user).exclude(pk=clone.pk).update(is_default=False)
+        clone.is_default = True
+        clone.save(update_fields=['is_default'])
+        return Response({
+            'id': clone.id,
+            'template_name': clone.template_name,
+            'is_default': True,
+            'message': 'Template selected.',
         }, status=status.HTTP_201_CREATED)
 
 
@@ -511,133 +556,179 @@ class WeasyprintPreviewView(APIView):
         html_content = request.data.get("html_content")
         if not html_content:
             return Response({"error": "html_content is required"}, status=400)
-            
-        import weasyprint
-        import io
-        import datetime
-        from django.http import FileResponse
-        from django.template import Template, Context
+        return render_preview_response(request, html_content)
 
-        # Prepare rich dummy data context for template rendering
-        today_str = datetime.datetime.now().strftime('%Y-%m-%d')
-        due_date_str = (datetime.datetime.now() + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
-        
-        company_name = "Acme Corporation"
-        company_logo_url = "https://via.placeholder.com/150"
-        if request.user and hasattr(request.user, 'user_company') and request.user.user_company:
-            if request.user.user_company.company_name:
-                company_name = request.user.user_company.company_name
-            if request.user.user_company.company_logo:
-                company_logo_url = request.build_absolute_uri(request.user.user_company.company_logo.url)
-        print(company_logo_url)
-        company_data = {
-            'company_name': company_name,
-            'company_logo': company_logo_url,
-            'company_address': "123 Business Lane, Suite 100, Financial District",
-            'company_phone': "+1 (555) 019-2834",
-            'company_email': "billing@acme.com",
-            'gst_number': "22AAAAA0000A1Z5",
-        }
 
-        # Preview the QR against the dummy total so the designer can see and
-        # position it. If the company has not set up UPI yet, fall back to a
-        # sample VPA — an empty box would look like a broken template.
-        from upi_qr import build_upi_link, company_upi_link, make_qr_data_uri
-        preview_company = getattr(request.user, 'user_company', None)
-        preview_upi_link = company_upi_link(
-            preview_company, 1180.00, note="INV-2026-0001")
-        if preview_upi_link:
-            company_data['upi_id'] = preview_company.upi_id
-        else:
-            company_data['upi_id'] = "acme@okaxis"
-            preview_upi_link = build_upi_link(
-                "acme@okaxis", payee_name=company_name,
-                amount=1180.00, note="INV-2026-0001")
-        company_data['upi_link'] = preview_upi_link or ''
-        company_data['upi_qr'] = make_qr_data_uri(preview_upi_link) or ''
-        
-        dummy_products = [
-            {
-                'props': {
-                    'item': 'Web Development Services',
-                    'description': 'Frontend UI Design & API Integration',
-                    'quantity': '1',
-                    'rate': '800.00',
-                    'amount': '800.00',
-                },
-                'total_amount': '800.00'
+BLANK_LOGO_DATA_URI = ("data:image/gif;base64,"
+                       "R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7")
+
+
+def render_preview_response(request, html_content, blank_logo=False):
+    """Render an HTML template against sample invoice data and return the PDF.
+    blank_logo swaps the grey placeholder logo for a transparent pixel (used for
+    gallery thumbnails); a company's real logo is always kept."""
+    import weasyprint
+    import io
+    import datetime
+    from django.http import FileResponse
+    from django.template import Template, Context
+
+    # Prepare rich dummy data context for template rendering
+    today_str = datetime.datetime.now().strftime('%Y-%m-%d')
+    due_date_str = (datetime.datetime.now() + datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+    
+    company_name = "Acme Corporation"
+    company_phone = "+1 (555) 019-2834"
+    company_logo_url = "https://via.placeholder.com/150"
+    if request.user and hasattr(request.user, 'user_company') and request.user.user_company:
+        if request.user.user_company.company_name:
+            company_name = request.user.user_company.company_name
+        if request.user.user_company.company_phone:
+            company_phone = request.user.user_company.company_phone
+        if request.user.user_company.company_logo:
+            company_logo_url = request.build_absolute_uri(request.user.user_company.company_logo.url)
+    if blank_logo and company_logo_url == "https://via.placeholder.com/150":
+        company_logo_url = BLANK_LOGO_DATA_URI
+    company_data = {
+        'company_name': company_name,
+        'company_logo': company_logo_url,
+        'company_address': "123 Business Lane, Suite 100, Financial District",
+        'company_phone': company_phone,
+        'company_email': "billing@acme.com",
+        'gst_number': "22AAAAA0000A1Z5",
+    }
+
+    # Preview the QR against the dummy total so the designer can see and
+    # position it. If the company has not set up UPI yet, fall back to a
+    # sample VPA — an empty box would look like a broken template.
+    from upi_qr import build_upi_link, company_upi_link, make_qr_data_uri
+    preview_company = getattr(request.user, 'user_company', None)
+    preview_upi_link = company_upi_link(
+        preview_company, 1180.00, note="INV-2026-0001")
+    if preview_upi_link:
+        company_data['upi_id'] = preview_company.upi_id
+    else:
+        company_data['upi_id'] = "acme@okaxis"
+        preview_upi_link = build_upi_link(
+            "acme@okaxis", payee_name=company_name,
+            amount=1180.00, note="INV-2026-0001")
+    company_data['upi_link'] = preview_upi_link or ''
+    company_data['upi_qr'] = make_qr_data_uri(preview_upi_link) or ''
+    
+    dummy_products = [
+        {
+            'props': {
+                'item': 'Web Development Services',
+                'description': 'Frontend UI Design & API Integration',
+                'quantity': '1',
+                'rate': '800.00',
+                'amount': '800.00',
             },
-            {
-                'props': {
-                    'item': 'Cloud Hosting Setup',
-                    'description': 'AWS Deployment & Configuration',
-                    'quantity': '2',
-                    'rate': '100.00',
-                    'amount': '200.00',
-                },
-                'total_amount': '200.00'
-            }
-        ]
-        
-        invoice_data = {
-            'invoice_number': "INV-2026-0001",
-            'date': today_str,
-            'due_date': due_date_str,
-            'receiver_name': "Acme Client Enterprises",
-            'receiver_address': "456 Client Boulevard, Innovation Hub",
-            'receiver_phone': "+1 (555) 014-9988",
-            'receiver_email': "accounts@acmeclient.com",
-            'total_final_amount': 1180.00,
-            'gst_final_amount': 180.00,
-            'products': dummy_products,
+            'total_amount': '800.00'
+        },
+        {
+            'props': {
+                'item': 'Cloud Hosting Setup',
+                'description': 'AWS Deployment & Configuration',
+                'quantity': '2',
+                'rate': '100.00',
+                'amount': '200.00',
+            },
+            'total_amount': '200.00'
         }
-        
-        footer_data = {
-            'total_amount_with_out_gst': 1000.00,
-            'gst_amount': 180.00,
-            'total_amount_with_gst': 1180.00,
-            'total_amount_in_text': "One Thousand One Hundred Eighty Rupees Only",
-            'center_gst_amount': 90.00,
-            'state_gst_amount': 90.00,
-            'gst': 18.00,
-            'center_gst': 9.00,
-            'state_gst': 9.00
-        }
-        
-        # Same forgiving lookup as the real export, so the designer preview
-        # cannot 500 (or worse, silently succeed) on a field name the dummy
-        # data lacks while the exported invoice behaves differently.
-        from invoice.export import TemplateProps
-        for _p in dummy_products:
-            _p['props'] = TemplateProps(_p['props'])
-            for _alias in ('amount', 'total'):
-                if not _p['props'].get(_alias):
-                    _p['props'][_alias] = _p.get('total_amount')
-        invoice_data = TemplateProps(invoice_data)
+    ]
+    
+    invoice_data = {
+        'invoice_number': "INV-2026-0001",
+        'date': today_str,
+        'due_date': due_date_str,
+        'receiver_name': "Acme Client Enterprises",
+        'receiver_address': "456 Client Boulevard, Innovation Hub",
+        'receiver_phone': "+1 (555) 014-9988",
+        'receiver_email': "accounts@acmeclient.com",
+        'total_final_amount': 1180.00,
+        'gst_final_amount': 180.00,
+        'products': dummy_products,
+    }
+    
+    footer_data = {
+        'total_amount_with_out_gst': 1000.00,
+        'gst_amount': 180.00,
+        'total_amount_with_gst': 1180.00,
+        'total_amount_in_text': "One Thousand One Hundred Eighty Rupees Only",
+        'center_gst_amount': 90.00,
+        'state_gst_amount': 90.00,
+        'gst': 18.00,
+        'center_gst': 9.00,
+        'state_gst': 9.00
+    }
+    
+    # Same forgiving lookup as the real export, so the designer preview
+    # cannot 500 (or worse, silently succeed) on a field name the dummy
+    # data lacks while the exported invoice behaves differently.
+    from invoice.export import TemplateProps
+    for _p in dummy_products:
+        _p['props'] = TemplateProps(_p['props'])
+        for _alias in ('amount', 'total'):
+            if not _p['props'].get(_alias):
+                _p['props'][_alias] = _p.get('total_amount')
+    invoice_data = TemplateProps(invoice_data)
 
-        context_dict = {
-            'invoice': invoice_data,
-            'company': company_data,
-            'footer': footer_data,
-            'products_data': [p['props'] for p in dummy_products]
-        }
+    context_dict = {
+        'invoice': invoice_data,
+        'company': company_data,
+        'footer': footer_data,
+        'products_data': [p['props'] for p in dummy_products]
+    }
 
-        try:
-            django_template = Template(html_content)
-            html_content = django_template.render(Context(context_dict))
-        except Exception as e:
-            logger.error(f"Error rendering preview template: {e}")
+    try:
+        django_template = Template(html_content)
+        html_content = django_template.render(Context(context_dict))
+    except Exception as e:
+        logger.error(f"Error rendering preview template: {e}")
 
-        try:
-            # Same flag and the same Devanagari @font-face injection as the
-            # real export, so the preview cannot look right while the
-            # exported invoice silently drops an image or a line of Hindi.
-            from pdf_fonts import inject_font_css
-            pdf_file = weasyprint.HTML(
-                string=inject_font_css(html_content)).write_pdf(
-                presentational_hints=True)
-            buffer = io.BytesIO(pdf_file)
-            buffer.seek(0)
-            return FileResponse(buffer, as_attachment=False, filename='preview.pdf', content_type='application/pdf')
-        except Exception as e:
-            return Response({"error": str(e)}, status=500)
+    try:
+        # Same flag and the same Devanagari @font-face injection as the
+        # real export, so the preview cannot look right while the
+        # exported invoice silently drops an image or a line of Hindi.
+        from pdf_fonts import inject_font_css
+        pdf_file = weasyprint.HTML(
+            string=inject_font_css(html_content)).write_pdf(
+            presentational_hints=True)
+        buffer = io.BytesIO(pdf_file)
+        buffer.seek(0)
+        return FileResponse(buffer, as_attachment=False, filename='preview.pdf', content_type='application/pdf')
+    except Exception as e:
+        return Response({"error": str(e)}, status=500)
+
+
+
+class GlobalTemplatePreviewView(APIView):
+    """GET /api/yaml/gallery/<id>/preview/ — PDF of a published global template
+    filled with sample data (the viewer's company name/logo when they have one),
+    so a user can see how it will look before choosing it. Authentication only:
+    new users browsing templates at signup have no company or plan yet.
+    Legacy (non-HTML) templates have no renderer; use their thumbnail instead."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, id):
+        source = Yaml.objects.filter(id=id, is_global=True, is_published=True).first()
+        if source is None:
+            return Response({'error': 'Global template not found.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        if not source.is_html:
+            return Response({'error': 'No live preview for this template type.'},
+                            status=status.HTTP_404_NOT_FOUND)
+
+        version = source.versions.first()
+        html_content = version.version_data if version else ''
+        if not html_content and source.yaml_file:
+            try:
+                source.yaml_file.file.seek(0)
+                html_content = source.yaml_file.file.read().decode('utf-8')
+            except Exception as e:
+                logger.error(f"Error reading global template {id} for preview: {e}")
+        if not html_content:
+            return Response({'error': 'Template has no content.'},
+                            status=status.HTTP_404_NOT_FOUND)
+        return render_preview_response(request, html_content)
