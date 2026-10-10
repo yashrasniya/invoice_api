@@ -31,6 +31,7 @@ from accounts.serializers.UserCompanies import UserCompaniesSerializer
 
 logging = logging.getLogger(__name__)
 class Register_user(generics.CreateAPIView):
+    authentication_classes = []          # public endpoint: a stale/invalid auth cookie must not block it
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
 
@@ -42,6 +43,7 @@ def get_tokens_for_user(user):
     }
 
 class Login(APIView):
+    authentication_classes = []          # public endpoint: a stale/invalid auth cookie must not block it
     permission_classes = [AllowAny]
 
     def post(self,request):
@@ -248,6 +250,7 @@ from django.core.mail import send_mail
 from django.conf import settings
 
 class ContactUs(APIView):
+    authentication_classes = []          # public endpoint: a stale/invalid auth cookie must not block it
     permission_classes = [AllowAny]
 
     def post(self, request):
