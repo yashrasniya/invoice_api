@@ -121,6 +121,12 @@ SECURE_REFERRER_POLICY = 'same-origin'
 # Behind a TLS-terminating proxy, tell Django the original request was HTTPS.
 if not DEBUG:
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+# HSTS: browsers refuse plain HTTP for this host for that many seconds. Django
+# only emits it on requests it sees as HTTPS (needs the proxy header above).
+# Start small; raise via DJANGO_HSTS_SECONDS once confirmed. nginx already
+# redirects HTTP->HTTPS, so SECURE_SSL_REDIRECT is opt-in, not default.
+SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_HSTS_SECONDS', '0' if DEBUG else '86400'))
+SECURE_SSL_REDIRECT = _env_bool('DJANGO_SSL_REDIRECT', False)
 
 STATIC_ROOT = os.environ.get('STATIC_ROOT', os.path.join(BASE_DIR, 'static'))
 STATIC = '/static/'
