@@ -53,6 +53,31 @@ class HasFeature(BasePermission):
         return code in (getattr(request, 'features', None) or set())
 
 
+class HasCompanyToggle(BasePermission):
+    """Company-level opt-in gate, e.g. on the view:
+
+        permission_classes = [..., HasCompanyToggle.with_field('enable_line_item_images')]
+
+    Complements HasFeature (which gates by subscription plan): some features
+    also need an explicit per-company switch, off by default even on a plan
+    that includes the feature.
+    """
+    toggle_field = None
+    message = 'This feature is not enabled for your company.'
+    code = 'feature_disabled'
+
+    @classmethod
+    def with_field(cls, field_name):
+        return type('HasCompanyToggle', (cls,), {'toggle_field': field_name})
+
+    def has_permission(self, request, view):
+        field = self.toggle_field or getattr(view, 'required_company_toggle', None)
+        if not field:
+            return True
+        company = getattr(request, 'company', None)
+        return bool(company and getattr(company, field, False))
+
+
 class HasPermission(BasePermission):
     permission_code = None
 

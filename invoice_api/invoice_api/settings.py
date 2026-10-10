@@ -127,6 +127,15 @@ STATIC = '/static/'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.environ.get('MEDIA_ROOT', os.path.join(BASE_DIR, 'media'))
 
+# Set only when the app is served through a reverse proxy / dev tunnel that
+# mounts it under a path prefix (e.g. PUBLIC_URL_PREFIX=/app). MEDIA_URL stays
+# plain so a normal deployment (no such prefix) is unaffected; absolute media
+# links built via invoice_api.media_urls.absolute_media_url() pick this up.
+# request.build_absolute_uri() can't be taught this by itself: the media path
+# is already root-relative ('/media/...'), so Django has no way to insert a
+# prefix in front of it without a helper doing so explicitly.
+PUBLIC_URL_PREFIX = os.environ.get('PUBLIC_URL_PREFIX', '').rstrip('/')
+
 # Application definition
 
 INSTALLED_APPS = [

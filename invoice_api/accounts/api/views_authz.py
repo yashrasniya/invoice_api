@@ -195,4 +195,10 @@ class MyAccessView(APIView):
                                      request.user.roles.filter(
                                          company__isnull=True,
                                          name='Product Owner').exists()),
+            # Company-level opt-in switches — distinct from `features`
+            # (what the plan allows) — exposed here rather than through
+            # user-companies/ (admin-only reads) so every member creating
+            # invoices can tell whether a toggle is on.
+            'line_item_images_enabled': bool(
+                request.company and request.company.enable_line_item_images),
         })

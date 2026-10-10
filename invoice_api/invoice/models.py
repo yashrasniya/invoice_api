@@ -60,6 +60,8 @@ class Product(models.Model):
     product_properties = models.ManyToManyField('Product_properties')  # connect to Product_property model
     gst_amount = models.DecimalField(max_digits=20,decimal_places=2)
     total_amount = models.DecimalField(max_digits=20,decimal_places=2)
+    image = models.ForeignKey('ProductImage', on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name='line_items')
 
     def __str__(self):
         return str(self.total_amount)
@@ -106,6 +108,29 @@ class InvoiceExtractionLog(models.Model):
     job_id = models.UUIDField(null=True, blank=True)
     meta_data = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ProductImage(SoftDeleteModel):
+    """Reusable per-company image library for invoice line items. Any
+    company member can upload one and any company member can attach it to a
+    line item, the same shared-by-company convention as company_logo /
+    new_product_in_frontend."""
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='product_images')
+    company = models.ForeignKey('accounts.UserCompanies', on_delete=models.CASCADE,
+                                null=True, blank=True, related_name='product_images')
+    image = models.ImageField(upload_to='line_item_images/%Y/%m/')
+    original_filename = models.CharField(max_length=255, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        if not self.company and self.user and getattr(self.user, 'user_company', None):
+            self.company = self.user.user_company
+        if not self.original_filename and self.image:
+            self.original_filename = os.path.basename(self.image.name)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.original_filename or str(self.id)
 
 
 class CustomField(SoftDeleteModel):

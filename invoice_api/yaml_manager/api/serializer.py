@@ -51,6 +51,7 @@ class Yaml_serializers(ModelSerializer):
 class GlobalTemplateSerializer(ModelSerializer):
     user = SerializerMethodField()
     pdf_template = SerializerMethodField()
+    preview_url = SerializerMethodField()
 
     class Meta:
         model = Yaml
@@ -58,6 +59,7 @@ class GlobalTemplateSerializer(ModelSerializer):
             'id',
             'template_name',
             'pdf_template',
+            'preview_url',
             'global_category',
             'is_html',
             'user',
@@ -71,6 +73,13 @@ class GlobalTemplateSerializer(ModelSerializer):
         if obj.user:
             return obj.user.username
         return '-'
+
+    def get_preview_url(self, obj):
+        # live sample-data PDF; only HTML templates can be rendered
+        request = self.context.get('request')
+        if request and obj.is_html:
+            return request.build_absolute_uri(f'/api/yaml/gallery/{obj.id}/preview/')
+        return None
 
     def get_pdf_template(self, obj):
         if obj.pdf_template:

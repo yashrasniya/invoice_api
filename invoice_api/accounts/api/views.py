@@ -361,8 +361,8 @@ class UserCompaniesViewSet(
 
             # Link company to current user
             user = request.user
-            yaml_obj = Yaml.objects.filter(user__id=request.user.id).first()
-            if yaml_obj:
+            # includes a template picked at signup, before any company existed
+            for yaml_obj in Yaml.objects.filter(user__id=request.user.id, company__isnull=True):
                 yaml_obj.company = company
                 yaml_obj.save()
             # accounts registered before templates were defaulted at signup have

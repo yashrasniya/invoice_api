@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Invoice, Product, Product_properties, new_product_in_frontend, Font, InvoiceExtractionLog, CustomField
+from .models import Invoice, Product, Product_properties, new_product_in_frontend, Font, InvoiceExtractionLog, CustomField, ProductImage
 
 
 class InvoiceAdmin(admin.ModelAdmin):
@@ -37,4 +37,11 @@ class CustomFieldAdmin(admin.ModelAdmin):
     list_display = ('id', 'name', 'user', 'company', 'field_type', 'hidden', 'created_time', 'updated_time')
     list_filter = ('field_type', 'hidden', 'created_time')
     search_fields = ('name', 'user__username', 'company__company_name')
+
+
+@admin.register(ProductImage)
+class ProductImageAdmin(admin.ModelAdmin):
+    list_display = ('id', 'original_filename', 'user', 'company', 'created_at', 'is_deleted')
+    list_filter = ('is_deleted', 'created_at')
+    search_fields = ('original_filename', 'user__username', 'company__company_name')
 

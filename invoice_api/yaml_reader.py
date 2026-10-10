@@ -371,11 +371,16 @@ class FillValue:
             row_columns = copy.deepcopy(self.yaml_obj.products)
             # Standard row columns (S.No)
             for col in row_columns:
+                # A per-row image slot (see below) is a Polygon, not a Point —
+                # it has no font_size/font attributes, so it's handled in its
+                # own pass instead of falling into the text-column logic here.
+                if col.type() == "Polygon":
+                    continue
                 all_label = [l.lower() for l in col.label.split(',')]
                 all_label.append(str(col).lower())
                 col.font_size = col.font_size if col.font_size else self.yaml_obj.product_config.get("font_size")
                 col.font = col.font if col.font else self.yaml_obj.product_config.get("font")
-                
+
                 if "s.no" in all_label:
                     col.value = index + 1
                     col.y = start
@@ -383,6 +388,46 @@ class FillValue:
 
                 # Property processing (First pass: extract base values and math)
                 print(len(product.get("product_properties")))
+
+            # Per-row image (a photo attached to this line item). Skipped
+            # entirely when the row has none — draw_polygon() already no-ops
+            # a Polygon with neither src nor src_image, the same guard the
+            # UPI QR and company logo rely on, but there is no reason to pay
+            # for the file read when we already know there is nothing to draw.
+            product_image = product.get('image')
+            if product_image and product_image.get('id'):
+                for col in row_columns:
+                    if col.type() == "Polygon" and col.rectangles_type == "image" \
+                            and col.label.lower() == "image":
+                        try:
+                            from invoice.models import ProductImage
+                            pi = ProductImage.objects.filter(id=product_image['id']).first()
+                            if pi and pi.image:
+                                col.src_image = Image.open(pi.image.path)
+                                col.go_down(index * self.yaml_obj.product_config.get("product_gap", 15))
+
+                                # Preserve the photo's own aspect ratio instead
+                                # of stretching it into the configured box —
+                                # same fix set_my_company_data() already
+                                # applies to the company logo: keep the
+                                # configured width, recompute height from the
+                                # image's real dimensions.
+                                xs = [p[0] for p in col.points]
+                                ys = [p[1] for p in col.points]
+                                x, y = min(xs), min(ys)
+                                width = max(xs) - x
+                                img_w, img_h = col.src_image.size
+                                height = (img_h / img_w) * width if img_w else (max(ys) - y)
+                                col.points = [
+                                    (x, y),
+                                    (x + width, y),
+                                    (x + width, y + height),
+                                    (x, y + height),
+                                ]
+
+                                self.products.append(col)
+                        except Exception as e:
+                            logger.error(f"Line-item image draw failed: {e}")
             for prop in product.get("product_properties"):
                 item_config = prop.get("new_product_in_frontend")
                 if not item_config: continue
@@ -481,6 +526,8 @@ class FillValue:
 
             # Append calculation/auto-cols to graphics list
             for col in self.yaml_obj.products:
+                if col.type() == "Polygon":
+                    continue  # the per-row image, already handled above
                 col = copy.copy(col)
                 col.y = start
                 col.font_size = col.font_size if col.font_size else self.yaml_obj.product_config.get("font_size")

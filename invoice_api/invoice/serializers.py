@@ -1,7 +1,9 @@
 from rest_framework import serializers
 
 from accounts.serializers.serializers import User_PublicSerializer
-from .models import Invoice, Product, Product_properties, new_product_in_frontend, CustomField
+from invoice_api.media_urls import absolute_media_url
+from invoice_api.scoping import user_scope_q
+from .models import Invoice, Product, Product_properties, new_product_in_frontend, CustomField, ProductImage
 
 
 
@@ -43,8 +45,44 @@ class Product_propertiesSerializer(serializers.ModelSerializer):
     def get_new_product_in_frontend(self, obj):
         return new_product_in_frontendSerializer(obj.new_product_in_frontend).data
 
+class ProductImageSerializer(serializers.ModelSerializer):
+    uploaded_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProductImage
+        fields = (
+            'id',
+            'image',
+            'original_filename',
+            'uploaded_by',
+            'created_at',
+        )
+        read_only_fields = ('id', 'original_filename', 'uploaded_by', 'created_at')
+
+    def get_uploaded_by(self, obj):
+        return obj.user.username if obj.user else None
+
+    def to_representation(self, instance):
+        # `image` is kept as a real ImageField (not a SerializerMethodField)
+        # so uploads still validate/write normally; only the *read* URL is
+        # rebuilt here, prefix-aware, in place of DRF's default absolute URI.
+        ret = super().to_representation(instance)
+        request = self.context.get('request')
+        if request is not None and instance.image:
+            ret['image'] = absolute_media_url(request, instance.image.url)
+        return ret
+
+
 class ProductSerializer(serializers.ModelSerializer):
     product_properties=Product_propertiesSerializer(many=True,read_only=True)
+    image = ProductImageSerializer(read_only=True)
+    # write-only handle for attaching/replacing the line item's image; scoped
+    # to the requester's company below so a product can't be pointed at
+    # another tenant's image library entry
+    image_id = serializers.PrimaryKeyRelatedField(
+        source='image', write_only=True, required=False, allow_null=True,
+        queryset=ProductImage.objects.none())
+
     class Meta:
         model = Product
         fields = (
@@ -52,7 +90,22 @@ class ProductSerializer(serializers.ModelSerializer):
             'product_properties',
             'gst_amount',
             'total_amount',
+            'image',
+            'image_id',
         )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        request = self.context.get('request')
+        if request is not None:
+            company = getattr(request, 'company', None)
+            enabled = ('line_item_images' in (getattr(request, 'features', None) or set())
+                       and bool(company and getattr(company, 'enable_line_item_images', False)))
+            if enabled:
+                self.fields['image_id'].queryset = ProductImage.objects.filter(user_scope_q(request))
+            # else: queryset stays ProductImage.objects.none() — any
+            # submitted image_id fails validation instead of attaching,
+            # since the company hasn't turned the feature on.
 
 
 

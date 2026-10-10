@@ -4,10 +4,11 @@ from rest_framework.routers import DefaultRouter
 from .pipline import InvoiceExtractAPIView, InvoiceExtractionStatusAPIView, InvoiceExtractionPendingJobsAPIView, InvoiceExtractionCallbackAPIView, AdminInvoiceExtractAPIView, InvoiceExtractionJobsAPIView
 from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
     new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport, \
-    CustomFieldViewSet, LedgerAPIView
+    CustomFieldViewSet, LedgerAPIView, ProductImageViewSet, ProductImageCropRatioView
 
 router = DefaultRouter()
 router.register(r'custom-fields', CustomFieldViewSet, basename='custom-field')
+router.register(r'product-images', ProductImageViewSet, basename='product-image')
 
 from .views_numbering import InvoiceNumberingAPIView
 from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView
@@ -29,6 +30,7 @@ urlpatterns = [
     # InvoiceViewSet
     path('product/properties/',ProductPropertiesViewsSet.as_view()),
     path('product/properties/<int:id>/update/',ProductPropertiesViewsSet.as_view()),
+    path('product-images/crop-ratio/', ProductImageCropRatioView.as_view()),
     # pdf
     path('pdf/', PdfMaker.as_view()),
     path('bulk_export/', BulkExport.as_view()),

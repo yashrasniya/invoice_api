@@ -1,7 +1,9 @@
 import datetime
 import io
 import logging
+import re
 
+import yaml
 from django.db.models import Q
 from django.http import FileResponse
 from rest_framework import status, viewsets, pagination
@@ -12,21 +14,22 @@ from rest_framework.views import APIView
 from rest_framework import filters, pagination
 from rest_framework.permissions import IsAuthenticated
 from django_filters.rest_framework import DjangoFilterBackend
+from rest_framework.parsers import MultiPartParser, FormParser
 
 from invoice_api.limits import enforce_limit
-from invoice_api.permissions import HasFeature, HasMethodFeature, HasMethodPermission
+from invoice_api.permissions import HasCompanyToggle, HasFeature, HasMethodFeature, HasMethodPermission
 from invoice_api.scoping import company_config_owner, user_scope_q
 
 from companies.models import Customers
 from companies.serializers import CompanySerializer
-from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties, CustomField
+from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties, CustomField, ProductImage
 from invoice.numbering import next_invoice_number
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
 from ..export import pdf_generator, csv_generator, pdf_data_generator
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
-    Product_propertiesSerializer, InvoiceSerializerForPDF, CustomFieldSerializer
+    Product_propertiesSerializer, InvoiceSerializerForPDF, CustomFieldSerializer, ProductImageSerializer
 
 
 logger = logging.getLogger(__name__)
@@ -305,7 +308,8 @@ class Invoice_update(APIView):
         if not obj.exists():
             return Response({'message': 'id not found'}, status=status.HTTP_404_NOT_FOUND)
         print(request.data)
-        serializer = InvoiceSerializer(obj.first(), data=request.data, partial=True)
+        serializer = InvoiceSerializer(obj.first(), data=request.data, partial=True,
+                                       context={'request': request})
 
         if serializer.is_valid():
             serializer.save()
@@ -399,13 +403,14 @@ class new_product_in_frontend_update_view(APIView):
 class ProductViewSet(APIView):
     permission_classes = [IsAuthenticated]
     def post(self,request,*args, **kwargs):
+        context = {'request': request}
         if kwargs.get('id',''):
             if not Product.objects.filter(id=self.kwargs.get('id')):
                 return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
 
-            product = ProductSerializer(Product.objects.get(id=self.kwargs.get('id')),data=request.data)
+            product = ProductSerializer(Product.objects.get(id=self.kwargs.get('id')),data=request.data,context=context)
         else:
-            product = ProductSerializer(data=request.data)
+            product = ProductSerializer(data=request.data,context=context)
         if product.is_valid():
             obj=product.save()
             if request.data.get('product_properties',''):
@@ -461,6 +466,107 @@ class ProductPropertiesViewsSet(APIView):
         Product_properties.objects.get(id=self.kwargs.get('id')).delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
+
+class ProductImagePaginator(pagination.PageNumberPagination):
+    page_size = 24
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
+
+class ProductImageViewSet(viewsets.ModelViewSet):
+    """Reusable per-company image library line items pick from: upload once,
+    reuse across products. Reads stay open to the whole company (needed to
+    render the picker for anyone adding a line item); writes need the same
+    invoice permissions as the line items they attach to.
+
+    Gated on two independent switches: the plan must include the feature
+    (HasFeature) AND the company must have opted in (HasCompanyToggle,
+    off by default even on a plan that includes it). Both apply to every
+    method — a company that hasn't opted in gets no access at all, not just
+    to writes."""
+    serializer_class = ProductImageSerializer
+    permission_classes = [IsAuthenticated, HasMethodPermission,
+                          HasFeature.with_code('line_item_images'),
+                          HasCompanyToggle.with_field('enable_line_item_images')]
+    parser_classes = [MultiPartParser, FormParser]
+    pagination_class = ProductImagePaginator
+    required_permissions_map = {
+        'POST': 'invoice.create',
+        'PUT': 'invoice.update',
+        'PATCH': 'invoice.update',
+        'DELETE': 'invoice.delete',
+    }
+
+    def get_queryset(self):
+        return ProductImage.objects.filter(user_scope_q(self.request)).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+
+
+class ProductImageCropRatioView(APIView):
+    """Aspect ratio to offer when cropping a newly uploaded line-item image,
+    read from the company's default invoice template's image slot.
+
+    This only steers the upload-time crop UI so a photo isn't force-squashed
+    into a very different shape later — it's a best-effort estimate, not the
+    template's source of truth (which stays the template itself: a legacy
+    template's product_list width/height, or a block template's raw <img>
+    style string). Falls back to a square when no template, or no image
+    slot, is found.
+    """
+    permission_classes = [IsAuthenticated,
+                          HasFeature.with_code('line_item_images'),
+                          HasCompanyToggle.with_field('enable_line_item_images')]
+
+    def get(self, request):
+        from yaml_manager.models import Yaml
+
+        company = getattr(request, 'company', None)
+        qs = Yaml.objects.filter(company=company) if company else Yaml.objects.none()
+        template = qs.filter(is_default=True).first() or qs.first()
+
+        ratio = None
+        if template:
+            ratio = (self._legacy_ratio(template) if not template.is_html
+                     else self._block_ratio(template))
+        width, height = ratio or (1, 1)
+        return Response({'width': width, 'height': height})
+
+    def _legacy_ratio(self, template):
+        try:
+            template.yaml_file.file.seek(0)
+            raw = yaml.safe_load(template.yaml_file.file.read())
+            product_list = raw.get('Bill', {}).get('product', {}).get('product_list', [])
+            for item in product_list:
+                for cfg in item.values():
+                    if (cfg.get('rectangles_type') == 'image'
+                            and str(cfg.get('label', '')).lower() == 'image'):
+                        w, h = cfg.get('width'), cfg.get('height')
+                        if w and h:
+                            return (float(w), float(h))
+        except Exception as e:
+            logger.error(f"Could not read legacy template image ratio: {e}")
+        return None
+
+    def _block_ratio(self, template):
+        try:
+            for el in (template.elements or []):
+                if el.get('type') != 'product_table':
+                    continue
+                for col in el.get('columns', []):
+                    value = col.get('value') or ''
+                    if '<img' not in value:
+                        continue
+                    w = (re.search(r'max-width:\s*(\d+(?:\.\d+)?)px', value)
+                         or re.search(r'\bwidth:\s*(\d+(?:\.\d+)?)px', value))
+                    h = (re.search(r'max-height:\s*(\d+(?:\.\d+)?)px', value)
+                         or re.search(r'\bheight:\s*(\d+(?:\.\d+)?)px', value))
+                    if w and h:
+                        return (float(w.group(1)), float(h.group(1)))
+        except Exception as e:
+            logger.error(f"Could not read block template image ratio: {e}")
+        return None
 
 
 class PdfMaker(APIView):
