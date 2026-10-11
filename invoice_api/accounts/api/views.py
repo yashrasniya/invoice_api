@@ -35,6 +35,25 @@ class Register_user(generics.CreateAPIView):
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        response = Response(serializer.data, status=status.HTTP_201_CREATED)
+        # Sign the new user in with the same cookie Login issues, so the
+        # frontend can go straight on to company onboarding.
+        response.set_cookie(
+            key=settings.SIMPLE_JWT['AUTH_COOKIE'],
+            value=get_tokens_for_user(user)["access"],
+            expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
+            secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
+            httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
+            samesite=settings.SIMPLE_JWT['AUTH_COOKIE_SAMESITE']
+        )
+        csrf.get_token(request)
+        audit_session(user, 'LOGIN', request, {'method': 'register'})
+        return response
+
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
     return {

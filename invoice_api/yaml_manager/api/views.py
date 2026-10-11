@@ -731,4 +731,30 @@ class GlobalTemplatePreviewView(APIView):
         if not html_content:
             return Response({'error': 'Template has no content.'},
                             status=status.HTTP_404_NOT_FOUND)
-        return render_preview_response(request, html_content)
+        response = render_preview_response(request, html_content)
+        if request.query_params.get('output') == 'png':
+            return pdf_response_to_png(response)
+        return response
+
+
+def pdf_response_to_png(response, dpi=110):
+    """Turn render_preview_response()'s PDF into a PNG of its first page, so
+    clients (phones especially) can show it in a plain <img> that fires a
+    real load event instead of an iframe PDF viewer. Error responses pass
+    through unchanged."""
+    from django.http import HttpResponse
+    if getattr(response, 'status_code', 200) != 200 or not hasattr(response, 'streaming_content'):
+        return response
+    try:
+        import io
+        from pdf2image import convert_from_bytes
+        pdf_bytes = b''.join(response.streaming_content)
+        page = convert_from_bytes(pdf_bytes, dpi=dpi, first_page=1, last_page=1)[0]
+        buf = io.BytesIO()
+        page.save(buf, format='PNG', optimize=True)
+    except Exception as e:
+        logger.error(f"Preview PNG conversion failed: {e}")
+        return Response({'error': 'Could not render preview image.'}, status=500)
+    out = HttpResponse(buf.getvalue(), content_type='image/png')
+    out['Cache-Control'] = 'private, max-age=300'
+    return out
