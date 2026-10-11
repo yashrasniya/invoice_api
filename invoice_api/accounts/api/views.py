@@ -85,6 +85,9 @@ class Login(APIView):
             )
             csrf.get_token(request)
             response.data = user_detail(user).data
+            if request.headers.get('X-Client') == 'mobile':
+                # native clients have no cookie jar; hand them the bearer token
+                response.data = {**response.data, 'access': data['access']}
             logging.info(f"{username} login")
             audit_session(user, 'LOGIN', request, {'method': 'password'})
             return response

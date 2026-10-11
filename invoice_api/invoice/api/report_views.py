@@ -153,7 +153,7 @@ class PurchaseInvoiceSummaryAPIView(APIView):
                 "invoice_number": inv.invoice_number,
                 "date": inv.date.strftime('%Y-%m-%d') if inv.date else "",
                 "amount": inv.total_final_amount,
-                "vendor_name": inv.receiver.name if inv.receiver else "-"
+                "vendor_name": (inv.vendor or inv.receiver).name if (inv.vendor or inv.receiver) else "-"
             })
 
         return Response({

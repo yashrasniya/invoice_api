@@ -564,6 +564,18 @@ class InvoiceExtractionCallbackAPIView(APIView):
 
                 if log_entry.user and log_entry.user.mobile_number:
                     send_conformation_message(request.data, log_entry.user)
+
+                # tell the person's phone their bill is ready (best effort; never fails the callback)
+                if log_entry.user and extraction_state(status_val) in ("completed", "failed"):
+                    from accounts.push import send_push
+                    ok = extraction_state(status_val) == "completed"
+                    send_push(
+                        log_entry.user,
+                        "Bill scanned" if ok else "Bill scan failed",
+                        "Your bill has been read. Tap to review it." if ok
+                        else "We couldn't read that bill. Try a clearer photo.",
+                        {"type": "ocr", "job_id": str(job_id), "state": "completed" if ok else "failed"},
+                    )
             
             return Response({"message": "Status updated successfully"}, status=status.HTTP_200_OK)
 

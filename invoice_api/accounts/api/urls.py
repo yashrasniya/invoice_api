@@ -2,7 +2,7 @@ from django.urls import path, include
 from .views import Register_user, Login, GoogleLogin, Profile, log_out, ContactUs, UserInfo, UserCompaniesViewSet, LoginByToken, CheckMobileNumber
 from rest_framework.routers import DefaultRouter
 
-from . import views_authz, views_invites, views_dashboard
+from . import views_authz, views_invites, views_dashboard, views_devices
 
 authz_router = DefaultRouter()
 authz_router.register(r'roles', views_authz.RoleViewSet, basename='authz-roles')
@@ -27,6 +27,7 @@ urlpatterns = [
     path('invites/<str:token>/', views_invites.InviteInfoView.as_view()),
     path('invites/<str:token>/accept/', views_invites.InviteAcceptView.as_view()),
 
+    path('devices/', views_devices.DeviceTokenView.as_view()),
     path('register/', Register_user.as_view()),
     path('login/', Login.as_view()),
     path('google-login/', GoogleLogin.as_view()),

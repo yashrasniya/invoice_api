@@ -269,5 +269,7 @@ class InviteAcceptView(APIView):
         )
         csrf.get_token(request)
         response.data = user_detail(user).data
+        if request.headers.get('X-Client') == 'mobile':
+            response.data = {**response.data, 'access': data['access']}
         audit_session(user, 'LOGIN', request, {'method': 'invite_accept'})
         return response

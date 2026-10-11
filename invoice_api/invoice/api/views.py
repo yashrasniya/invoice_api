@@ -579,7 +579,9 @@ class PdfMaker(APIView):
 
 class BulkExport(APIView):
     # subscription gate: bulk export is its own feature
-    permission_classes = [IsAuthenticated, HasFeature.with_code('bulk_export')]
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('bulk_export')]
+    # exports carry the same data as the invoice list, so they need the same read permission
+    required_permissions_map = {'POST': 'invoice.view'}
 
     def post(self,request):
         # Extract values from request data

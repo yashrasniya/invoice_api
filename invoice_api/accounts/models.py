@@ -358,3 +358,21 @@ class SocialAccount(models.Model):
 
     class Meta:
         unique_together = ('provider', 'provider_uid')
+
+class DeviceToken(models.Model):
+    """A phone registered for push notifications (Expo push token).
+
+    The token identifies the *device*, so if another person signs in on the same
+    phone the row is re-pointed at them (see views_devices) rather than duplicated —
+    otherwise the previous user's notifications would keep arriving there.
+    """
+    PLATFORM_CHOICES = [('ios', 'iOS'), ('android', 'Android')]
+
+    user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='device_tokens')
+    token = models.CharField(max_length=255, unique=True)
+    platform = models.CharField(max_length=10, choices=PLATFORM_CHOICES, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.user_id}:{self.platform}"
