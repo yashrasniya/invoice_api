@@ -21,6 +21,13 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(dotenv_path=os.path.join(BASE_DIR, '.env'))
 
 GOOGLE_OAUTH_CLIENT_ID = os.environ.get('GOOGLE_OAUTH_CLIENT_ID', '')
+# Audiences accepted for Google ID tokens: the web client plus any extra ones (e.g. the mobile app's
+# web client, which lives in a different Google Cloud project). Comma-separated.
+GOOGLE_OAUTH_CLIENT_IDS = [
+    c.strip()
+    for c in [GOOGLE_OAUTH_CLIENT_ID, *os.environ.get('GOOGLE_OAUTH_EXTRA_CLIENT_IDS', '').split(',')]
+    if c.strip()
+]
 
 # --- Razorpay -------------------------------------------------------------
 # The .env historically used the bare names `key_id` / `key_secret`, which are

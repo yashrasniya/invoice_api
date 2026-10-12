@@ -120,7 +120,7 @@ class GoogleLogin(APIView):
             claims = google_id_token.verify_oauth2_token(
                 credential,
                 google_requests.Request(),
-                settings.GOOGLE_OAUTH_CLIENT_ID,
+                settings.GOOGLE_OAUTH_CLIENT_IDS,
                 clock_skew_in_seconds=10,
             )
         except ValueError:
@@ -152,6 +152,8 @@ class GoogleLogin(APIView):
         csrf.get_token(request)
         body = user_detail(user).data
         body['created'] = created            # frontend can use this to route new users to company setup
+        if request.headers.get('X-Client') == 'mobile':
+            body['access'] = data['access']  # native clients have no cookie jar
         response.data = body
         logging.info(f"{user.username} login via Google ({'new user' if created else 'existing'})")
         audit_session(user, 'LOGIN', request, {'method': 'google', 'created': created})
