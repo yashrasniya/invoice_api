@@ -3,7 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import { Stack } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
+import { useRef } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -55,8 +56,16 @@ export default function RootLayout() {
   }, [status]);
 
   // Drop everything account-specific when signed out so the next user never sees it.
+  const router = useRouter();
+  const wasSignedIn = useRef(false);
   useEffect(() => {
+    if (status === 'signedIn') wasSignedIn.current = true;
     if (status === 'signedOut') {
+      // the auth stack can remember the sign-up screen it was last on; always land on login
+      if (wasSignedIn.current) {
+        wasSignedIn.current = false;
+        setTimeout(() => router.replace('/login'), 0);
+      }
       queryClient.clear();
       persister.removeClient();
     }
