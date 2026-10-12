@@ -3,19 +3,18 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { QueryClient } from '@tanstack/react-query';
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client';
-import * as Notifications from 'expo-notifications';
 import { Stack } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { AppState, Platform } from 'react-native';
+import { AppState } from 'react-native';
 import 'react-native-reanimated';
 
 import { LockGate } from '@/components/lock-gate';
 import { OfflineBanner } from '@/components/offline-banner';
 import { AccountError } from '@/components/account-error';
 import { ErrorScreen } from '@/components/error-screen';
-import { configureNotifications, registerForPush, routeFromNotification } from '@/lib/push';
+import { configureNotifications, listenForNotificationTaps, registerForPush } from '@/lib/push';
 import { usePrefs } from '@/store/prefs';
 import { useSession } from '@/store/session';
 
@@ -78,13 +77,10 @@ export default function RootLayout() {
     return () => sub.remove();
   }, [status]);
 
-  // Tapping a notification opens the screen it is about (including one that launched the app).
+  // Tapping a notification opens the screen it is about (a no-op where notifications aren't available).
   useEffect(() => {
-    // the notification response APIs only exist on iOS/Android
-    if (status !== 'signedIn' || Platform.OS === 'web') return;
-    Notifications.getLastNotificationResponseAsync().then((r) => r && routeFromNotification(r.notification.request.content.data));
-    const sub = Notifications.addNotificationResponseReceivedListener((r) => routeFromNotification(r.notification.request.content.data));
-    return () => sub.remove();
+    if (status !== 'signedIn') return;
+    return listenForNotificationTaps();
   }, [status]);
 
   if (status === 'loading') return null;

@@ -64,7 +64,7 @@ export default function InventoryScreen() {
           data={rows}
           keyExtractor={(p) => String(p.id)}
           contentContainerStyle={{ padding: 16, paddingBottom: 100, flexGrow: 1 }}
-          refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={q.refetch} />}
+          refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => { void q.refetch(); }} />}
           ListEmptyComponent={q.error
             ? <EmptyState icon="alert-circle-outline" title="Couldn't load inventory" hint={errorMessage(q.error)} />
             : <EmptyState icon="cube-outline" title={lowOnly ? 'Nothing is low on stock' : 'No products yet'} hint={lowOnly ? undefined : 'Tap + or scan a barcode to add one.'} />}

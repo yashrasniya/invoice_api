@@ -14,7 +14,7 @@ What is built, what is verified, and what is still needed before the stores will
 
 ## 2. Decisions I made that you should confirm
 
-- **Bundle id / package:** `com.yashadvertisinggroup.invoicepro` (iOS and Android). The existing `mobile_app_bubblewrap/` TWA uses `com.yashadvertisinggroup.twa`. **If that TWA is already published on Google Play and you want this app to replace it for existing users, change `android.package` in `app.json` to the TWA's id and sign with the same key** — a different id is a different app. Decide this before the first Play upload; the id cannot change afterwards.
+- **Bundle id / package:** `com.orvine.invoice` (iOS and Android). The existing `mobile_app_bubblewrap/` TWA uses `com.yashadvertisinggroup.twa`. **If that TWA is already published on Google Play and you want this app to replace it for existing users, change `android.package` in `app.json` to the TWA's id and sign with the same key** — a different id is a different app. Decide this before the first Play upload; the id cannot change afterwards.
 - **Light theme only.** The screens use a fixed light palette, so the app is locked to light mode (`userInterfaceStyle: "light"`, navigation theme forced). A proper dark mode means moving every screen onto theme tokens — a separate piece of work.
 - **Payments stay on the web.** "Plan & billing" shows status and hands off to the browser. If you later sell subscriptions inside the iOS app, Apple expects in-app purchase for digital subscriptions; keep the hand-off out of the iOS flow's "buy" path (it is read-only today, which is the safe position).
 - **Offline scope.** Everyday read screens (dashboard, invoices, customers/vendors, inventory) are cached for 24 h and shown offline; invoices finished offline are saved as drafts on the phone (More → Drafts) and sent later. Reports, billing and team data are never copied to the device.
@@ -54,7 +54,7 @@ eas init
 Without this the toggle shows "Push notifications are not set up for this version of the app yet" (the underlying error is `Default FirebaseApp is not initialized`). It is a one-time, ~10 minute setup in your Google account — no code changes needed (`app.config.js` picks the file up automatically):
 
 1. Go to https://console.firebase.google.com → **Add project** (any name, e.g. "Invoice Pro"; Analytics can be off).
-2. In the project: **Add app → Android**, package name **`com.yashadvertisinggroup.invoicepro`** (must match exactly). Download **`google-services.json`** and put it in the `MobileApp/` folder (next to `app.json`). It is client configuration, not a secret.
+2. In the project: **Add app → Android**, package name **`com.orvine.invoice`** (must match exactly). Download **`google-services.json`** and put it in the `MobileApp/` folder (next to `app.json`). It is client configuration, not a secret.
 3. Firebase → ⚙ **Project settings → Service accounts → Generate new private key**. This JSON **is a secret** — keep it out of git (already in `.gitignore`).
 4. Give that key to Expo (it sends the pushes through Google): in `MobileApp/` run `eas credentials`, then **Android → production/preview profile → Google Service Account → Manage your Google Service Account Key for Push Notifications (FCM V1) → Upload a new service account key**.
 5. Run `./release/prepare-build-dir.sh` and build again (§4). The Notifications toggle then registers the phone; completing an OCR scan sends a "Bill scanned" push.

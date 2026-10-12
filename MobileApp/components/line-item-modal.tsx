@@ -28,6 +28,7 @@ export function LineItemModal({ visible, columns, onClose, onSave, useInventory,
   const [values, setValues] = useState<Record<number, string>>(() => initial(columns));
   const [inventoryId, setInventoryId] = useState<number | undefined>();
   const [picking, setPicking] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
   useEffect(() => { if (visible) { setValues(initialValues ?? initial(columns)); setInventoryId(undefined); } }, [visible, columns, initialValues]);
 
   // Same mapping the web form uses: columns are matched by their title.

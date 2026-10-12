@@ -71,6 +71,7 @@ export function InvoiceForm({ invoice, copyFrom, type: typeProp }: Props) {
   // "Duplicate": re-create the source's lines as new lines under the current column config
   React.useEffect(() => {
     if (!copyFrom || !columnsQ.data || newLines.length) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
     setNewLines(copyFrom.products.map((p) => ({
       values: Object.fromEntries(p.product_properties.map((pp) => [pp.new_product_in_frontend.id, pp.value ?? ''])),
     })));

@@ -32,7 +32,7 @@ export default function LedgerScreen() {
           {q.isLoading ? <Centered /> : q.error || !d ? (
             <EmptyState icon="alert-circle-outline" title="Couldn't load ledger" hint={errorMessage(q.error)} />
           ) : (
-            <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={q.refetch} />}>
+            <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => { void q.refetch(); }} />}>
               <KpiGrid>
                 <Kpi wide label={receivable ? 'Outstanding (they owe you)' : 'Outstanding (you owe)'} value={money(d.outstanding_total)}
                   tone={d.outstanding_total > 0 ? Palette.danger : Palette.success} />

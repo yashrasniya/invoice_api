@@ -36,12 +36,12 @@ export function PartyList({ kind, topInset = true }: { kind: PartyKind; topInset
           data={rows}
           keyExtractor={(r) => String(r.id)}
           contentContainerStyle={{ padding: 16, paddingBottom: 100, flexGrow: 1 }}
-          refreshControl={<RefreshControl refreshing={q.isRefetching && !q.isFetchingNextPage} onRefresh={q.refetch} />}
+          refreshControl={<RefreshControl refreshing={q.isRefetching && !q.isFetchingNextPage} onRefresh={() => { void q.refetch(); }} />}
           onEndReached={() => q.hasNextPage && !q.isFetchingNextPage && q.fetchNextPage()}
           ListEmptyComponent={q.error
             ? <EmptyState icon="alert-circle-outline" title={`Couldn't load ${kind}s`} hint={errorMessage(q.error)} />
             : <EmptyState icon="people-outline" title={`No ${kind}s yet`} hint={canManage ? 'Tap + to add one.' : undefined} />}
-          ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} color={Palette.primary} /> : null}
+          ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} color={Palette.primary} /> : undefined}
           renderItem={({ item }) => (
             <TouchableOpacity style={styles.card} onPress={() => router.push(`/party/${kind}/${item.id}`)}>
               <View style={styles.avatar}><Text style={styles.avatarText}>{item.name.trim()[0]?.toUpperCase() ?? '?'}</Text></View>

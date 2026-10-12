@@ -29,6 +29,7 @@ export default function PartyScreen() {
   const q = useQuery({ queryKey: ['party', kind, id], queryFn: () => getParty(kind, id!), enabled: !isNew });
   useEffect(() => {
     const p = q.data;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
     if (p) setForm({
       name: p.name, address: p.address ?? '', gst_number: p.gst_number ?? '', state: p.state ?? '',
       state_code: p.state_code != null ? String(p.state_code) : '', phone_number: p.phone_number ?? '',

@@ -34,7 +34,7 @@ export default function GstScreen() {
           {q.isLoading ? <Centered /> : q.error || !d ? (
             <EmptyState icon="alert-circle-outline" title="Couldn't load report" hint={errorMessage(q.error)} />
           ) : (
-            <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={q.refetch} />}>
+            <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => { void q.refetch(); }} />}>
               <Text style={styles.range}>{d.period_label} · {d.start_date} → {d.end_date}</Text>
               <KpiGrid>
                 <Kpi wide label={d.net_gst_payable >= 0 ? 'Net GST payable' : 'Net GST credit'} value={money(Math.abs(d.net_gst_payable))}

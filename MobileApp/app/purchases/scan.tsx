@@ -20,6 +20,16 @@ const STATE_STYLE = {
 
 const stamp = () => new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
 
+function Action({ icon, label, onPress, disabled }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; disabled: boolean }) {
+  return (
+    <TouchableOpacity style={[styles.action, disabled && { opacity: 0.5 }]} disabled={disabled} onPress={onPress}
+      accessibilityRole="button" accessibilityLabel={label}>
+      <Ionicons name={icon} size={24} color={Palette.primary} />
+      <Text style={styles.actionText}>{label}</Text>
+    </TouchableOpacity>
+  );
+}
+
 export default function ScanBillScreen() {
   const qc = useQueryClient();
   const hasFeature = useFeature('purchases_invoice');
@@ -46,6 +56,8 @@ export default function ScanBillScreen() {
     },
     onError: (e) => Alert.alert('Upload failed', errorMessage(e)),
   });
+
+  const actionsDisabled = blocked || !canCreate || upload.isPending;
 
   const fromCamera = async () => {
     const perm = await ImagePicker.requestCameraPermissionsAsync();
@@ -84,14 +96,6 @@ export default function ScanBillScreen() {
     );
   }
 
-  const Action = ({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) => (
-    <TouchableOpacity style={[styles.action, (blocked || upload.isPending || !canCreate) && { opacity: 0.5 }]}
-      disabled={blocked || upload.isPending || !canCreate} onPress={onPress}>
-      <Ionicons name={icon} size={24} color={Palette.primary} />
-      <Text style={styles.actionText}>{label}</Text>
-    </TouchableOpacity>
-  );
-
   return (
     <View style={styles.screen}>
       <Stack.Screen options={{ title: 'Scan bills' }} />
@@ -100,13 +104,13 @@ export default function ScanBillScreen() {
           data={q.data?.jobs ?? []}
           keyExtractor={(j) => String(j.id)}
           contentContainerStyle={{ padding: 16, paddingBottom: 40, flexGrow: 1 }}
-          refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={q.refetch} />}
+          refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => { void q.refetch(); }} />}
           ListHeaderComponent={
             <View style={{ marginBottom: 12 }}>
               <View style={styles.actions}>
-                <Action icon="camera-outline" label="Take photo" onPress={fromCamera} />
-                <Action icon="image-outline" label="Photo library" onPress={fromLibrary} />
-                <Action icon="document-outline" label="PDF / file" onPress={fromFile} />
+                <Action icon="camera-outline" label="Take photo" onPress={fromCamera} disabled={actionsDisabled} />
+                <Action icon="image-outline" label="Photo library" onPress={fromLibrary} disabled={actionsDisabled} />
+                <Action icon="document-outline" label="PDF / file" onPress={fromFile} disabled={actionsDisabled} />
               </View>
               {upload.isPending && <Text style={styles.uploading}>Uploading…</Text>}
               {!!usage && (

@@ -57,7 +57,7 @@ export default function TeamScreen() {
   const rolesFor = (u: Member) => (roles.data ?? []).filter((r) => r.user_names.some((x) => x.id === u.id));
 
   const listProps = (q: { isLoading: boolean; isRefetching: boolean; refetch: () => unknown; error: unknown }) => ({
-    refreshControl: <RefreshControl refreshing={q.isRefetching} onRefresh={q.refetch} />,
+    refreshControl: <RefreshControl refreshing={q.isRefetching} onRefresh={() => { void q.refetch(); }} />,
     contentContainerStyle: { padding: 16, paddingBottom: 40, flexGrow: 1 },
   });
 

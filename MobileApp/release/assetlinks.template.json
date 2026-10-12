@@ -3,7 +3,7 @@
     "relation": ["delegate_permission/common.handle_all_urls"],
     "target": {
       "namespace": "android_app",
-      "package_name": "com.yashadvertisinggroup.invoicepro",
+      "package_name": "com.orvine.invoice",
       "sha256_cert_fingerprints": ["<SHA256_OF_THE_APP_SIGNING_KEY>"]
     }
   }

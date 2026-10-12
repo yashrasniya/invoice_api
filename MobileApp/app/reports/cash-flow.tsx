@@ -35,7 +35,7 @@ export default function CashFlowScreen() {
           {q.isLoading ? <Centered /> : q.error ? (
             <EmptyState icon="alert-circle-outline" title="Couldn't load report" hint={errorMessage(q.error)} />
           ) : (
-            <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={q.refetch} />}>
+            <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => { void q.refetch(); }} />}>
               <KpiGrid>
                 <Kpi label="Money in" value={money(inflow)} tone={Palette.success} />
                 <Kpi label="Money out" value={money(outflow)} tone={Palette.danger} />

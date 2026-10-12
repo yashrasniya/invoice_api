@@ -61,7 +61,7 @@ export default function TemplatesScreen() {
 
       {tab === 'mine' ? (mine.isLoading ? <Centered /> : (
         <FlatList data={mine.data ?? []} keyExtractor={(t) => String(t.id)} contentContainerStyle={{ padding: 16, flexGrow: 1 }}
-          refreshControl={<RefreshControl refreshing={mine.isRefetching} onRefresh={mine.refetch} />}
+          refreshControl={<RefreshControl refreshing={mine.isRefetching} onRefresh={() => { void mine.refetch(); }} />}
           ListEmptyComponent={<EmptyState icon="document-outline" title="No templates" hint={errorMessage(mine.error, 'Browse the gallery to add one.')} />}
           ListFooterComponent={<Text style={styles.foot}>Editing template layouts is available on the web.</Text>}
           renderItem={({ item }) => (
@@ -84,7 +84,7 @@ export default function TemplatesScreen() {
             </View>
           )}
           <FlatList data={shown} keyExtractor={(t) => String(t.id)} contentContainerStyle={{ padding: 16, flexGrow: 1 }}
-            refreshControl={<RefreshControl refreshing={gallery.isRefetching} onRefresh={gallery.refetch} />}
+            refreshControl={<RefreshControl refreshing={gallery.isRefetching} onRefresh={() => { void gallery.refetch(); }} />}
             ListEmptyComponent={<EmptyState icon="images-outline" title="Nothing here" hint={errorMessage(gallery.error, '')} />}
             renderItem={({ item }) => (
               <View style={styles.card}>
@@ -99,7 +99,7 @@ export default function TemplatesScreen() {
                 </View>
               </View>
             )}
-            ListFooterComponent={!canChange ? <Text style={styles.foot}>{hasDesigner ? "You don't have permission to add templates." : 'Adding templates needs a plan with the template designer.'}</Text> : null} />
+            ListFooterComponent={!canChange ? <Text style={styles.foot}>{hasDesigner ? "You don't have permission to add templates." : 'Adding templates needs a plan with the template designer.'}</Text> : undefined} />
         </>
       ))}
     </View>

@@ -11,34 +11,35 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: Palette.primary,
         headerShown: false,
-        tabBarButton: HapticTab,
+        // cast: expo-router's tab-button type differs slightly from react-navigation's that HapticTab is written against
+        tabBarButton: HapticTab as never,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="home" size={size} color={color as string} />,
         }}
       />
       <Tabs.Screen
         name="invoices"
         options={{
           title: 'Invoices',
-          tabBarIcon: ({ color, size }) => <Ionicons name="document-text" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="document-text" size={size} color={color as string} />,
         }}
       />
       <Tabs.Screen
         name="customers"
         options={{
           title: 'Customers',
-          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="people" size={size} color={color as string} />,
         }}
       />
       <Tabs.Screen
         name="more"
         options={{
           title: 'More',
-          tabBarIcon: ({ color, size }) => <Ionicons name="menu" size={size} color={color} />,
+          tabBarIcon: ({ color, size }) => <Ionicons name="menu" size={size} color={color as string} />,
         }}
       />
     </Tabs>

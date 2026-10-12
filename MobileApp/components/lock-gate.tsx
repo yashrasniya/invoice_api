@@ -44,6 +44,7 @@ export function LockGate({ children }: { children: React.ReactNode }) {
 
   // lock (and prompt) whenever the feature becomes relevant: app start with it on, or just signed in
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
     if (active) { setLocked(true); unlock(); } else setLocked(false);
   }, [active, unlock]);
 

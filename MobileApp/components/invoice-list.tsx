@@ -43,14 +43,14 @@ export function InvoiceList({ type, title, topInset = 0, header }: Props) {
       data={rows}
       keyExtractor={(r) => String(r.id)}
       contentContainerStyle={{ padding: 16, paddingBottom: 100, flexGrow: 1 }}
-      refreshControl={<RefreshControl refreshing={q.isRefetching && !q.isFetchingNextPage} onRefresh={q.refetch} />}
+      refreshControl={<RefreshControl refreshing={q.isRefetching && !q.isFetchingNextPage} onRefresh={() => { void q.refetch(); }} />}
       onEndReached={() => q.hasNextPage && !q.isFetchingNextPage && q.fetchNextPage()}
       onEndReachedThreshold={0.4}
       ListEmptyComponent={q.error
         ? <EmptyState icon="alert-circle-outline" title="Couldn't load invoices" hint={errorMessage(q.error)} />
         : <EmptyState icon="document-text-outline" title={purchase ? 'No purchase bills' : 'No invoices'}
             hint={search || status ? 'Try a different filter.' : purchase ? 'Scan a bill or tap + to add one.' : 'Tap + to create your first invoice.'} />}
-      ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} color={Palette.primary} /> : null}
+      ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} color={Palette.primary} /> : undefined}
       renderItem={({ item }) => (
         <TouchableOpacity style={styles.card} onPress={() => router.push(`/invoice/${item.id}`)}>
           <View style={{ flex: 1, gap: 4 }}>

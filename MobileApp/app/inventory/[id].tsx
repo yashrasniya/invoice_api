@@ -33,6 +33,7 @@ export default function InventoryProductScreen() {
 
   useEffect(() => {
     const p = product.data;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
     if (p) setForm({
       sku: p.sku, name: p.name, description: p.description ?? '', category: p.category,
       price: String(p.price), gst_percentage: String(Number(p.gst_percentage)), reorder_level: String(p.reorder_level),

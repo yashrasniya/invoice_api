@@ -25,6 +25,7 @@ export default function NumberingScreen() {
   useEffect(() => {
     const d = q.data;
     if (!d) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
     setEnabled(d.enabled); setTemplate(d.template); setReset(d.reset_period); setNext(String(d.next_number));
   }, [q.data]);
 
