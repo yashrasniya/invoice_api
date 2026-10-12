@@ -1,0 +1,36 @@
+{
+  "cli": {
+    "version": ">= 12.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_API_URL": "http://192.168.1.106:8000",
+        "EXPO_PUBLIC_WEB_URL": "http://localhost:5173/app"
+      }
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://invoice.orvine.in",
+        "EXPO_PUBLIC_WEB_URL": "https://invoice.orvine.in/app"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://invoice.orvine.in",
+        "EXPO_PUBLIC_WEB_URL": "https://invoice.orvine.in/app"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}
