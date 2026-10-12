@@ -210,6 +210,24 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                         if alias and alias not in props:
                             props[alias] = display_val
                 
+                # The bill form stores each line's total_amount, but many saved
+                # invoices carry 0.00 there (the header total is still right),
+                # which printed as a zero Amt. column. When the stored value is
+                # empty, use the line total worked out above: taxable amount
+                # plus its GST plus any charges added after tax.
+                try:
+                    stored_total = float(p.get('total_amount') or 0)
+                except (TypeError, ValueError):
+                    stored_total = 0.0
+                if not stored_total:
+                    gst_pct = 0.0
+                    for prop in sorted_props:
+                        cfg = prop.get('new_product_in_frontend', {})
+                        if str(cfg.get('input_title', '')).lower() == 'gst':
+                            try: gst_pct = float(prop.get('value') or 0)
+                            except (TypeError, ValueError): gst_pct = 0.0
+                    p['total_amount'] = f"{total + total * gst_pct / 100 + extra_cal:.2f}"
+
                 # `amount`/`total` only exist as props if the user happened to
                 # name a product column that way; templates ask for them
                 # regardless. Fall back to the line total the product already
