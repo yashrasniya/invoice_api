@@ -99,6 +99,42 @@ class MobileInvoiceFlowTest(TestCase):
         self.assertEqual(res.status_code, 204)
         self.assertFalse(Invoice.objects.filter(id=inv['id']).exists())
 
+    def test_edit_existing_line_item(self):
+        # replays MobileApp updateLineItem(): update changed values in place, attach any missing column, new amounts
+        customer = self.post('/api/companies/', {'name': 'B', 'address': '', 'gst_number': '',
+                                                 'state': '', 'state_code': None, 'phone_number': None})
+        inv = self.post('/api/invoice/', {'receiver': customer['id'], 'date': '2026-10-01', 'invoice_type': 'sales',
+                                          'payment_status': 'unpaid', 'total_final_amount': '236.00', 'gst_final_amount': '36.00'})
+        pid = self.add_line(inv['id'], {'Name of Product': 'Widget', 'Quantity': '2', 'Rate': '100', 'GST': '18'}, '236.00', '36.00')
+
+        line = self.client.get('/api/invoice/', {'id': inv['id']}).data['results'][0]['products'][0]
+        by_title = {p['new_product_in_frontend']['input_title']: p for p in line['product_properties']}
+
+        # change quantity 2 -> 5 and rename: 5 x 100 = 500, +18% = 590
+        self.post(f'/api/product/properties/{by_title["Quantity"]["id"]}/update/', {'value': '5'})
+        self.post(f'/api/product/properties/{by_title["Name of Product"]["id"]}/update/', {'value': 'Widget Pro'})
+        self.post(f'/api/product/{pid}/update/', {'gst_amount': '90.00', 'total_amount': '590.00'})
+        # then the app recomputes the invoice totals from its lines
+        self.post(f'/api/invoice/{inv["id"]}/update/', {'total_final_amount': '590.00', 'gst_final_amount': '90.00'})
+
+        got = self.client.get('/api/invoice/', {'id': inv['id']}).data['results'][0]
+        vals = {p['new_product_in_frontend']['input_title']: p['value'] for p in got['products'][0]['product_properties']}
+        self.assertEqual(vals['Quantity'], '5')
+        self.assertEqual(vals['Name of Product'], 'Widget Pro')
+        self.assertEqual(vals['Rate'], '100')                       # untouched columns keep their value
+        self.assertEqual(len(got['products']), 1)                   # edited in place, not duplicated
+        self.assertEqual(Decimal(got['products'][0]['total_amount']), Decimal('590.00'))
+        self.assertEqual(Decimal(got['total_final_amount']), Decimal('590.00'))
+
+        # a column the line never had (added to the company's config later) is created and attached on edit
+        extra = new_product_in_frontend.objects.create(user=self.user, input_title='Notes', size=1, is_show=True, is_calculable=False)
+        newprop = self.post('/api/product/properties/', {'new_product_in_frontend': extra.id, 'value': 'fragile'})
+        self.post(f'/api/product/{pid}/update/', {'product_properties': str(newprop['id']), 'gst_amount': '90.00', 'total_amount': '590.00'})
+        got = self.client.get('/api/invoice/', {'id': inv['id']}).data['results'][0]
+        titles = {p['new_product_in_frontend']['input_title'] for p in got['products'][0]['product_properties']}
+        self.assertIn('Notes', titles)
+        self.assertEqual(len(got['products'][0]['product_properties']), 5)
+
     def test_customer_edit_and_vendor_roundtrip(self):
         c = self.post('/api/companies/', {'name': 'A', 'address': '', 'gst_number': '',
                                           'state': '', 'state_code': None, 'phone_number': None})

@@ -201,3 +201,5 @@ Thumbs.db
 mobile_app_bubblewrap/*.apk
 mobile_app_bubblewrap/*.aab
 mobile_app_bubblewrap/*.idsig
+# Firebase service-account keys (secret: upload to EAS, never commit)
+*firebase-adminsdk*.json
