@@ -78,7 +78,7 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
     
     if template_obj.is_html:
         import re
-        from django.template import Context, Template
+        from django.template import Context, Template, TemplateSyntaxError
         
         try:
             template_obj.yaml_file.file.seek(0)
@@ -124,6 +124,9 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             for k, v in custom_header.items():
                 invoice_data[k] = v
                 invoice_data[k.lower()] = v
+                # Django cannot reach a key containing spaces, so also expose
+                # it as e.g. "Gold Rate" -> gold_rate for the template picker.
+                invoice_data[re.sub(r'[^a-z0-9]+', '_', str(k).lower()).strip('_')] = v
                     
             for p in invoice_data.get('products', []):
                 props = TemplateProps()
@@ -216,7 +219,11 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
 
                 p['props'] = props
                 
-            django_template = Template(inner_html)
+            try:
+                django_template = Template(inner_html)
+            except TemplateSyntaxError as e:
+                loger.error("Template %s has invalid syntax: %s", template_obj.id, e)
+                return Response({"message": f"Template has an invalid placeholder: {e}"}, 400)
             
             company_data = {}
             if request.user.user_company:
