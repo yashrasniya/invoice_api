@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Palette } from '@/constants/theme';
 import { errorMessage } from '@/services/api';
-import { login } from '@/services/auth';
+import { googleLogin, login } from '@/services/auth';
+import { getGoogleIdToken, googleSignInConfigured } from '@/lib/google-signin';
 import { parseInviteToken } from '@/lib/invite-link';
 import { useSession } from '@/store/session';
 
@@ -31,6 +32,20 @@ export default function LoginScreen() {
       // the root layout's guards swap in the signed-in screens
     } catch (e) {
       Alert.alert('Login failed', errorMessage(e, 'Invalid username or password.'));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogle = async () => {
+    setLoading(true);
+    try {
+      const idToken = await getGoogleIdToken();
+      if (!idToken) return;
+      const { token, user } = await googleLogin(idToken);
+      await useSession.getState().signIn(token, user);
+    } catch (e) {
+      Alert.alert('Google sign-in failed', errorMessage(e, 'Could not sign in with Google.'));
     } finally {
       setLoading(false);
     }
@@ -81,6 +96,10 @@ export default function LoginScreen() {
         />
 
         <Button title="Sign In" onPress={handleLogin} loading={loading} style={{ marginTop: 12 }} />
+
+        {googleSignInConfigured && (
+          <Button title="Continue with Google" variant="outline" onPress={handleGoogle} disabled={loading} style={{ marginTop: 12 }} />
+        )}
 
         {showInvite && (
           <View style={{ marginTop: 20 }}>

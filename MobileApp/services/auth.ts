@@ -40,6 +40,13 @@ export async function login(username: string, password: string) {
   return { token: data.access, user: data as User };
 }
 
+/** Exchange a Google ID token for our own session (creates the account on first sign-in). */
+export async function googleLogin(credential: string) {
+  const { data } = await api.post<User & { access?: string; created?: boolean }>('google-login/', { credential });
+  if (!data.access) throw new Error('Server did not return a session token. Is the backend up to date?');
+  return { token: data.access, user: data as User, created: !!data.created };
+}
+
 export const register = (input: RegisterInput) => api.post('register/', input);
 
 export const fetchProfile = async () => (await api.get<User>('profile/')).data;
