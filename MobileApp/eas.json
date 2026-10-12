@@ -9,7 +9,7 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_API_URL": "http://192.168.1.106:8000",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "852104712389-3h3sicstqeb46hujqk5i426osk8stmo6.apps.googleusercontent.com",
         "EXPO_PUBLIC_WEB_URL": "http://localhost:5173/app"
       }
     },
@@ -20,7 +20,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://invoice.orvine.in",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "852104712389-3h3sicstqeb46hujqk5i426osk8stmo6.apps.googleusercontent.com",
         "EXPO_PUBLIC_WEB_URL": "https://invoice.orvine.in/app"
       }
     },
@@ -28,7 +28,7 @@
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_API_URL": "https://invoice.orvine.in",
-        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "",
+        "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "852104712389-3h3sicstqeb46hujqk5i426osk8stmo6.apps.googleusercontent.com",
         "EXPO_PUBLIC_WEB_URL": "https://invoice.orvine.in/app"
       }
     }
