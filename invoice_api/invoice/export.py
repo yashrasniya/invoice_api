@@ -200,6 +200,15 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                     props[title] = display_val
                     for word in title.split():
                         props[word] = display_val
+                    # Titles like "PRODUCT/Description" or "Making_Charge" have
+                    # no spaces, so the loop above leaves them as a key Django
+                    # cannot reach. Also expose the full title with other
+                    # characters turned into "_" and each alphanumeric word,
+                    # without overriding a key a property already set.
+                    slug = re.sub(r'[^a-z0-9]+', '_', title).strip('_')
+                    for alias in [slug] + re.findall(r'[a-z0-9]+', title):
+                        if alias and alias not in props:
+                            props[alias] = display_val
                 
                 # `amount`/`total` only exist as props if the user happened to
                 # name a product column that way; templates ask for them
