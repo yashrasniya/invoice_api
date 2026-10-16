@@ -4,7 +4,7 @@ import logging
 import re
 
 import yaml
-from django.db.models import Q
+from django.db.models import F, Q
 from django.http import FileResponse
 from rest_framework import status, viewsets, pagination
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView, UpdateAPIView
@@ -60,6 +60,13 @@ class InvoiceView(ListAPIView):
     # Ordering (e.g., ?ordering=-invoice_date)
     ordering_fields = ['date', 'total_final_amount','gst_final_amount']
     ordering = ['-date', '-id']  # -id: newest-first tiebreak (date is nullable)
+
+    def filter_queryset(self, queryset):
+        qs = super().filter_queryset(queryset)
+        # default order: newest date first, undated invoices last
+        if not self.request.query_params.get('ordering'):
+            qs = qs.order_by(F('date').desc(nulls_last=True), '-id')
+        return qs
 
 
     def get_serializer_context(self):
