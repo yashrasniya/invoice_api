@@ -41,6 +41,22 @@ Test suite on Postgres: same 8 failures as on SQLite (pre-existing: aws/ocr/conv
 
 Not yet tested: real production data. The local DB is a dev copy; the server dry run (Phase 1) is what will show any data-specific problems (stricter typing, orphan FKs).
 
+## Server dry run — DONE (2026-10-17)
+
+Run on the server in a scratch copy (`~/pg_rehearsal/`), from a consistent snapshot of the live SQLite, into a throw-away database `invoice_rehearsal` (role `rehearsal_user`). The live app, its code, its SQLite file and gunicorn were not touched. `nice -n 15`, ~1m51s, RAM stayed ~380 MB used.
+
+Result: **10,628 objects loaded, row counts match on every table, sequences OK**, ORM reads work on Postgres.
+
+What it found (production-specific, none visible locally):
+1. **Over-length values SQLite accepted** — Postgres rejects them:
+   - `companies.Customers` pk=34 `gst_number` = "Test Company GST Number" (23 chars, column is 15). Junk test row.
+   - `invoice.InvoiceExtractionLog` pk=46–50 `file` — 103-char paths in a 100-char column. Real file references.
+   The script now has a preflight (`scripts/check_sqlite_data.py`) that lists all such values and stops. **Decision needed** before cut-over (see summary): fix pk=34 by hand; for the 5 file paths either widen `InvoiceExtractionLog.file` to `max_length=255` (needs a migration) or truncate them (breaks those 5 links).
+   For the rehearsal both were shortened in the *snapshot copy only*.
+2. **The server's migration files don't match its database.** The live DB has applied migrations that are not on disk on the server (accounts 0002/0003/0005, bill_share 0001, yaml_manager 0002/0003 …), and the repo's migration names differ from what production recorded for accounts, companies, inventory, invoice and whatsapp_integration. Most `migrations/` folders are untracked in git (bill_share, adminconfig, yaml_manager are not tracked at all), and the server has locally-modified `0001_initial` files.
+   Consequence: on a fresh Postgres, `migrate` from the server's files does not create `bill_share_billshare` (that app has no migration files there). The script now runs `migrate --run-syncdb` as a second pass, which builds those tables from the models.
+   **Do not run `migrate` on the live SQLite after deploying the repo's migrations as-is** — the histories diverge and Django would try to re-apply them.
+
 ## Phase 0 — Prepare (no downtime)
 
 1. **Code change** (local, on a branch):
