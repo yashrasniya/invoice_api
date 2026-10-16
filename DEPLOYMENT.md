@@ -18,7 +18,7 @@ Browser ──HTTPS──> nginx (443)
                     ├─ /static/   -> Django static         (/var/www/invoice_static)
                     ├─ /media/    -> uploaded files        (/var/www/invoice_media)
                     └─ /api/, /admin/ -> gunicorn 127.0.0.1:8000 (Django)
-                                          └─ SQLite DB
+                                          └─ PostgreSQL (invoice_db, localhost:5432)
 FastAPI service (uvicorn, :8001) = invoice_convertor_pipeline (called by Django internally)
 ```
 
@@ -26,7 +26,8 @@ FastAPI service (uvicorn, :8001) = invoice_convertor_pipeline (called by Django 
 |---|---|---|
 | Django backend (git checkout) | `~/invoice_api` (app in `~/invoice_api/invoice_api`) | `gunicorn.service` |
 | Python venv | `~/invoice_api/venv` | - |
-| Database (SQLite) | `~/invoice_api/invoice_api/db.sqlite3` | - |
+| Database (PostgreSQL 14) | `invoice_db` on localhost:5432, role `invoice_user`. Credentials: `DB_*` in `~/invoice_api/invoice_api/.env` and `~/.pgpass` | `postgresql@14-main` |
+| Old SQLite file (archived, **not used**) | `~/invoice_api/invoice_api/db.sqlite3` + `~/backup/db.sqlite3.pre_postgres.*` | - |
 | Frontend upload dir | `~/build` -> rsynced to `/var/www/bill_soft` | `deploy_F.sh` |
 | PDF/OCR pipeline | `~/invoice_convertor_pipeline` | `fastapi.service` |
 | Web server | `/etc/nginx/sites-available/bill_soft` | `nginx.service` |
@@ -94,24 +95,27 @@ sudo journalctl -u gunicorn.service -n 30 --no-pager                        # no
 ```
 
 ### 3.3 Migrations (important)
-- The server's migration files are **its own** (generated there). Never copy local migration files to the server: numbering and dependencies differ and `migrate` will fail or desync.
-- When a model changes, run `makemigrations` **on the server** after `git pull`, read the generated file, then `migrate`.
+- **Migrations are committed to git and are the single source of truth.** Never run `makemigrations` on the server: it creates files that git does not know about and the server's history drifts from the repo (this is what broke the SQLite -> PostgreSQL move).
+- When a model changes: run `makemigrations` **locally**, review the file, commit it, push, then deploy. `deploy_backend.sh` stops if the models have changes without a migration.
 - **Always back up the DB before any `migrate`:**
   ```bash
   ~/bin/backup_db.sh && ls -la ~/backup/nightly | tail -3
   ```
-  This writes an integrity-checked, gzipped copy to `~/backup/nightly/`. Do not use a plain `cp` of the live SQLite file.
+  This writes an integrity-checked `pg_dump` (custom format) to `~/backup/nightly/`.
 - Prefer additive migrations (new tables/nullable columns). Destructive ones need a restore plan first.
+- PostgreSQL enforces `max_length` and foreign keys (SQLite did not). Data migrations that call `cache.clear()` must do it inside `transaction.atomic()` (see `accounts/0009`).
 
 ### 3.4 Rollback
 - **Code:** `cd ~/invoice_api && git log --oneline`, then `git checkout <good-commit>` (or `git revert`) and restart gunicorn.
-- **Database:** stop gunicorn, restore a backup, start it:
+- **Database:** stop gunicorn, restore a backup into an empty database, start it:
   ```bash
   sudo systemctl stop gunicorn.service
-  gunzip -c ~/backup/nightly/db_YYYYMMDD_HHMM.sqlite3.gz > /tmp/restore.sqlite3
-  cp /tmp/restore.sqlite3 ~/invoice_api/invoice_api/db.sqlite3
+  sudo -u postgres psql -c "drop database invoice_db" -c "create database invoice_db owner invoice_user encoding 'UTF8'"
+  PGPASSFILE=~/.pgpass pg_restore -h 127.0.0.1 -U invoice_user -d invoice_db --no-owner ~/backup/nightly/invoice_db_YYYYMMDD_HHMM.dump
   sudo systemctl start gunicorn.service
   ```
+  (A restore into a scratch database was tested on 2026-10-17: all 65 tables and 19,692 rows identical.)
+- **Back to SQLite** (emergency only; loses everything written since the cut-over): stop gunicorn, remove the `DB_*` lines from `.env`, restore the old tree from `~/backup/pre_postgres_tree.tgz` (code + `db.sqlite3` as of 2026-10-17 20:45), start gunicorn.
 - **nginx / gunicorn config:** timestamped copies of earlier versions are in `~/backup/` (`nginx_bill_soft.pre_*`, `gunicorn.service.pre_*`).
 
 ---
@@ -158,7 +162,7 @@ Never paste credential values into chat, tickets or commits. If a secret was exp
 
 | What | How | Where |
 |---|---|---|
-| Database | `~/bin/backup_db.sh`, cron daily 02:30. Consistent SQLite `.backup`, integrity-checked, gzipped, 14 days kept | `~/backup/nightly/` (log: `backup.log`) |
+| Database | `~/bin/backup_db.sh`, cron daily 02:30. `pg_dump -Fc` of `invoice_db`, archive checked with `pg_restore -l`, 14 days kept | `~/backup/nightly/` (log: `backup.log`) |
 | Manual / pre-change copies | by hand | `~/backup/` |
 
 **Gap:** backups are on the same server. Copy them off-machine (S3, another host) to survive a disk loss.
@@ -203,7 +207,6 @@ Uploaded files (`/var/www/invoice_media`) are not backed up yet.
 ## 9. Known gaps / follow-ups
 
 - Rotate credentials that were exposed in plain text earlier (WhatsApp token, Gmail app password, Razorpay live key), and keep them only in `.env`.
-- Server migrations are out of step with git; consider committing a clean migration set.
-- The database is SQLite on one server; moving to PostgreSQL (already installed on the box) is the next scalability step.
+- The database moved from SQLite to PostgreSQL on 2026-10-17. Keep the archived SQLite backups for ~2 weeks, then delete them (they contain production data).
 - Add off-server backups, media backups and an external uptime check.
 - `/admin/` is publicly reachable; consider restricting it by IP.

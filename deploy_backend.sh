@@ -1,8 +1,8 @@
 #!/bin/bash
 # Deploy the Django backend to production. See DEPLOYMENT.md.
 #
-#   ./deploy_backend.sh             pull + restart (stops before restarting if models need migrations)
-#   ./deploy_backend.sh --migrate   also generate (on the server) and apply pending migrations
+#   ./deploy_backend.sh             pull + restart (stops before restarting if there are unapplied migrations)
+#   ./deploy_backend.sh --migrate   also apply the committed, pending migrations (never generates any)
 #
 # Steps: check local code is pushed -> DB backup -> git pull -> pip install (if requirements changed)
 #        -> migration check -> restart gunicorn -> health check.
@@ -63,15 +63,11 @@ if python manage.py makemigrations --check --dry-run >/tmp/pending_migrations.tx
   echo "no pending model changes"
 else
   grep -E "^Migrations for|^  [a-z_]+/migrations|^    - " /tmp/pending_migrations.txt || cat /tmp/pending_migrations.txt
-  if [ "$MIGRATE" != "1" ]; then
-    echo
-    echo "Models changed and need migrations. Code is pulled but gunicorn was NOT restarted."
-    echo "Review the changes above, then re-run: ./deploy_backend.sh --migrate"
-    echo "(rollback point: git checkout $PREV)"
-    exit 2
-  fi
-  echo "== makemigrations (on server)"
-  python manage.py makemigrations
+  echo
+  echo "The models have changes with no migration in git. Do NOT run makemigrations on the server."
+  echo "Create and commit the migration locally, push, then deploy again."
+  echo "Code is pulled but gunicorn was NOT restarted. (rollback point: git checkout $PREV)"
+  exit 2
 fi
 
 if [ "$MIGRATE" = "1" ]; then

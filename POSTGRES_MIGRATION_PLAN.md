@@ -21,6 +21,16 @@ The data is small, so a single short maintenance window (about 10–15 min) is e
 
 Chosen over `pgloader` because it goes through the ORM, so types (booleans, decimals, JSON, datetimes) are converted correctly, and it needs no extra tooling on a 1 GB box. Row counts are verified table-by-table afterwards.
 
+## CUT-OVER DONE — 2026-10-17 (~20:45–20:55 IST)
+
+Production now runs on PostgreSQL 14 (`invoice_db`, role `invoice_user`, localhost). Code on the server: `00531a3` (this branch).
+
+What was done, in order: prep (DB + role, rollback tarball, crontab/.env copies) → paused the healthcheck cron → stopped gunicorn → consistent SQLite backup → dump with the OLD code (10,628 objects) → moved the server's own migration files aside and pulled this branch → `sqlite_to_postgres.sh` (counts match) → `verify_postgres_copy.py` (59/59 tables identical, 55 models readable) → added `DB_*` to `.env` → started gunicorn → smoke tests (healthcheck probes 200, read-only API calls as a real user: no 5xx) → restored the cron → replaced the nightly backup with `pg_dump` and restore-tested it (65 tables / 19,692 rows identical). Downtime: roughly 10 minutes.
+
+Rollback material on the server (`~/backup/`): `db.sqlite3.pre_postgres.*`, `dump_pre_postgres.*.json`, `pre_postgres_tree.tgz`, `server_migrations_pre_postgres/` (the server's old migration files), `env.pre_postgres`, `crontab.pre_postgres`, `backup_db.sh.sqlite_pre_postgres` (in `~/bin`). The old `db.sqlite3` is still in the app dir but is no longer used. These contain production data: delete after ~2 weeks.
+
+Follow-ups: `deploy_backend.sh` no longer generates migrations on the server; `DEPLOYMENT.md` updated for PostgreSQL.
+
 ## Local rehearsal — DONE (PostgreSQL 16, copy of the local dev DB)
 
 Result: 9,475 objects loaded, **row counts match on all 44 data tables**, all id sequences ahead of max(id), `migrate --check` clean. Runs in ~15 s.
