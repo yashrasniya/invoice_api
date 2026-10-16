@@ -70,7 +70,7 @@ What it found (production-specific, none visible locally):
 2. **With the OLD code still deployed:** `dumpdata --all …` from the live SQLite to a dump file (old code matches the old schema).
 3. Deploy the new code (this branch, with all migrations). **Do not run `migrate` against SQLite.**
 4. Set `DB_*` in `.env`; run `SKIP_DUMP=1 DUMP=<dump> scripts/sqlite_to_postgres.sh`.
-5. Fix `companies.Customers` pk=34 `gst_number` before step 4 (open decision) or the preflight will stop.
+5. ~~Fix `companies.Customers` pk=34 `gst_number`~~ — DONE 2026-10-17: blanked to `''` on the live SQLite (backup: `~/backup/db.sqlite3.pre_gst_fix.202610162033`). Preflight on a clean snapshot: no over-length values.
 6. Start gunicorn, smoke-test, keep SQLite archived for rollback.
 
 ## Phase 0 — Prepare (no downtime)
