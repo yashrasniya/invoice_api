@@ -211,7 +211,7 @@ class InviteAcceptView(APIView):
 
     @transaction.atomic
     def post(self, request, token):
-        invite = (UserInvite.objects.select_for_update()
+        invite = (UserInvite.objects.select_for_update(of=('self',))
                   .filter(token=token).select_related('company', 'role').first())
         if invite is None or not invite.is_valid():
             raise PermissionDenied('This invitation is invalid or has expired.')
