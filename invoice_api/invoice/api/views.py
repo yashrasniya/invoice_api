@@ -63,11 +63,17 @@ class InvoiceView(ListAPIView):
 
     def filter_queryset(self, queryset):
         qs = super().filter_queryset(queryset)
-        # default order: newest date first, undated invoices last
-        if not self.request.query_params.get('ordering'):
-            qs = qs.order_by(F('date').desc(nulls_last=True), '-id')
-        return qs
-
+        # The web UI always sends ?ordering=-date, so apply this to whatever
+        # ordering was chosen: undated invoices last, newest (-id) as tiebreak.
+        order = []
+        for o in qs.query.order_by:
+            if o == '-date':
+                order.append(F('date').desc(nulls_last=True))
+            elif o == 'date':
+                order.append(F('date').asc(nulls_last=True))
+            else:
+                order.append(o)
+        return qs.order_by(*order, '-id')
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
