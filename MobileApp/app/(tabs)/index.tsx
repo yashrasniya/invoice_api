@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, HBarList } from '@/components/charts';
 import { PeriodBar, Section } from '@/components/report-ui';
+import { ProUpsell } from '@/components/pro-upsell';
 import { StatusBadge } from '@/components/ui/bits';
 import { Button } from '@/components/ui/button';
 import { Palette } from '@/constants/theme';
@@ -56,6 +57,7 @@ export default function HomeScreen() {
       <PeriodBar options={DASHBOARD_RANGES} value={range} onChange={setRange} />
 
       <View style={styles.pad}>
+        <ProUpsell />
         {!!kpis.error && !k && <Text style={styles.error}>{errorMessage(kpis.error)}</Text>}
 
         {k && (
