@@ -59,7 +59,7 @@ class InvoiceView(ListAPIView):
 
     # Ordering (e.g., ?ordering=-invoice_date)
     ordering_fields = ['date', 'total_final_amount','gst_final_amount']
-    ordering = ['-date']
+    ordering = ['-date', '-id']  # -id: newest-first tiebreak (date is nullable)
 
 
     def get_serializer_context(self):
