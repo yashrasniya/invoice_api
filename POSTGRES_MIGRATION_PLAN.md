@@ -73,6 +73,15 @@ What it found (production-specific, none visible locally):
 5. ~~Fix `companies.Customers` pk=34 `gst_number`~~ — DONE 2026-10-17: blanked to `''` on the live SQLite (backup: `~/backup/db.sqlite3.pre_gst_fix.202610162033`). Preflight on a clean snapshot: no over-length values.
 6. Start gunicorn, smoke-test, keep SQLite archived for rollback.
 
+## Full load + verification — DONE (2026-10-17)
+
+Clean snapshot of the live data (no edits, no workarounds) → dumped with the old code → loaded into a fresh Postgres with the new code: **10,628 objects, 59/59 tables identical** by `scripts/verify_postgres_copy.py` (every column of every row, M2M links as pairs, full ORM read of all 55 models), sequences OK, `migrate --check` and `makemigrations --check` clean.
+
+Accepted differences (documented in the verifier): datetimes are kept to the **millisecond** (Django's dumpdata JSON drops microseconds — e.g. `…26.206656` becomes `…26.206000`); NULL becomes `''` on empty file columns; UUIDs are formatted with dashes; M2M link rows get new ids (same pairs).
+
+Rehearsal environment removed (server `~/pg_rehearsal`, `invoice_rehearsal` DB, `rehearsal_user` role; local scratch Postgres). Kept: `~/backup/db.sqlite3.pre_gst_fix.202610162033`.
+Add `scripts/verify_postgres_copy.py` to step 4 of the cut-over: run it before starting gunicorn.
+
 ## Phase 0 — Prepare (no downtime)
 
 1. **Code change** (local, on a branch):
