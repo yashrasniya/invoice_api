@@ -57,6 +57,22 @@ What it found (production-specific, none visible locally):
    Consequence: on a fresh Postgres, `migrate` from the server's files does not create `bill_share_billshare` (that app has no migration files there). The script now runs `migrate --run-syncdb` as a second pass, which builds those tables from the models.
    **Do not run `migrate` on the live SQLite after deploying the repo's migrations as-is** — the histories diverge and Django would try to re-apply them.
 
+## Migrations reconciled + column widened — DONE (2026-10-17)
+
+- **Root cause of the drift:** `.gitignore` ignored every `migrations/*.py`, so each machine (including the server) ran its own `makemigrations`. Removed that rule; all migration files are now committed. Production's old SQLite history is *not* edited — it is discarded at cut-over, and Postgres is built from the committed set.
+- `InvoiceExtractionLog.file` widened to `max_length=255` (`invoice/migrations/0025_widen_extraction_log_file.py`), so the 5 paths of 103 chars load untouched.
+- `accounts.0009`, `companies.0008`, `companies.0010` wrap `cache.clear()` in a savepoint, so a fresh Postgres migrates without a pre-step.
+- Script: `SKIP_DUMP=1` accepts a dump made by the old code; `makemigrations --check` gate; `--run-syncdb` crutch removed (a missing migration now fails loudly).
+- **Verified on the server (scratch copy):** snapshot dumped with the OLD production code → loaded into a fresh Postgres through the NEW code + committed migrations: 10,628 objects, all table counts match, sequences OK, 1m44s. Test suite on Postgres: same 8 pre-existing failures as SQLite, none new.
+
+### Real cut-over order (supersedes Phase 2 above)
+1. Backup `db.sqlite3`; stop gunicorn.
+2. **With the OLD code still deployed:** `dumpdata --all …` from the live SQLite to a dump file (old code matches the old schema).
+3. Deploy the new code (this branch, with all migrations). **Do not run `migrate` against SQLite.**
+4. Set `DB_*` in `.env`; run `SKIP_DUMP=1 DUMP=<dump> scripts/sqlite_to_postgres.sh`.
+5. Fix `companies.Customers` pk=34 `gst_number` before step 4 (open decision) or the preflight will stop.
+6. Start gunicorn, smoke-test, keep SQLite archived for rollback.
+
 ## Phase 0 — Prepare (no downtime)
 
 1. **Code change** (local, on a branch):

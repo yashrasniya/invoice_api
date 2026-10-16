@@ -22,25 +22,29 @@ CACHE_TABLE="django_cache"   # CACHES['default']['LOCATION'] in settings.py
 
 say() { printf '\n==> %s\n' "$*"; }
 
-say "1/6 Dump from SQLite ($SQLITE_PATH) -> $DUMP"
-(unset DB_NAME
- "$PYTHON" manage.py dumpdata --all --natural-foreign --natural-primary \
-   --exclude contenttypes --exclude auth.permission \
-   --exclude admin.logentry --exclude sessions.session \
-   --indent 1 -o "$DUMP" 2> >(grep -viE "W0|HINT|^\?:|fields.W" >&2))
+if [ "${SKIP_DUMP:-0}" = "1" ]; then
+  say "1/6 Using existing dump $DUMP (SKIP_DUMP=1; it must come from the code that matches the SQLite schema)"
+  [ -s "$DUMP" ] || { echo "no dump at $DUMP"; exit 1; }
+else
+  say "1/6 Dump from SQLite ($SQLITE_PATH) -> $DUMP"
+  (unset DB_NAME
+   "$PYTHON" manage.py dumpdata --all --natural-foreign --natural-primary \
+     --exclude contenttypes --exclude auth.permission \
+     --exclude admin.logentry --exclude sessions.session \
+     --indent 1 -o "$DUMP" 2> >(grep -viE "W0|HINT|^\?:|fields.W" >&2))
+fi
 
 say "1b/6 Preflight: values PostgreSQL would reject (SQLite ignores varchar length)"
 (unset DB_NAME; PYTHONPATH=. DUMP="$DUMP" "$PYTHON" scripts/check_sqlite_data.py 2> >(grep -viE "W0|HINT|^\?:|fields.W" >&2)) \
   || { echo "Fix the rows above in SQLite (or the dump), then re-run."; exit 1; }
 
 say "2/6 Create the cache table, then run migrations on PostgreSQL"
-# The cache table must exist first: migration accounts.0009 calls cache.clear(), and on
-# PostgreSQL a failed query inside a migration aborts the whole transaction.
+# The app uses DatabaseCache (settings.CACHES), so this table is required at runtime.
 "$PYTHON" manage.py createcachetable 2>&1 | grep -v "^\s*$" || true
 "$PYTHON" manage.py migrate --noinput 2>&1 | tail -3
-# Apps without migration files (e.g. bill_share on the server) get their tables from the models.
-# Needs a second pass so the tables they reference (accounts_user, ...) already exist.
-"$PYTHON" manage.py migrate --noinput --run-syncdb 2>&1 | tail -2
+# Migrations are versioned; the models must not have changes that lack a migration.
+"$PYTHON" manage.py makemigrations --check --dry-run >/dev/null 2>&1 \
+  || { echo "Models have changes without a migration — run makemigrations and commit them."; exit 1; }
 
 say "3/6 Remove rows that data migrations seeded (the dump contains the real ones)"
 TABLES=$($PSQL -At -c "select string_agg(quote_ident(tablename), ', ') from pg_tables

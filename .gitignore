@@ -192,9 +192,8 @@ Thumbs.db
 .vscode/
 *.sublime-project
 *.sublime-workspace
-# Ignore all migrations except __init__.py
-**/migrations/*.py
-!**/migrations/__init__.py
+# Migrations are versioned: every environment must build the same schema from them.
+# (They used to be ignored, so each server generated its own history and drifted.)
 
 # signing keys and release builds must never be committed
 *.keystore
