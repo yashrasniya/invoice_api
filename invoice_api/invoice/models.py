@@ -49,6 +49,15 @@ class Invoice(SoftDeleteModel):
     payment_method = models.CharField(
         max_length=20, choices=PAYMENT_METHOD_CHOICES, blank=True, null=True)
 
+
+    class Meta(SoftDeleteModel.Meta):
+        indexes = [
+            models.Index(fields=['user', 'invoice_type', '-date', '-id'], name='inv_user_type_date_live', condition=models.Q(is_deleted=False)),
+            models.Index(fields=['user', 'payment_status', '-date'], name='inv_user_status_date_live', condition=models.Q(is_deleted=False)),
+            models.Index(fields=['receiver', '-date'], name='inv_receiver_date_live', condition=models.Q(is_deleted=False)),
+            models.Index(fields=['vendor', '-date'], name='inv_vendor_date_live', condition=models.Q(is_deleted=False)),
+        ]
+
     def __str__(self):
         return str(self.id)+str(self.user)
 
@@ -108,6 +117,11 @@ class InvoiceExtractionLog(models.Model):
     job_id = models.UUIDField(null=True, blank=True)
     meta_data = models.JSONField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['job_id'], name='extlog_job_idx'),
+        ]
 
 
 class ProductImage(SoftDeleteModel):
@@ -186,6 +200,12 @@ class Payment(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['company', '-date'], name='pay_company_date_idx'),
+        ]
+
     def save(self, *args, **kwargs):
         if not self.company and hasattr(self, 'user') and self.user and hasattr(self.user, 'user_company') and self.user.user_company:
             self.company = self.user.user_company
@@ -212,6 +232,13 @@ class CreditDebitNote(models.Model):
     
     created_at = models.DateTimeField(auto_now_add=True)
     
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['company', '-date'], name='note_company_date_idx'),
+            models.Index(fields=['customer', '-date'], name='note_customer_date_idx'),
+        ]
+
     def save(self, *args, **kwargs):
         if not self.company and hasattr(self, 'user') and self.user and hasattr(self.user, 'user_company') and self.user.user_company:
             self.company = self.user.user_company
