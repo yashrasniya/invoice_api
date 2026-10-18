@@ -53,6 +53,20 @@ export const fetchProfile = async () => (await api.get<User>('profile/')).data;
 
 export const updateProfile = async (patch: Partial<User>) => (await api.post<User>('profile/', patch)).data;
 
+export async function uploadProfilePicture(file: { uri: string; name: string; mimeType: string }) {
+  const form = new FormData();
+  // React Native's FormData accepts a { uri, name, type } descriptor in place of a Blob
+  form.append('image', { uri: file.uri, name: file.name, type: file.mimeType } as unknown as Blob);
+  const { data } = await api.post<User>('profile/picture/', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60_000,
+    transformRequest: (d) => d, // keep RN's FormData intact
+  });
+  return data;
+}
+
+export const removeProfilePicture = async () => (await api.delete<User>('profile/picture/')).data;
+
 export const fetchAccess = async () => (await api.get<Access>('authz/me/')).data;
 
 export const logoutRequest = () => api.get('log_out/');

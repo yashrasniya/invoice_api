@@ -3,6 +3,9 @@ import { getToken } from './token-storage';
 
 const root = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
 
+/** Media paths come back relative from login responses; make them loadable. */
+export const mediaUrl = (u?: string | null) => (u && u.startsWith('/') ? `${root}${u}` : u || undefined);
+
 export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL ?? '').replace(/\/+$/, '');
 
 const api = axios.create({

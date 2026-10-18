@@ -83,6 +83,13 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Orvine Invoice to access your photos so you can choose a profile picture.",
+          "cameraPermission": "Allow Orvine Invoice to use the camera to take a profile picture or capture bills."
+        }
+      ],
+      [
         "expo-local-authentication",
         {
           "faceIDPermission": "Allow Invoice Pro to use Face ID to unlock the app."

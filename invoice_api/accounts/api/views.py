@@ -1,9 +1,11 @@
 import logging
+import uuid
 
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from invoice.models import Invoice, new_product_in_frontend
@@ -18,6 +20,7 @@ from django.contrib.auth import authenticate
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files import File
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
@@ -268,6 +271,41 @@ class Profile(APIView):
 
     def get(self,request):
         return Response(user_detail(request.user,context={'request':request}).data)
+
+
+class ProfilePicture(APIView):
+    """Set (multipart `image`) or remove (DELETE) the signed-in user's profile picture."""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    MAX_BYTES = 5 * 1024 * 1024
+
+    def _reply(self, request):
+        return Response(user_detail(request.user, context={'request': request}).data)
+
+    def post(self, request):
+        f = request.FILES.get('image')
+        if f is None:
+            return Response({'error': 'Attach an image file.'}, status=status.HTTP_400_BAD_REQUEST)
+        if f.size > self.MAX_BYTES:
+            return Response({'error': 'Image must be 5 MB or smaller.'}, status=status.HTTP_400_BAD_REQUEST)
+        # ImageField validation opens the file with Pillow, so non-images are rejected whatever their name says
+        field = serializers.ImageField()
+        try:
+            field.run_validation(f)
+        except (serializers.ValidationError, DjangoValidationError):
+            return Response({'error': 'That file is not a valid image.'}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
+        if user.profile:
+            user.profile.delete(save=False)
+        ext = (f.name.rsplit('.', 1)[-1] if '.' in f.name else 'jpg').lower()[:5]
+        user.profile.save(f'{user.pk}-{uuid.uuid4().hex[:12]}.{ext}', f, save=True)
+        return self._reply(request)
+
+    def delete(self, request):
+        user = request.user
+        if user.profile:
+            user.profile.delete(save=True)
+        return self._reply(request)
 
 
 from django.core.mail import send_mail
