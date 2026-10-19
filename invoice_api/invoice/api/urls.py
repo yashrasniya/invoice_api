@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .pipline import InvoiceExtractAPIView, InvoiceExtractionStatusAPIView, InvoiceExtractionPendingJobsAPIView, InvoiceExtractionCallbackAPIView, AdminInvoiceExtractAPIView, InvoiceExtractionJobsAPIView
-from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
+from .views import InvoiceView, InvoiceSummaryView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
     new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport, \
     CustomFieldViewSet, LedgerAPIView, ProductImageViewSet, ProductImageCropRatioView
 
@@ -16,6 +16,7 @@ from .sales_report_views import SalesReportAPIView
 
 urlpatterns = [
     path('invoice/', InvoiceView.as_view()),
+    path('invoice/summary/', InvoiceSummaryView.as_view()),
     path('invoice/<int:id>/', InvoiceView.as_view()),
     path('invoice/<int:id>/update/', Invoice_update.as_view()),
     path('invoice-numbering/', InvoiceNumberingAPIView.as_view(), name='invoice-numbering'),
