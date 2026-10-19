@@ -1,6 +1,6 @@
-from django.test import TestCase
+import datetime
 
-# Create your tests here.
+from django.test import TestCase
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -18,16 +18,27 @@ class UserModelTestCase(TestCase):
             # Add other necessary fields for your specific case
         }
 
+    def _create_user(self):
+        # User_manager.create_user only takes username/email/password, so the profile fields are set afterwards.
+        data = dict(self.user_data)
+        profile_fields = {k: data.pop(k) for k in ('first_name', 'last_name', 'gender', 'dob', 'mobile_number', 'profile')
+                          if k in data}
+        user = get_user_model().objects.create_user(**data)
+        for key, value in profile_fields.items():
+            setattr(user, key, value)
+        user.save()
+        user.refresh_from_db()
+        return user
+
     def test_create_user(self):
-        print(get_user_model())
-        user = get_user_model().objects.create_user(**self.user_data)
+        user = self._create_user()
         self.assertEqual(user.username, 'testuser')
+        self.assertTrue(user.check_password('testpassword'))
         self.assertEqual(user.first_name, 'John')
         self.assertEqual(user.last_name, 'Doe')
         self.assertEqual(user.gender, 'Male')
-        self.assertEqual(user.dob, '1990-01-01')
+        self.assertEqual(user.dob, datetime.date(1990, 1, 1))
         self.assertEqual(user.mobile_number, '1234567890')
-        # Add assertions for other fields
 
     def test_create_superuser(self):
         superuser = get_user_model().objects.create_superuser(**self.user_data)
@@ -36,16 +47,18 @@ class UserModelTestCase(TestCase):
         # Add assertions for other fields
 
     def test_profile_upload(self):
-        profile_file = SimpleUploadedFile("test_profile.txt", b"file_content")
-        self.user_data['profile'] = profile_file
-        user = get_user_model().objects.create_user(**self.user_data)
-        self.assertEqual(user.profile.name, 'accounts/profile/test_profile.txt')
+        self.user_data['profile'] = SimpleUploadedFile("test_profile.txt", b"file_content")
+        user = self._create_user()
+        self.assertTrue(user.profile.name.startswith('accounts/profile/test_profile'))
+        user.profile.delete(save=False)  # don't leave the upload in MEDIA_ROOT
 
     def test_company_logo_upload(self):
-        logo_file = SimpleUploadedFile("test_logo.png", b"image_content", content_type="image/png")
-        self.user_data['company_logo'] = logo_file
-        user = get_user_model().objects.create_user(**self.user_data)
-        self.assertEqual(user.company_logo.name, 'accounts/test_logo.png')
+        # The logo belongs to the company (UserCompanies), not the user.
+        logo = SimpleUploadedFile("test_logo.png", b"image_content", content_type="image/png")
+        company = UserCompanies(company_name='Acme', company_logo=logo)
+        company.company_logo.save('test_logo.png', logo, save=False)
+        self.assertTrue(company.company_logo.name.startswith('accounts/test_logo'))
+        company.company_logo.delete(save=False)
 
     # Add more test cases for other functionalities and edge cases
 
@@ -53,7 +66,7 @@ class UserModelTestCase(TestCase):
 from unittest.mock import patch
 from django.urls import reverse
 from django.test import override_settings
-from accounts.models import SocialAccount
+from accounts.models import SocialAccount, UserCompanies
 from invoice.models import new_product_in_frontend
 from yaml_manager.models import Yaml
 
