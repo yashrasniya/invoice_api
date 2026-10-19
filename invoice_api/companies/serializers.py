@@ -56,6 +56,7 @@ class VendorSerializer(serializers.ModelSerializer):
             'address',
             'gst_number',
             'phone_number',
+            'email',
             'state',
             'state_code'
         )
@@ -65,3 +66,20 @@ class VendorSerializer(serializers.ModelSerializer):
                         }
     def get_user(self, obj):
         return obj.user.username
+
+
+class VendorStatsSerializer(VendorSerializer):
+    """Vendor row plus its purchase history in numbers. Like
+    `CustomerStatsSerializer`, the extra fields are queryset annotations, so it
+    only works on a queryset run through `annotate_vendor_stats`."""
+    invoice_count = serializers.IntegerField(read_only=True)
+    total_purchased = serializers.DecimalField(
+        max_digits=20, decimal_places=2, read_only=True)
+    last_invoice_date = serializers.DateField(read_only=True)
+
+    class Meta(VendorSerializer.Meta):
+        fields = VendorSerializer.Meta.fields + (
+            'invoice_count',
+            'total_purchased',
+            'last_invoice_date',
+        )

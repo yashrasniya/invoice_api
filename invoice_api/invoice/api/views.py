@@ -46,12 +46,15 @@ class InvoicePaginator(pagination.PageNumberPagination):
     max_page_size = 1000
 
 def apply_list_filters(qs, params):
-    """The customer / date / search filters the invoice list takes, shared with
+    """The customer / vendor / date filters the invoice list takes, shared with
     the summary endpoint so a tab's count always matches what its tab lists.
     Status filters are deliberately not here: the summary counts every status."""
     customers = params.get('customer')
     if customers:
         qs = qs.filter(receiver__in=customers.split(','))
+    vendors = params.get('vendor')
+    if vendors:
+        qs = qs.filter(vendor__in=vendors.split(','))
     date_from = params.get('date_from')
     date_to = params.get('date_to')
     if date_from and date_to:
