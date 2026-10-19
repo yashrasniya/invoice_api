@@ -5,7 +5,7 @@ from rest_framework.permissions import IsAuthenticated
 from invoice_api.permissions import HasMethodPermission, HasFeature
 from invoice_api.scoping import user_scope_q
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
-from django.db.models import Sum
+from django.db.models import F, Sum
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 from invoice.models import Invoice
@@ -144,8 +144,9 @@ class PurchaseInvoiceSummaryAPIView(APIView):
         total_count = purchase_invoices.count()
         this_month_count = this_month_purchases.count()
         
-        # Recent purchases
-        recent_purchases = purchase_invoices.order_by('-date')[:5]
+        # Recent purchases (newest first, undated last, same tiebreak as the list)
+        recent_purchases = purchase_invoices.select_related('vendor', 'receiver').order_by(
+            F('date').desc(nulls_last=True), '-id')[:8]
         recent_data = []
         for inv in recent_purchases:
             recent_data.append({
@@ -153,8 +154,14 @@ class PurchaseInvoiceSummaryAPIView(APIView):
                 "invoice_number": inv.invoice_number,
                 "date": inv.date.strftime('%Y-%m-%d') if inv.date else "",
                 "amount": inv.total_final_amount,
-                "vendor_name": (inv.vendor or inv.receiver).name if (inv.vendor or inv.receiver) else "-"
+                "vendor_name": (inv.vendor or inv.receiver).name if (inv.vendor or inv.receiver) else "-",
+                # what add_balance_fields reads, so each row can show what is still owed
+                "total_final_amount": inv.total_final_amount,
+                "payment_status": inv.payment_status,
+                "invoice_type": "purchase",
             })
+        from .views import add_balance_fields
+        add_balance_fields(recent_data)
 
         return Response({
             "total_purchases_amount": float(total_purchases_amount),

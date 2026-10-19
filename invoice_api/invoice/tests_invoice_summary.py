@@ -18,7 +18,8 @@ from rest_framework.test import APIClient, APITestCase
 
 from accounts.authz_seed import ensure_company_roles
 from accounts.models import CompanyPermission, CompanyRole, User, UserCompanies
-from companies.models import CompanySubscription, Customers, SubscriptionPlan
+from companies.models import (CompanySubscription, Customers, Feature, PlanFeature,
+                              SubscriptionPlan)
 from invoice.models import Invoice, Payment
 
 
@@ -33,7 +34,7 @@ class InvoiceSummaryTests(APITestCase):
         self.admin.save()
         role, _ = ensure_company_roles(CompanyRole, CompanyPermission, self.company)
         role.users.add(self.admin)
-        plan = SubscriptionPlan.objects.create(
+        self.plan = plan = SubscriptionPlan.objects.create(
             name='Basic Test', code='basic_test', monthly_price=1, yearly_price=10)
         today = timezone.now().date()
         CompanySubscription.objects.create(
@@ -140,3 +141,30 @@ class InvoiceSummaryTests(APITestCase):
         bill.save()
         data = self.get('/api/invoice/?invoice_type=purchase&s=Steel').data
         self.assertEqual([r['id'] for r in data['results']], [bill.id])
+
+    # purchase page -----------------------------------------------------
+
+    def test_purchase_page_rows_carry_status_and_balance(self):
+        # `purchase-summary` feeds the Purchase page; its recent rows show what is
+        # still owed on each bill, with the same definitions as the invoice list
+        feat, _ = Feature.objects.get_or_create(
+            code='purchases_invoice', defaults={'name': 'Purchase invoices'})
+        PlanFeature.objects.create(subscription_plan=self.plan, feature=feat)
+        cache.clear()
+        # the setUp purchase bill (7000, unpaid) plus a paid one and a part-paid one
+        paid = self.invoice(500, self.month_start, 'paid', None, invoice_type='purchase')
+        part = self.invoice(900, self.month_start, 'partially_paid', None, invoice_type='purchase')
+        Payment.objects.create(user=self.admin, invoice=part, amount=Decimal('400'),
+                               payment_type='made', date=self.month_start)
+
+        data = self.get('/api/purchase-summary/').data
+        rows = {r['id']: r for r in data['recent_purchases']}
+        self.assertEqual(rows[paid.id]['balance_due'], 0.0)
+        self.assertEqual(rows[paid.id]['payment_status'], 'paid')
+        self.assertEqual(rows[part.id]['balance_due'], 500.0)        # 900 minus the 400 paid out
+        self.assertFalse(rows[part.id]['is_overdue'])
+        # sales invoices never appear on the purchase page
+        self.assertTrue(all(self.invoice_type_of(i) == 'purchase' for i in rows))
+
+    def invoice_type_of(self, pk):
+        return Invoice.objects.get(pk=pk).invoice_type
