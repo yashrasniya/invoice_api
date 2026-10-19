@@ -30,6 +30,8 @@ from invoice.numbering import next_invoice_number
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
+from .. import header_config
+from . import views_header_config
 from ..export import pdf_generator, csv_generator, pdf_data_generator
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
     Product_propertiesSerializer, InvoiceSerializerForPDF, CustomFieldSerializer, ProductImageSerializer
@@ -186,10 +188,15 @@ class InvoiceView(ListAPIView):
                 data = data.copy()          # QueryDict is immutable on the multipart path
                 data['invoice_number'] = generated
 
+        # Company defaults for the optional header fields (payment status,
+        # place of supply, notes...). Fills only what the client left out.
+        data = header_config.apply_defaults(
+            data, views_header_config.settings_for(getattr(request, 'company', None)), inv_type)
+
         serializer = InvoiceSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             serializer.save(user=self.request.user)
-            return Response(serializer.data)
+            return Response(add_balance_fields([dict(serializer.data)])[0])
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     def delete(self,request,*args, **kwargs):
@@ -437,7 +444,9 @@ class Invoice_update(APIView):
         if serializer.is_valid():
             serializer.save()
             print(serializer.data.get("date"))
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            # the editor shows "Balance due" under the total; same definition as the list
+            return Response(add_balance_fields([dict(serializer.data)])[0],
+                            status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

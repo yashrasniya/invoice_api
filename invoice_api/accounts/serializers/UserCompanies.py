@@ -9,6 +9,11 @@ class UserCompaniesSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserCompanies
         fields = "__all__"
+        # Switched in UI Config -> Invoice Fields (invoice-header-config/). It
+        # must stay out of this full-update endpoint: a form post that omits an
+        # unticked checkbox reads as "off" to DRF, so every profile save would
+        # otherwise silently switch the feature off.
+        read_only_fields = ('enable_line_item_images',)
 
     def validate_upi_id(self, value):
         # A typo'd VPA produces a QR that fails only inside the payer's bank

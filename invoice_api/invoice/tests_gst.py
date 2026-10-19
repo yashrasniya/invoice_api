@@ -87,6 +87,9 @@ class _Row:
     def __init__(self, rows):
         self._rows = rows
 
+    def annotate(self, **_kwargs):
+        return self
+
     def values_list(self, *_args):
         return self._rows
 

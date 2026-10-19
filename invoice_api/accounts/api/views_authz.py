@@ -187,6 +187,7 @@ class MyAccessView(APIView):
         return Response({
             'company_id': request.company.id if request.company else None,
             'company_name': request.company.company_name if request.company else None,
+            'company_state_code': request.company.state_code if request.company else None,
             'permissions': sorted(request.permissions or set()),
             'features': sorted(request.features or set()),
             'subscription': dict(sub) if sub else None,

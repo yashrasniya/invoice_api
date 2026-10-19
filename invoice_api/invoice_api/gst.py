@@ -32,6 +32,20 @@ ZERO = Value(Decimal('0'), output_field=DecimalField(max_digits=20, decimal_plac
 # 99 Centre Jurisdiction. Anything else is a data-entry error.
 VALID_STATE_CODES = set(range(1, 39)) | {97, 99}
 
+# Names for the codes in use today (25 and 28 were merged away). Mirrors
+# accounts/gst_utils.STATE_CODES, the frontend's constants/gst.js and the
+# mobile app's constants/gst.ts; used to print the place of supply on PDFs.
+STATE_NAMES = {
+    1: 'Jammu and Kashmir', 2: 'Himachal Pradesh', 3: 'Punjab', 4: 'Chandigarh', 5: 'Uttarakhand',
+    6: 'Haryana', 7: 'Delhi', 8: 'Rajasthan', 9: 'Uttar Pradesh', 10: 'Bihar', 11: 'Sikkim',
+    12: 'Arunachal Pradesh', 13: 'Nagaland', 14: 'Manipur', 15: 'Mizoram', 16: 'Tripura',
+    17: 'Meghalaya', 18: 'Assam', 19: 'West Bengal', 20: 'Jharkhand', 21: 'Odisha', 22: 'Chhattisgarh',
+    23: 'Madhya Pradesh', 24: 'Gujarat', 26: 'Dadra and Nagar Haveli and Daman and Diu',
+    27: 'Maharashtra', 29: 'Karnataka', 30: 'Goa', 31: 'Lakshadweep', 32: 'Kerala', 33: 'Tamil Nadu',
+    34: 'Puducherry', 35: 'Andaman and Nicobar Islands', 36: 'Telangana', 37: 'Andhra Pradesh',
+    38: 'Ladakh', 97: 'Other Territory',
+}
+
 # Rates that legally exist. Used only to validate, never to infer.
 VALID_GST_SLABS = (Decimal('0'), Decimal('0.25'), Decimal('3'),
                    Decimal('5'), Decimal('12'), Decimal('18'), Decimal('28'))
@@ -105,7 +119,8 @@ def gst_period_bounds(period, today=None):
 def split_tax(sales_qs, home_state_code):
     """Split output tax into CGST/SGST (intra-state) and IGST (inter-state).
 
-    Place of supply is the customer's state. Where either the seller's or
+    Place of supply is the invoice's own `place_of_supply` when set, otherwise
+    the customer's state. Where either the seller's or
     the buyer's state code is missing or invalid the tax lands in
     `unclassified` — it is not guessed into either bucket.
     """
@@ -120,8 +135,11 @@ def split_tax(sales_qs, home_state_code):
     home_ok = is_valid_state_code(home_state_code)
     home = int(home_state_code) if home_ok else None
 
-    rows = sales_qs.values_list('receiver__state_code',
-                                'total_final_amount', 'gst_final_amount')
+    # An invoice-level place of supply wins over the customer's registered
+    # state; with neither set the row stays unclassified rather than guessed.
+    rows = (sales_qs
+            .annotate(_pos=Coalesce('place_of_supply', 'receiver__state_code'))
+            .values_list('_pos', 'total_final_amount', 'gst_final_amount'))
 
     for state_code, total, gst in rows:
         gst = Decimal(gst or 0)
@@ -195,9 +213,10 @@ def data_quality(company, sales_qs, purchase_qs, split, today=None):
             'code': 'customer_state_code',
             'title': f"{split['unclassified_invoices']} invoice(s) could not be classified",
             'detail': (f"₹{rupees(split['unclassified']):,} of tax is unclassified because "
-                       "the customer has no valid state code. This amount is excluded "
-                       "from the CGST/SGST and IGST figures."),
-            'fix': 'Customers → State Code',
+                       "neither the invoice's place of supply nor the customer's state "
+                       "code is valid. This amount is excluded from the CGST/SGST and "
+                       "IGST figures."),
+            'fix': 'Customers → State Code, or set Place of supply on the invoice',
         })
 
     zero_gst = purchase_qs.filter(Q(gst_final_amount__isnull=True) |

@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from accounts.serializers.serializers import User_PublicSerializer
+from invoice_api.gst import is_valid_state_code
 from invoice_api.media_urls import absolute_media_url
 from invoice_api.scoping import user_scope_q
 from .models import Invoice, Product, Product_properties, new_product_in_frontend, CustomField, ProductImage
@@ -116,6 +117,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
     receiver_name = serializers.SerializerMethodField()
     receiver_gst_number = serializers.SerializerMethodField()
     receiver_state = serializers.SerializerMethodField()
+    receiver_state_code = serializers.SerializerMethodField()
     vendor_name = serializers.SerializerMethodField()
     vendor_gst_number = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
@@ -130,10 +132,15 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'receiver_name',
             'receiver_gst_number',
             'receiver_state',
+            'receiver_state_code',
             'vendor',
             'vendor_name',
             'vendor_gst_number',
             'date',
+            'due_date',
+            'place_of_supply',
+            'customer_notes',
+            'terms',
             'products',
             'gst_final_amount',
             'total_final_amount',
@@ -161,6 +168,27 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if obj.receiver:
             return obj.receiver.state
         return ''
+
+    def get_receiver_state_code(self, obj):
+        if obj.receiver:
+            return obj.receiver.state_code
+        return None
+
+    def validate_place_of_supply(self, value):
+        # Same list the GST reports use; anything else is a data-entry error.
+        if value is not None and not is_valid_state_code(value):
+            raise serializers.ValidationError('Choose a valid GST state.')
+        return value
+
+    def validate(self, attrs):
+        # Compare against the stored date on partial updates, since the client
+        # may send only one of the two.
+        date = attrs['date'] if 'date' in attrs else getattr(self.instance, 'date', None)
+        due = attrs['due_date'] if 'due_date' in attrs else getattr(self.instance, 'due_date', None)
+        if date and due and due < date:
+            raise serializers.ValidationError(
+                {'due_date': "Due date can't be before the invoice date."})
+        return attrs
 
     def get_vendor_name(self, obj):
         if obj.vendor:

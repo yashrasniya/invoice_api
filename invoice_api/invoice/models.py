@@ -22,6 +22,14 @@ class Invoice(SoftDeleteModel):
     gst_final_amount = models.DecimalField(max_digits=20,decimal_places=2,null=True)
     total_final_amount = models.DecimalField(max_digits=20,decimal_places=2,null=True)
     custom_header_field = models.JSONField(blank=True, null=True, default=dict)
+    due_date = models.DateField(null=True, blank=True)
+    # GST state code (01-38, 97, 99) of the place of supply. Null means "same
+    # as the customer's state", which is what the GST split falls back to.
+    place_of_supply = models.PositiveSmallIntegerField(
+        null=True, blank=True, help_text="GST state code of the place of supply")
+    # shown to the customer on the invoice (`notes` is taken: credit/debit notes' reverse accessor)
+    customer_notes = models.TextField(blank=True, default='')
+    terms = models.TextField(blank=True, default='')
 
     INVOICE_TYPE_CHOICES = [
         ('sales', 'Sales'),
@@ -244,6 +252,29 @@ class CreditDebitNote(models.Model):
             self.company = self.user.user_company
         super().save(*args, **kwargs)
 
+
+
+class InvoiceHeaderConfig(models.Model):
+    """Which optional header fields a company shows, and the defaults filled
+    into new invoices. See invoice.header_config for the shape and rules.
+
+    One row per company, created on first save: an untouched company reads as
+    "everything shown, no defaults", exactly as before this existed.
+    """
+    company = models.OneToOneField('accounts.UserCompanies', on_delete=models.CASCADE,
+                                   related_name='invoice_header_config')
+    # {field_key: {"visible": bool, "use_default": bool, "default": value}}
+    fields = models.JSONField(default=dict, blank=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Invoice header settings'
+        verbose_name_plural = 'Invoice header settings'
+
+    def __str__(self):
+        return 'Invoice header settings for %s' % self.company
 
 
 class CompanyInvoiceNumbering(models.Model):
