@@ -144,6 +144,11 @@ class InvoiceView(ListAPIView):
         qs = super().get_queryset()
         # company-wide read: members with invoice.view see all company invoices
         qs = qs.filter(user_scope_q(self.request))
+        # the serializer reads user / customer / vendor and every line item's
+        # properties and image; without this each invoice costs ~20 queries
+        qs = qs.select_related('user', 'receiver', 'vendor').prefetch_related(
+            'products__image__user',
+            'products__product_properties__new_product_in_frontend__user')
         # `payment_status` is an exact filter; the dashboard's Outstanding and
         # Overdue cards need sets it can't express, so they deep-link with
         # ?status_group=open / =overdue. Both use the same helper the cards

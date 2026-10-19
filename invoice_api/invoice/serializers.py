@@ -174,6 +174,22 @@ class InvoiceSerializer(serializers.ModelSerializer):
             return obj.receiver.state_code
         return None
 
+    # FormData.append(k, null) reaches us as the string "null"; an untouched
+    # optional field can also arrive as "" or "undefined". For these nullable
+    # fields all of them mean "not set", not a malformed value.
+    _NULLABLE_HEADER_FIELDS = ('due_date', 'place_of_supply')
+    _BLANK_STRINGS = ('', 'null', 'undefined', 'none')
+
+    def to_internal_value(self, data):
+        blank = [f for f in self._NULLABLE_HEADER_FIELDS
+                 if isinstance(data.get(f), str)
+                 and data.get(f).strip().lower() in self._BLANK_STRINGS]
+        if blank:
+            data = data.copy()      # QueryDict is immutable on the multipart path
+            for f in blank:
+                data[f] = None
+        return super().to_internal_value(data)
+
     def validate_place_of_supply(self, value):
         # Same list the GST reports use; anything else is a data-entry error.
         if value is not None and not is_valid_state_code(value):
