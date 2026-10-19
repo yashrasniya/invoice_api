@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from accounts.serializers.serializers import User_PublicSerializer
-from invoice_api.gst import is_valid_state_code
+from invoice_api.gst import STATE_NAMES, is_valid_state_code
 from invoice_api.media_urls import absolute_media_url
 from invoice_api.scoping import user_scope_q
 from .models import Invoice, Product, Product_properties, new_product_in_frontend, CustomField, ProductImage
@@ -244,6 +244,14 @@ class InvoiceSerializer(serializers.ModelSerializer):
 class InvoiceSerializerForPDF(serializers.ModelSerializer):
     user = serializers.SerializerMethodField()
     date = serializers.SerializerMethodField()
+    # Printable text for the template editors (YAML and HTML): a template label
+    # such as `due_date` or `notes` is filled from these keys.
+    due_date = serializers.SerializerMethodField()
+    place_of_supply = serializers.SerializerMethodField()
+    payment_status = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
+    notes = serializers.SerializerMethodField()
+    terms = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
 
     class Meta:
@@ -255,6 +263,12 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             'receiver',
             'vendor',
             'date',
+            'due_date',
+            'place_of_supply',
+            'payment_status',
+            'payment_method',
+            'notes',
+            'terms',
             'products',
             'gst_final_amount',
             'total_final_amount',
@@ -270,6 +284,31 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
         if obj.date:
             return obj.date.strftime('%d/%m/%Y')
         return ''
+
+    def get_due_date(self, obj):
+        # same format as `date`, so the two print alike on a template
+        if obj.due_date:
+            return obj.due_date.strftime('%d/%m/%Y')
+        return ''
+
+    def get_place_of_supply(self, obj):
+        code = obj.place_of_supply
+        if not code:
+            return ''
+        name = STATE_NAMES.get(code)
+        return f'{name} ({code})' if name else str(code)
+
+    def get_payment_status(self, obj):
+        return obj.get_payment_status_display()
+
+    def get_payment_method(self, obj):
+        return obj.get_payment_method_display() if obj.payment_method else ''
+
+    def get_notes(self, obj):
+        return obj.customer_notes or ''
+
+    def get_terms(self, obj):
+        return obj.terms or ''
 
 
 class InvoiceSerializerForCSV(serializers.ModelSerializer):

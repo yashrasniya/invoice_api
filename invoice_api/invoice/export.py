@@ -9,7 +9,6 @@ from django.http import FileResponse, HttpResponse
 from django.template.loader import render_to_string
 from rest_framework.response import Response
 
-from invoice_api.gst import STATE_NAMES
 from invoice.models import ProductImage
 from invoice.serializers import InvoiceSerializerForPDF, InvoiceSerializerForCSV
 from submit import Submit
@@ -111,14 +110,6 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             invoice_data['payment_method'] = (obj.get_payment_method_display()
                                               if obj.payment_method else '')
             invoice_data['payment_status'] = obj.get_payment_status_display()
-
-            # available to templates as {due_date}, {place_of_supply}, {notes}, {terms}
-            invoice_data['due_date'] = obj.due_date.isoformat() if obj.due_date else ''
-            pos = STATE_NAMES.get(obj.place_of_supply) if obj.place_of_supply else None
-            invoice_data['place_of_supply'] = (f"{pos} ({obj.place_of_supply})" if pos
-                                               else (str(obj.place_of_supply) if obj.place_of_supply else ''))
-            invoice_data['notes'] = obj.customer_notes or ''
-            invoice_data['terms'] = obj.terms or ''
 
             custom_header = invoice_data.get('custom_header_field')
             if isinstance(custom_header, str):
