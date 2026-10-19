@@ -4,7 +4,10 @@ import logging
 import re
 
 import yaml
-from django.db.models import F, Q
+from decimal import Decimal
+
+from django.db.models import Count, DecimalField, F, Q, Sum
+from django.db.models.functions import Coalesce
 from django.http import FileResponse
 from rest_framework import status, viewsets, pagination
 from rest_framework.generics import ListAPIView, RetrieveUpdateAPIView, UpdateAPIView
@@ -22,11 +25,13 @@ from invoice_api.scoping import company_config_owner, user_scope_q
 
 from companies.models import Customers
 from companies.serializers import CompanySerializer
-from invoice.models import Invoice, Product, new_product_in_frontend, Product_properties, CustomField, ProductImage
+from invoice.models import Invoice, Payment, Product, new_product_in_frontend, Product_properties, CustomField, ProductImage
 from invoice.numbering import next_invoice_number
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
+from .. import header_config
+from . import views_header_config
 from ..export import pdf_generator, csv_generator, pdf_data_generator
 from ..serializers import InvoiceSerializer, new_product_in_frontendSerializer, ProductSerializer, \
     Product_propertiesSerializer, InvoiceSerializerForPDF, CustomFieldSerializer, ProductImageSerializer
@@ -39,6 +44,61 @@ class InvoicePaginator(pagination.PageNumberPagination):
     page_size = 15
     page_size_query_param = 'page_size'
     max_page_size = 1000
+
+def apply_list_filters(qs, params):
+    """The customer / vendor / date filters the invoice list takes, shared with
+    the summary endpoint so a tab's count always matches what its tab lists.
+    Status filters are deliberately not here: the summary counts every status."""
+    customers = params.get('customer')
+    if customers:
+        qs = qs.filter(receiver__in=customers.split(','))
+    vendors = params.get('vendor')
+    if vendors:
+        qs = qs.filter(vendor__in=vendors.split(','))
+    date_from = params.get('date_from')
+    date_to = params.get('date_to')
+    if date_from and date_to:
+        qs = qs.filter(date__range=[date_from, date_to])
+    elif date_from:
+        qs = qs.filter(date__gte=date_from)
+    elif date_to:
+        qs = qs.filter(date__lte=date_to)
+    return qs
+
+
+def add_balance_fields(rows):
+    """Attach `balance_due`, `is_overdue` and `age_days` to serialized invoices.
+
+    Done in bulk for just the page being returned. The definition of "open"
+    and "overdue" is the dashboard's (`invoice_api.dashboard`), so a number
+    here can never disagree with the card that links to it: overdue is the
+    explicit status, or an open bill older than OVERDUE_AFTER_DAYS.
+    """
+    from invoice_api.dashboard import OPEN_STATUSES, OVERDUE_AFTER_DAYS
+    today = datetime.date.today()
+    cutoff = today - datetime.timedelta(days=OVERDUE_AFTER_DAYS)
+
+    ids = [r['id'] for r in rows]
+    paid = {}
+    for pay in Payment.objects.filter(invoice_id__in=ids).values(
+            'invoice_id', 'amount', 'payment_type'):
+        paid.setdefault(pay['invoice_id'], {}).setdefault(pay['payment_type'], Decimal('0'))
+        paid[pay['invoice_id']][pay['payment_type']] += pay['amount'] or Decimal('0')
+
+    for r in rows:
+        billed = Decimal(str(r.get('total_final_amount') or 0))
+        # money in for a sale, money out for a purchase
+        direction = 'made' if r.get('invoice_type') == 'purchase' else 'received'
+        received = paid.get(r['id'], {}).get(direction, Decimal('0'))
+        is_open = r.get('payment_status') in OPEN_STATUSES
+        due = max(billed - received, Decimal('0')) if is_open else Decimal('0')
+        when = datetime.date.fromisoformat(r['date']) if r.get('date') else None
+        r['balance_due'] = float(due)
+        r['is_overdue'] = bool(due > 0 and (r.get('payment_status') == 'overdue'
+                                            or (when is not None and when < cutoff)))
+        r['age_days'] = (today - when).days if when else None
+    return rows
+
 
 class InvoiceView(ListAPIView):
     serializer_class = InvoiceSerializer
@@ -55,7 +115,7 @@ class InvoiceView(ListAPIView):
                         'payment_status', 'payment_method']
 
     # Search (partial match, e.g., ?search=ABC)
-    search_fields = ['invoice_number', 'receiver__name',]
+    search_fields = ['invoice_number', 'receiver__name', 'vendor__name']
 
     # Ordering (e.g., ?ordering=-invoice_date)
     ordering_fields = ['date', 'total_final_amount','gst_final_amount']
@@ -94,19 +154,13 @@ class InvoiceView(ListAPIView):
             qs = open_invoices_qs(qs)
             if status_group == 'overdue':
                 qs = qs.filter(is_overdue=True)
-        date_from = self.request.query_params.get('date_from')
-        date_to = self.request.query_params.get('date_to')
-        customers = self.request.query_params.get('customer')
-        if customers:
-            customer_list = customers.split(',')
-            qs = qs.filter(receiver__in=customer_list)
-        if date_from and date_to:
-            qs = qs.filter(date__range=[date_from, date_to])
-        elif date_from:
-            qs = qs.filter(date__gte=date_from)
-        elif date_to:
-            qs = qs.filter(date__lte=date_to)
-        return qs
+        return apply_list_filters(qs, self.request.query_params)
+
+    def list(self, request, *args, **kwargs):
+        response = super().list(request, *args, **kwargs)
+        rows = response.data['results'] if isinstance(response.data, dict) else response.data
+        add_balance_fields(rows)
+        return response
 
 
     def post(self, request, *args, **kwargs):
@@ -137,10 +191,15 @@ class InvoiceView(ListAPIView):
                 data = data.copy()          # QueryDict is immutable on the multipart path
                 data['invoice_number'] = generated
 
+        # Company defaults for the optional header fields (payment status,
+        # place of supply, notes...). Fills only what the client left out.
+        data = header_config.apply_defaults(
+            data, views_header_config.settings_for(getattr(request, 'company', None)), inv_type)
+
         serializer = InvoiceSerializer(data=data, context={'request': request})
         if serializer.is_valid():
             serializer.save(user=self.request.user)
-            return Response(serializer.data)
+            return Response(add_balance_fields([dict(serializer.data)])[0])
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     def delete(self,request,*args, **kwargs):
@@ -151,6 +210,67 @@ class InvoiceView(ListAPIView):
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
         qs.first().delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
+
+
+class InvoiceSummaryView(APIView):
+    """Numbers for the top of the Invoices page.
+
+    The four headline figures describe the whole company right now (this
+    month, and what is still owed) and ignore the list's filters, so they
+    don't jump around as someone searches. The per-status `counts` do respect
+    the search / customer / date filters, so a tab's count matches its list.
+    """
+    permission_classes = [IsAuthenticated, HasMethodPermission]
+    required_permissions_map = {'GET': 'invoice.view'}
+
+    def get(self, request):
+        from invoice_api.dashboard import open_invoices_qs, outstanding_totals, OVERDUE_AFTER_DAYS
+        inv_type = request.query_params.get('invoice_type', 'sales')
+        if inv_type not in ('sales', 'purchase'):
+            return Response({'error': 'invoice_type must be sales or purchase.'}, status=400)
+
+        zero = Decimal('0')
+        scope = user_scope_q(request)
+        base = Invoice.objects.filter(scope, invoice_type=inv_type)
+        today = datetime.date.today()
+        month_start = today.replace(day=1)
+
+        billed = base.filter(date__gte=month_start, date__lte=today).aggregate(
+            t=Coalesce(Sum('total_final_amount'), zero,
+                       output_field=DecimalField(max_digits=20, decimal_places=2)))['t']
+        owed = outstanding_totals(base, today)
+        direction = 'made' if inv_type == 'purchase' else 'received'
+        moved = Payment.objects.filter(
+            scope, payment_type=direction, date__gte=month_start, date__lte=today
+        ).aggregate(t=Coalesce(Sum('amount'), zero,
+                               output_field=DecimalField(max_digits=20, decimal_places=2)))['t']
+
+        filtered = apply_list_filters(base, request.query_params)
+        term = (request.query_params.get('s') or '').strip()
+        if term:
+            filtered = filtered.filter(
+                Q(invoice_number__icontains=term)
+                | Q(receiver__name__icontains=term)
+                | Q(vendor__name__icontains=term))
+        counts = filtered.aggregate(
+            all=Count('id'),
+            unpaid=Count('id', filter=Q(payment_status='unpaid')),
+            partially_paid=Count('id', filter=Q(payment_status='partially_paid')),
+            paid=Count('id', filter=Q(payment_status='paid')),
+        )
+        counts['overdue'] = open_invoices_qs(filtered, today).filter(is_overdue=True).count()
+
+        return Response({
+            'invoice_type': inv_type,
+            'billed_this_month': float(billed),
+            'awaiting_amount': owed['receivable_amount'],
+            'awaiting_count': owed['receivable_count'],
+            'overdue_amount': owed['overdue_amount'],
+            'overdue_count': owed['overdue_count'],
+            'overdue_after_days': OVERDUE_AFTER_DAYS,
+            'settled_this_month': float(moved),
+            'counts': counts,
+        })
 
 
 from invoice.models import Payment, CreditDebitNote
@@ -327,7 +447,9 @@ class Invoice_update(APIView):
         if serializer.is_valid():
             serializer.save()
             print(serializer.data.get("date"))
-            return Response(serializer.data, status=status.HTTP_200_OK)
+            # the editor shows "Balance due" under the total; same definition as the list
+            return Response(add_balance_fields([dict(serializer.data)])[0],
+                            status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

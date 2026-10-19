@@ -12,6 +12,8 @@ export type User = {
   dob?: string | null;
   is_company_varified?: boolean;
   is_company_admin?: boolean;
+  email_verified?: boolean;
+  mobile_verified?: boolean;
 };
 
 export type Access = {
@@ -26,12 +28,14 @@ export type Access = {
 };
 
 export type RegisterInput = {
-  username: string;
+  username?: string; // optional: the server derives it from the email
   email: string;
   password: string;
   first_name: string;
-  last_name: string;
+  last_name?: string;
   mobile_number: string;
+  /** Firebase ID token from the SMS check; when it vouches for `mobile_number` the account starts verified. */
+  phone_id_token?: string;
 };
 
 export async function login(username: string, password: string) {
@@ -47,11 +51,45 @@ export async function googleLogin(credential: string) {
   return { token: data.access, user: data as User, created: !!data.created };
 }
 
-export const register = (input: RegisterInput) => api.post('register/', input);
+/** Exchange a Firebase phone-auth ID token for our own session (signs into the account with that number, or creates one). */
+export async function phoneLogin(idToken: string) {
+  const { data } = await api.post<User & { access?: string; created?: boolean }>('phone-login/', { id_token: idToken });
+  if (!data.access) throw new Error('Server did not return a session token. Is the backend up to date?');
+  return { token: data.access, user: data as User, created: !!data.created };
+}
+
+/** Asks to delete the account: it is locked at once and an admin removes the data (within 40 days). */
+export const requestAccountDeletion = (password: string) =>
+  api.post<{ detail: string }>('account/delete/', { confirm: 'DELETE', password });
+
+/** Creates the account and returns the signed-in session in one request (nothing left to fail halfway). */
+export async function register(input: RegisterInput) {
+  const { data } = await api.post<User & { access?: string }>('register/', input);
+  if (!data.access) throw new Error('Server did not return a session token. Is the backend up to date?');
+  return { token: data.access, user: data as User };
+}
+
+/** Mails a fresh email-verification link (rate limited to one a minute server-side). */
+export const resendVerification = async () =>
+  (await api.post<{ email_verified: boolean; sent_to?: string }>('resend-verification/')).data;
 
 export const fetchProfile = async () => (await api.get<User>('profile/')).data;
 
 export const updateProfile = async (patch: Partial<User>) => (await api.post<User>('profile/', patch)).data;
+
+export async function uploadProfilePicture(file: { uri: string; name: string; mimeType: string }) {
+  const form = new FormData();
+  // React Native's FormData accepts a { uri, name, type } descriptor in place of a Blob
+  form.append('image', { uri: file.uri, name: file.name, type: file.mimeType } as unknown as Blob);
+  const { data } = await api.post<User>('profile/picture/', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 60_000,
+    transformRequest: (d) => d, // keep RN's FormData intact
+  });
+  return data;
+}
+
+export const removeProfilePicture = async () => (await api.delete<User>('profile/picture/')).data;
 
 export const fetchAccess = async () => (await api.get<Access>('authz/me/')).data;
 

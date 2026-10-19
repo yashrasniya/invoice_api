@@ -9,7 +9,10 @@ from rest_framework.validators import UniqueValidator
 from django.contrib.auth.password_validation import validate_password
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from accounts.models import User
+from accounts.mobile import clean_indian_mobile
+from accounts.models import SocialAccount, User
+from accounts.phone_verify import PhoneTokenError, verify_phone_id_token
+from accounts.usernames import unique_username
 from invoice.models import new_product_in_frontend
 from invoice_api.utilitys import image_add_db
 from django.core.mail import send_mail
@@ -19,12 +22,23 @@ logger = logging.getLogger(__name__)
 
 
 class RegisterSerializer(serializers.ModelSerializer):
+    # optional: derived from the email when omitted, so signup doesn't ask for it
     username = serializers.CharField(
-        required=True,
+        required=False,
         validators=[UniqueValidator(queryset=User.objects.all())]
+    )
+    email = serializers.EmailField(
+        required=True,
+        validators=[UniqueValidator(queryset=User.objects.all(), lookup='iexact',
+                                    message='An account with this email already exists.')]
     )
     password = serializers.CharField(
         write_only=True, required=True, validators=[validate_password])
+    # declared here (not auto-generated) so the model's 12 character cap doesn't reject '+91 98765 43210' before
+    # validate_mobile_number() normalises it
+    mobile_number = serializers.CharField(required=True)
+    # optional proof from the app's SMS check; when it vouches for this number the account starts mobile-verified
+    phone_id_token = serializers.CharField(write_only=True, required=False, allow_blank=True)
     status = serializers.IntegerField(default=200,read_only=True)
     token = serializers.SerializerMethodField()
 
@@ -38,32 +52,37 @@ class RegisterSerializer(serializers.ModelSerializer):
             'last_name',
             'mobile_number',
             'status',
-            'token'
+            'token',
+            'phone_id_token',
         )
         extra_kwargs = {
             'first_name': {'required': True},
-            'last_name': {'required': True},
-            'email': {'required': True},
+            'last_name': {'required': False, 'allow_blank': True},
             'mobile_number': {'required': True},
         }
 
     def get_token(self, obj):
         return str(RefreshToken.for_user(obj))
 
-    async  def send_email(self, email, name, mobile_number):
-        subject = f"New User Register  {name}"
-        email_message = f"""
-                        Name: {name}
-                        Email: {email}
-                        Mobile Number: {mobile_number}
-                        """
-        recipient_list = [email]
+    def validate_mobile_number(self, value):
+        # '+91 98765 43210' and '098765-43210' are the same number; store it the way the rest of the app compares it
+        number = clean_indian_mobile(value)
+        if number is None:
+            raise serializers.ValidationError('Enter a valid 10 digit mobile number.')
+        return number
 
-        result = send_mail(subject, email_message, settings.DEFAULT_FROM_EMAIL, recipient_list)
-        if result:
-            logging.info("email sent")
-        else:
-            logging.error("email not sent")
+    def validate(self, attrs):
+        proof = attrs.pop('phone_id_token', '')
+        attrs['_phone_proof'] = None
+        if proof:
+            try:
+                uid, verified = verify_phone_id_token(proof)
+            except PhoneTokenError as e:
+                raise serializers.ValidationError({'phone_id_token': e.message})
+            if verified != attrs['mobile_number']:
+                raise serializers.ValidationError({'phone_id_token': 'That code was sent to a different number.'})
+            attrs['_phone_proof'] = uid
+        return attrs
 
     def create(self, validated_data):
         file_path = os.path.join(settings.BASE_DIR, "static", "default_template.yaml")
@@ -72,9 +91,10 @@ class RegisterSerializer(serializers.ModelSerializer):
             user = User.objects.create(
                 email=validated_data['email'],
                 first_name=validated_data['first_name'],
-                last_name=validated_data['last_name'],
+                last_name=validated_data.get('last_name', ''),
                 mobile_number=validated_data['mobile_number'],
-                username=validated_data['username'],
+                username=validated_data.get('username') or unique_username(User, validated_data['email']),
+                mobile_verified=validated_data['_phone_proof'] is not None,
             )
             user.is_active = True
             user.is_company_admin = True
@@ -93,17 +113,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         new_product_in_frontend.objects.create(user= user,input_title='Rate',size=3,is_calculable=True,is_show=True)
         new_product_in_frontend.objects.create(user= user,input_title='GST',size=3,is_calculable=True,is_show=True)
 
-        threading.Thread(
-            target=self.send_email,
-            args=(
-                validated_data['email'],
-                validated_data['first_name'],
-                validated_data['mobile_number'],
-            ),
-            daemon=True
-        ).start()
+        if validated_data['_phone_proof'] is not None:
+            # same link a phone login would have made, so signing in by SMS later lands in this account
+            SocialAccount.objects.get_or_create(
+                provider='phone', provider_uid=validated_data['_phone_proof'], defaults={'user': user})
 
-        logger.info(f"New user created {validated_data['username']}")
+        logger.info(f"New user created {user.username}")
         return user
 
 class User_PublicSerializer(serializers.ModelSerializer):
@@ -139,9 +154,13 @@ class user_detail(serializers.ModelSerializer):
             'dob',
             'is_superuser',
             'is_staff',
+            'email_verified',
+            'mobile_verified',
             # 'token',
 
         )
+        # ownership proofs are earned, never self-declared through the profile endpoint
+        read_only_fields = ('email_verified', 'mobile_verified')
     # def get_token(self, obj):
     #     return str(RefreshToken.for_user(obj))
 
@@ -152,5 +171,4 @@ class user_detail(serializers.ModelSerializer):
         for i in read_only:
             if validated_data.get(i, ''):
                 validated_data.pop(i)
-        print(type(validated_data))
-        super().update(instance, validated_data)
+        return super().update(instance, validated_data)

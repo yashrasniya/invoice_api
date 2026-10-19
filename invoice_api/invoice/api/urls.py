@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
 from .pipline import InvoiceExtractAPIView, InvoiceExtractionStatusAPIView, InvoiceExtractionPendingJobsAPIView, InvoiceExtractionCallbackAPIView, AdminInvoiceExtractAPIView, InvoiceExtractionJobsAPIView
-from .views import InvoiceView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
+from .views import InvoiceView, InvoiceSummaryView, Invoice_update, Invoice_product_action, new_product_in_frontend_view, \
     new_product_in_frontend_update_view, ProductViewSet, ProductPropertiesViewsSet, PdfMaker, BulkExport, \
     CustomFieldViewSet, LedgerAPIView, ProductImageViewSet, ProductImageCropRatioView
 
@@ -11,14 +11,17 @@ router.register(r'custom-fields', CustomFieldViewSet, basename='custom-field')
 router.register(r'product-images', ProductImageViewSet, basename='product-image')
 
 from .views_numbering import InvoiceNumberingAPIView
+from .views_header_config import InvoiceHeaderConfigAPIView
 from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView
 from .sales_report_views import SalesReportAPIView
 
 urlpatterns = [
     path('invoice/', InvoiceView.as_view()),
+    path('invoice/summary/', InvoiceSummaryView.as_view()),
     path('invoice/<int:id>/', InvoiceView.as_view()),
     path('invoice/<int:id>/update/', Invoice_update.as_view()),
     path('invoice-numbering/', InvoiceNumberingAPIView.as_view(), name='invoice-numbering'),
+    path('invoice-header-config/', InvoiceHeaderConfigAPIView.as_view(), name='invoice-header-config'),
     path('invoice/<int:id>/product/<str:action>/', Invoice_product_action.as_view()),
     # new_product_in_frontend_view
     path('new/product/in/frontend/', new_product_in_frontend_view.as_view()),

@@ -119,6 +119,8 @@ class GoogleLoginTestCase(TestCase):
         # Create user via password login registration
         User = get_user_model()
         user = User.objects.create_user(username='existinguser', email='existing@example.com', password='password')
+        user.email_verified = True      # a proven address: linking keeps the password working
+        user.save()
         self.assertTrue(user.has_usable_password())
 
         mock_verify.return_value = {

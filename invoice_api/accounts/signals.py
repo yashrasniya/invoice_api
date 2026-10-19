@@ -7,6 +7,9 @@ Audit logging & cache invalidation for the authz/subscription system.
   cannot re-cache pre-commit data.
 - AuditLog actor comes from current_user_ctx (set by tenant middleware).
 """
+from contextlib import contextmanager
+from contextvars import ContextVar
+
 from django.core.cache import cache
 from django.db import transaction
 from django.db.models.signals import m2m_changed, post_delete, post_save, pre_save
@@ -24,7 +27,22 @@ def bump_perm_version(company_id):
     transaction.on_commit(lambda: _bump_now(company_id))
 
 
+_audit_muted = ContextVar('audit_muted', default=False)
+
+
+@contextmanager
+def audit_muted():
+    """Skip audit rows while a company is being hard-deleted: they would point at a company that no longer exists."""
+    token = _audit_muted.set(True)
+    try:
+        yield
+    finally:
+        _audit_muted.reset(token)
+
+
 def audit(company, action, resource_type, resource_id, previous=None, new=None):
+    if _audit_muted.get():
+        return
     try:
         AuditLog.objects.create(
             company=company,
@@ -119,19 +137,10 @@ def on_company_created(sender, instance, created, **kwargs):
     def _bootstrap():
         # default system roles for the new tenant
         ensure_company_roles(CompanyRole, CompanyPermission, instance)
-        # default Free subscription so the tenant has a working feature set
+        # 15-day Pro trial (no card) for a brand-new tenant, else the default Free plan
         try:
-            from companies.models import CompanySubscription, SubscriptionPlan
-            free = SubscriptionPlan.objects.filter(code='free', is_active=True).first()
-            if free and not CompanySubscription.objects.filter(
-                    company=instance, status__in=['active', 'trialing']).exists():
-                from datetime import timedelta
-                from django.utils import timezone
-                today = timezone.now().date()
-                CompanySubscription.objects.create(
-                    company=instance, subscription_plan=free,
-                    start_date=today, end_date=today + timedelta(days=365),
-                    status='active', auto_renew=True)
+            from companies.trial import start_trial_or_free
+            start_trial_or_free(instance)
         except Exception:
             import logging
             logging.getLogger(__name__).exception("company subscription bootstrap failed")

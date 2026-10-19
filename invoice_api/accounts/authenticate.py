@@ -39,7 +39,12 @@ class CustomAuthentication(JWTAuthentication):
             except AdminJWTToken.DoesNotExist:
                 raise AuthenticationFailed("This token has been revoked.")
 
-        return self.get_user(validated_token), validated_token
+        user = self.get_user(validated_token)
+        # sessions issued before a revocation (e.g. an account taken back from a pre-registration) are dead
+        cutoff = user.sessions_valid_from
+        if cutoff and int(validated_token.get('iat', 0)) < int(cutoff.timestamp()):
+            raise AuthenticationFailed("This session has been signed out. Please sign in again.")
+        return user, validated_token
 
 class ServiceTokenAuthentication(BaseAuthentication):
 

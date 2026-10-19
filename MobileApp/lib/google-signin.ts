@@ -1,3 +1,5 @@
+import { TurboModuleRegistry } from 'react-native';
+
 type GoogleModule = typeof import('@react-native-google-signin/google-signin');
 
 let loaded: GoogleModule | null | undefined;
@@ -9,6 +11,9 @@ let loaded: GoogleModule | null | undefined;
  */
 function google(): GoogleModule | null {
   if (loaded !== undefined) return loaded;
+  // Importing the library when its native half is missing (Expo Go, or a dev client built before it was added)
+  // throws from inside the library and surfaces as a red error even when caught — so look for the native module first.
+  if (!TurboModuleRegistry.get('RNGoogleSignin')) return (loaded = null);
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     loaded = require('@react-native-google-signin/google-signin') as GoogleModule;

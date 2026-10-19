@@ -1,9 +1,11 @@
 import logging
+import uuid
 
 from rest_framework.permissions import AllowAny
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from invoice.models import Invoice, new_product_in_frontend
@@ -18,33 +20,55 @@ from django.contrib.auth import authenticate
 from django.conf import settings
 from django.utils import timezone
 from django.db import transaction
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.core.files import File
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
 import os
 
 from accounts.audit import audit_session
+from accounts.usernames import unique_username
+from accounts.verification import may_resend, read_token, send_verification_email
 from accounts.serializers.serializers import RegisterSerializer,user_detail
+from django.contrib.auth import get_user_model
+from django.http import HttpResponse
 from django.middleware import csrf
+from rest_framework.throttling import ScopedRateThrottle
 
 from accounts.serializers.UserCompanies import UserCompaniesSerializer
 
 logging = logging.getLogger(__name__)
+class RegisterThrottle(ScopedRateThrottle):
+    """Caps signups per IP so the 'that email is taken' answer can't be farmed to list registered addresses."""
+    scope = 'register'
+
+
 class Register_user(generics.CreateAPIView):
     authentication_classes = []          # public endpoint: a stale/invalid auth cookie must not block it
     permission_classes = [AllowAny]
     serializer_class = RegisterSerializer
+    throttle_classes = [] if getattr(settings, 'IS_TESTING', False) else [RegisterThrottle]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
+        if not serializer.is_valid():
+            errors = dict(serializer.errors)
+            # the app offers "Sign in instead" for this one, so it needs a code that survives JSON rendering
+            if any(getattr(e, 'code', '') == 'unique' for e in errors.get('email', [])):
+                errors['code'] = 'email_exists'
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
         user = serializer.save()
-        response = Response(serializer.data, status=status.HTTP_201_CREATED)
+        tokens = get_tokens_for_user(user)
+        # same body as Login, so the app can sign in straight from this response (no second request to fail)
+        body = {**serializer.data, **user_detail(user).data}
+        if request.headers.get('X-Client') == 'mobile':
+            body['access'] = tokens['access']  # native clients have no cookie jar
+        response = Response(body, status=status.HTTP_201_CREATED)
         # Sign the new user in with the same cookie Login issues, so the
         # frontend can go straight on to company onboarding.
         response.set_cookie(
             key=settings.SIMPLE_JWT['AUTH_COOKIE'],
-            value=get_tokens_for_user(user)["access"],
+            value=tokens["access"],
             expires=settings.SIMPLE_JWT['ACCESS_TOKEN_LIFETIME'],
             secure=settings.SIMPLE_JWT['AUTH_COOKIE_SECURE'],
             httponly=settings.SIMPLE_JWT['AUTH_COOKIE_HTTP_ONLY'],
@@ -52,7 +76,44 @@ class Register_user(generics.CreateAPIView):
         )
         csrf.get_token(request)
         audit_session(user, 'LOGIN', request, {'method': 'register'})
+        send_verification_email(request, user)
         return response
+
+
+class VerifyEmail(APIView):
+    """The link mailed at signup. A plain page, since it opens in whatever browser the mail app launches."""
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    PAGE = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            "<title>{title}</title><body style='font-family:system-ui;max-width:420px;margin:15vh auto;padding:0 24px;"
+            "text-align:center'><h2>{title}</h2><p style='color:#475569'>{body}</p></body>")
+
+    def get(self, request, token):
+        parsed = read_token(token)
+        user = get_user_model().objects.filter(pk=parsed[0]).first() if parsed else None
+        if user is None or user.email.lower() != parsed[1]:
+            html = self.PAGE.format(title='Link expired', body='This verification link is invalid or has expired. '
+                                    'Open the app and tap "Resend" to get a new one.')
+            return HttpResponse(html, status=400)
+        if not user.email_verified:
+            user.email_verified = True
+            user.save(update_fields=['email_verified'])
+        return HttpResponse(self.PAGE.format(title='Email verified', body='Thanks. You can go back to the app.'))
+
+
+class ResendVerification(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        user = request.user
+        if user.email_verified or not user.email:
+            return Response({'email_verified': True})
+        if not may_resend(user):
+            return Response({'detail': 'We just sent one. Check your inbox, or try again in a minute.'}, status=429)
+        send_verification_email(request, user)
+        return Response({'email_verified': False, 'sent_to': user.email})
+
 
 def get_tokens_for_user(user):
     refresh = RefreshToken.for_user(user)
@@ -71,7 +132,15 @@ class Login(APIView):
         if not (username and password):
             logging.info(f"{username} wrong password")
             return Response({'error':'password is wrong!','status':400},status=400)
-        user=authenticate(username=username, password=password)
+        # the signup screen no longer asks for a username, so an email works as the login id too
+        from django.contrib.auth import get_user_model
+        login_name = username
+        if '@' in username:
+            by_email = (get_user_model().objects.filter(email__iexact=username.strip())
+                        .order_by('-email_verified', 'id').first())
+            if by_email:
+                login_name = by_email.username
+        user=authenticate(username=login_name, password=password)
         if user:
             response = Response()
             data = get_tokens_for_user(user)
@@ -101,10 +170,51 @@ class Login(APIView):
             logging.info(f"{username} login failed: account uses Google Sign-In")
             return Response({'error': 'This account uses Google Sign-In.', 'status': 400}, status=400)
 
+        # Only someone who proves the password learns the account was deleted (no account probing).
+        if (existing_user and existing_user.deletion_requested_at and not existing_user.is_active
+                and existing_user.check_password(password)):
+            return Response({'error': 'This account has been deleted.', 'status': 403}, status=403)
+
         if existing_user:
             audit_session(existing_user, 'LOGIN_FAILED', request, {'method': 'password'})
         logging.info(f"{username} wrong password")
         return Response({'error':'password is wrong!','status':400},status=400)
+
+def create_user_with_defaults(username, email='', first_name='', last_name='', mobile_number=''):
+    """A password-less user plus the same starter data RegisterSerializer sets up (default template, product columns)."""
+    from django.contrib.auth import get_user_model
+    file_path = os.path.join(settings.BASE_DIR, "static", "default_template.yaml")
+
+    user = get_user_model()(
+        username=username,
+        email=email,
+        first_name=(first_name or '')[:150],
+        last_name=(last_name or '')[:150],
+        mobile_number=mobile_number,
+        is_active=True,
+        is_company_admin=True,
+    )
+    user.set_unusable_password()   # no password login until user sets one
+    user.save()
+
+    if os.path.exists(file_path):
+        with open(file_path, 'rb') as f:
+            Yaml.objects.create(
+                yaml_file=File(f, name="default_template.yaml"),
+                user=user,
+                # same as RegisterSerializer: new account's only
+                # template is its default, no manual pick needed
+                is_default=True,
+            )
+    else:
+        logging.warning("default_template.yaml not found at static root.")
+
+    new_product_in_frontend.objects.create(user=user, input_title='Description', size=3, is_calculable=False, is_show=True)
+    new_product_in_frontend.objects.create(user=user, input_title='Quantity', size=3, is_calculable=True, is_show=True)
+    new_product_in_frontend.objects.create(user=user, input_title='Rate', size=3, is_calculable=True, is_show=True)
+    new_product_in_frontend.objects.create(user=user, input_title='GST', size=3, is_calculable=True, is_show=True)
+    return user
+
 
 class GoogleLogin(APIView):
     permission_classes = [AllowAny]
@@ -136,6 +246,8 @@ class GoogleLogin(APIView):
         # 2. Resolve user: sub match → email link → create
         user, created = self._get_or_create_user(sub, email, claims)
         if user is None:
+            if self._deletion_requested(sub, email):
+                return Response({'error': 'This account has been deleted.'}, status=403)
             return Response({'error': 'This account is disabled.'}, status=403)
 
         # 3. Issue the SAME cookie as the password Login view
@@ -179,46 +291,25 @@ class GoogleLogin(APIView):
                 return social.user, False
 
             # b) Existing account with same (verified) email → link
-            user = User.objects.filter(email__iexact=email).first() if email else None
+            user = (User.objects.filter(email__iexact=email).order_by('-email_verified', 'id').first()
+                    if email else None)
             created = False
+            if user is not None and not user.email_verified:
+                # Google has just proven this address is theirs, but the account was created by someone typing it
+                # into signup, which proves nothing — it may be a squatter's pre-registration. Keep the data for
+                # the real owner, but kill the password and every session the other party could still hold.
+                user.set_unusable_password()
+                user.email_verified = True
+                user.save(update_fields=['password', 'email_verified'])
+                user.revoke_sessions()
+                logging.warning("Google login took over unverified account %s (email claim)", user.pk)
 
             # c) No account → create
             if user is None:
-                username = self._unique_username(User, email)
-                
-                # Perform creation with template files initialization mimicking RegisterSerializer
-                file_path = os.path.join(settings.BASE_DIR, "static", "default_template.yaml")
-                
-                user = User(
-                    username=username,
-                    email=email,
-                    first_name=claims.get('given_name', '')[:150],
-                    last_name=claims.get('family_name', '')[:150],
-                    is_active=True,
-                    is_company_admin=True,
+                user = create_user_with_defaults(
+                    unique_username(User, email, fallback='google_user'), email,
+                    first_name=claims.get('given_name', ''), last_name=claims.get('family_name', ''),
                 )
-                user.set_unusable_password()   # no password login until user sets one
-                user.save()
-                
-                # Create default yaml template
-                if os.path.exists(file_path):
-                    with open(file_path, 'rb') as f:
-                        Yaml.objects.create(
-                            yaml_file=File(f, name="default_template.yaml"),
-                            user=user,
-                            # same as RegisterSerializer: new account's only
-                            # template is its default, no manual pick needed
-                            is_default=True,
-                        )
-                else:
-                    logging.warning("default_template.yaml not found at static root.")
-                
-                # Create default product fields
-                new_product_in_frontend.objects.create(user=user, input_title='Description', size=3, is_calculable=False, is_show=True)
-                new_product_in_frontend.objects.create(user=user, input_title='Quantity', size=3, is_calculable=True, is_show=True)
-                new_product_in_frontend.objects.create(user=user, input_title='Rate', size=3, is_calculable=True, is_show=True)
-                new_product_in_frontend.objects.create(user=user, input_title='GST', size=3, is_calculable=True, is_show=True)
-                
                 created = True
 
             if not user.is_active:
@@ -231,13 +322,13 @@ class GoogleLogin(APIView):
             return user, created
 
     @staticmethod
-    def _unique_username(User, email):
-        base = (email.split('@')[0] if email else 'google_user')[:140] or 'google_user'
-        username, i = base, 0
-        while User.objects.filter(username=username).exists():
-            i += 1
-            username = f"{base}{i}"
-        return username
+    def _deletion_requested(sub, email):
+        """True if the Google identity belongs to an account that asked to be deleted (the token itself is already verified)."""
+        from django.contrib.auth import get_user_model
+        from accounts.models import SocialAccount
+        social = SocialAccount.objects.select_related('user').filter(provider='google', provider_uid=sub).first()
+        user = social.user if social else (get_user_model().objects.filter(email__iexact=email).first() if email else None)
+        return bool(user and user.deletion_requested_at)
 
 
 class log_out(APIView):
@@ -268,6 +359,41 @@ class Profile(APIView):
 
     def get(self,request):
         return Response(user_detail(request.user,context={'request':request}).data)
+
+
+class ProfilePicture(APIView):
+    """Set (multipart `image`) or remove (DELETE) the signed-in user's profile picture."""
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+    MAX_BYTES = 5 * 1024 * 1024
+
+    def _reply(self, request):
+        return Response(user_detail(request.user, context={'request': request}).data)
+
+    def post(self, request):
+        f = request.FILES.get('image')
+        if f is None:
+            return Response({'error': 'Attach an image file.'}, status=status.HTTP_400_BAD_REQUEST)
+        if f.size > self.MAX_BYTES:
+            return Response({'error': 'Image must be 5 MB or smaller.'}, status=status.HTTP_400_BAD_REQUEST)
+        # ImageField validation opens the file with Pillow, so non-images are rejected whatever their name says
+        field = serializers.ImageField()
+        try:
+            field.run_validation(f)
+        except (serializers.ValidationError, DjangoValidationError):
+            return Response({'error': 'That file is not a valid image.'}, status=status.HTTP_400_BAD_REQUEST)
+        user = request.user
+        if user.profile:
+            user.profile.delete(save=False)
+        ext = (f.name.rsplit('.', 1)[-1] if '.' in f.name else 'jpg').lower()[:5]
+        user.profile.save(f'{user.pk}-{uuid.uuid4().hex[:12]}.{ext}', f, save=True)
+        return self._reply(request)
+
+    def delete(self, request):
+        user = request.user
+        if user.profile:
+            user.profile.delete(save=True)
+        return self._reply(request)
 
 
 from django.core.mail import send_mail
@@ -438,24 +564,8 @@ class LoginByToken(APIView):
         return response
 
 
-def normalize_mobile(mobile):
-    if not mobile:
-        return ""
-    # Retain only digits and '+'
-    mobile = "".join(c for c in str(mobile) if c.isdigit() or c == "+")
-    
-    # 1. Remove +91 prefix
-    if mobile.startswith("+91"):
-        mobile = mobile[3:]
-    # 2. Remove 91 prefix if total length is > 10
-    elif mobile.startswith("91") and len(mobile) > 10:
-        mobile = mobile[2:]
-        
-    # 3. If more than 10 characters and starts with 0, remove the leading 0s
-    while len(mobile) > 10 and mobile.startswith("0"):
-        mobile = mobile[1:]
-        
-    return mobile
+# moved to accounts.mobile; re-exported because other modules import it from here
+from accounts.mobile import normalize_mobile  # noqa: E402,F401
 
 
 class CheckMobileNumber(APIView):

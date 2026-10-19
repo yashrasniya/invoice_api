@@ -135,7 +135,7 @@ function InviteCard({ invite, onResend, onRevoke }: { invite: Invite; onResend: 
         <View style={styles.actions}>
           <TouchableOpacity onPress={onResend}><Text style={styles.link}>Resend</Text></TouchableOpacity>
           {!!invite.invite_link && (
-            <TouchableOpacity onPress={() => Share.share({ message: `Join us on Invoice Pro: ${invite.invite_link}` })}><Text style={styles.link}>Share link</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => Share.share({ message: `Join us on Orvine Invoice: ${invite.invite_link}` })}><Text style={styles.link}>Share link</Text></TouchableOpacity>
           )}
           <TouchableOpacity onPress={onRevoke}><Text style={[styles.link, { color: Palette.danger }]}>Revoke</Text></TouchableOpacity>
         </View>

@@ -3,6 +3,9 @@ import { getToken } from './token-storage';
 
 const root = (process.env.EXPO_PUBLIC_API_URL ?? '').replace(/\/+$/, '');
 
+/** Media paths come back relative from login responses; make them loadable. */
+export const mediaUrl = (u?: string | null) => (u && u.startsWith('/') ? `${root}${u}` : u || undefined);
+
 export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL ?? '').replace(/\/+$/, '');
 
 const api = axios.create({
@@ -73,3 +76,25 @@ export function isOfflineError(e: unknown) {
 }
 
 export default api;
+
+/**
+ * Per-field validation messages from a DRF 400 (`{ email: ['...'], password: ['...'] }`), first message per field.
+ * Empty when the response isn't field-shaped, so callers fall back to errorMessage().
+ */
+export function fieldErrors(error: unknown): Record<string, string> {
+  const d = (error as AxiosError<any>)?.response?.data;
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return {};
+  const out: Record<string, string> = {};
+  for (const [field, v] of Object.entries(d)) {
+    if (field === 'code' || field === 'detail' || field === 'error') continue;
+    const msg = Array.isArray(v) ? v[0] : v;
+    if (typeof msg === 'string' && msg) out[field] = msg;
+  }
+  return out;
+}
+
+/** The machine-readable `code` the backend adds to some errors (e.g. 'email_exists'), if any. */
+export const apiErrorCode = (error: unknown): string | undefined => {
+  const code = (error as AxiosError<any>)?.response?.data?.code;
+  return typeof code === 'string' ? code : undefined;
+};

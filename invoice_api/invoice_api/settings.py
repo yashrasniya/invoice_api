@@ -29,6 +29,9 @@ GOOGLE_OAUTH_CLIENT_IDS = [
     if c.strip()
 ]
 
+# Firebase project whose phone-auth ID tokens /phone-login/ accepts (the `project_id` in google-services.json).
+FIREBASE_PROJECT_ID = os.environ.get('FIREBASE_PROJECT_ID', '')
+
 # --- Razorpay -------------------------------------------------------------
 # The .env historically used the bare names `key_id` / `key_secret`, which are
 # collision-prone; the namespaced names take precedence when both are present.
@@ -355,6 +358,9 @@ REST_FRAMEWORK = {
 
         'anon': '5/min',
 
+        # signups per IP (see accounts.api.views.RegisterThrottle)
+        'register': '30/hour',
+
         'user': '200/min'
 
     }
@@ -420,4 +426,8 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_USER')  # Your email address
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_PASS')  # Your email app password
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+# Who is told when someone asks to delete their account (comma-separated); defaults to the sending address.
+ACCOUNT_DELETION_NOTIFY_EMAILS = [
+    e for e in os.environ.get('ACCOUNT_DELETION_NOTIFY_EMAILS', EMAIL_HOST_USER or '').split(',') if e.strip()
+]
 INVOICE_CONVERTOR_PIPLINE_URL = os.environ.get('INVOICE_CONVERTOR_PIPLINE_URL','http://localhost:8001')

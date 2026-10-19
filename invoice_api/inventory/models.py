@@ -67,6 +67,10 @@ class Product(SoftDeleteModel):
                                     condition=models.Q(is_deleted=False),
                                     name='uniq_sku_per_company'),
         ]
+        indexes = [
+            models.Index(fields=['company', 'name'], name='invprod_company_name_live', condition=models.Q(is_deleted=False)),
+            models.Index(fields=['company', 'category'], name='invprod_company_cat_live', condition=models.Q(is_deleted=False)),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.sku})"
