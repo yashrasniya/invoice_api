@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Palette } from '@/constants/theme';
 import { errorMessage, mediaUrl } from '@/services/api';
-import { removeProfilePicture, updateProfile, uploadProfilePicture } from '@/services/auth';
+import { removeProfilePicture, requestAccountDeletion, updateProfile, uploadProfilePicture } from '@/services/auth';
 import { useSession } from '@/store/session';
 
 export default function ProfileScreen() {
@@ -15,7 +15,10 @@ export default function ProfileScreen() {
   const [gender, setGender] = useState(user.gender ?? '');
   const [dob, setDob] = useState(user.dob ?? '');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
 
   const save = async () => {
     if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) {
@@ -70,6 +73,31 @@ export default function ProfileScreen() {
       { text: 'Cancel', style: 'cancel' as const },
     ]);
 
+  const deleteAccount = () =>
+    Alert.alert(
+      'Delete your account?',
+      'You will be signed out now and cannot sign in again. Your invoices, customers and other data will be removed permanently within 40 days.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await requestAccountDeletion(deletePassword);
+              await useSession.getState().signOut();
+              Alert.alert('Account deleted', 'Your account has been deleted. Your data will be removed permanently within 40 days.');
+            } catch (e) {
+              Alert.alert('Could not delete account', errorMessage(e));
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ],
+    );
+
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.flex}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
@@ -100,6 +128,19 @@ export default function ProfileScreen() {
         <Field label="Date of birth" placeholder="YYYY-MM-DD" value={dob} onChangeText={setDob} />
         <Button title="Save changes" onPress={save} loading={saving} />
         <Text style={styles.note}>Name and email can be changed from the web app.</Text>
+
+        <Text style={styles.dangerTitle}>Delete account</Text>
+        {!showDelete ? (
+          <Button title="Delete my account" variant="danger" onPress={() => setShowDelete(true)} />
+        ) : (
+          <>
+            <Text style={styles.note}>
+              Enter your password to confirm. If you signed in with Google, leave it empty.
+            </Text>
+            <Field label="Password" value={deletePassword} onChangeText={setDeletePassword} secureTextEntry autoCapitalize="none" />
+            <Button title="Delete my account permanently" variant="danger" onPress={deleteAccount} loading={deleting} />
+          </>
+        )}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -114,5 +155,6 @@ const styles = StyleSheet.create({
   avatarBusy: { position: 'absolute', backgroundColor: 'rgba(15,23,42,0.45)', alignItems: 'center', justifyContent: 'center' },
   initials: { color: Palette.white, fontSize: 36, fontWeight: '700' },
   changePhoto: { color: Palette.primary, fontSize: 14, fontWeight: '700', marginTop: 10 },
+  dangerTitle: { color: Palette.danger, fontSize: 14, fontWeight: '800', marginTop: 32, marginBottom: 8 },
   note: { color: Palette.textMuted, fontSize: 13, textAlign: 'center', marginTop: 16 },
 });

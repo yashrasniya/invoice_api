@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Invoice Pro",
+    "name": "Orvine Invoice",
     "slug": "invoice-pro",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -53,8 +53,8 @@
     "web": {
       "output": "static",
       "favicon": "./assets/images/favicon.png",
-      "shortName": "InvoicePro",
-      "name": "Invoice Pro App",
+      "shortName": "Orvine",
+      "name": "Orvine Invoice",
       "themeColor": "#4f46e5",
       "backgroundColor": "#ffffff",
       "display": "standalone",
@@ -79,7 +79,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Invoice Pro to use the camera to scan product barcodes and capture bills."
+          "cameraPermission": "Allow Orvine Invoice to use the camera to scan product barcodes and capture bills."
         }
       ],
       [
@@ -92,7 +92,7 @@
       [
         "expo-local-authentication",
         {
-          "faceIDPermission": "Allow Invoice Pro to use Face ID to unlock the app."
+          "faceIDPermission": "Allow Orvine Invoice to use Face ID to unlock the app."
         }
       ],
       [

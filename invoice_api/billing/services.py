@@ -13,7 +13,7 @@ Rules this module enforces, and why:
    refunds and never shortens paid-for access.
 """
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta
 from datetime import timezone as dt_timezone
 from decimal import Decimal
 
@@ -266,6 +266,12 @@ def _resolve_plan(plan_code: str) -> SubscriptionPlan:
     return plan
 
 
+def _trial_start_at(trial) -> int:
+    """Unix time of local midnight at the start of the day after the trial's last day."""
+    first_paid_day = datetime.combine(trial.end_date + timedelta(days=1), time.min)
+    return int(timezone.make_aware(first_paid_day).timestamp())
+
+
 def start_subscription(company, plan_code: str, period: str, user=None):
     """Create a Razorpay subscription for a company that has no live mandate.
 
@@ -300,6 +306,14 @@ def start_subscription(company, plan_code: str, period: str, user=None):
             'period': period,
         },
     }
+    # Subscribing mid-trial: authorise the mandate now but first charge when the trial would have ended, so the
+    # customer keeps every trial day. Entitlement is granted on `subscription.activated` (not `authenticated`),
+    # which Razorpay fires at start_at; until then the trial row keeps the features on.
+    trial = (CompanySubscription.objects
+             .filter(company=company, status='trialing', end_date__gte=_localdate()).first())
+    if trial is not None:
+        payload['start_at'] = _trial_start_at(trial)
+
     created = razorpay_call(client.subscription.create, payload)
 
     sub = BillingSubscription.objects.create(

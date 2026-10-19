@@ -1,8 +1,11 @@
 import React, { useState } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useQuery } from '@tanstack/react-query';
+import { FirstRunChecklist, ONBOARDING_KEY } from '@/components/first-run-checklist';
+import { TrialBanner } from '@/components/trial-banner';
+import { VerifyEmailBanner } from '@/components/verify-email-banner';
 import { BarChart, HBarList } from '@/components/charts';
 import { PeriodBar, Section } from '@/components/report-ui';
 import { ProUpsell } from '@/components/pro-upsell';
@@ -14,6 +17,7 @@ import { compactInr, money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
 import { DASHBOARD_RANGES, DashboardRange, fetchDashboard, fetchDashboardWidgets } from '@/services/auth';
 import type { PaymentStatus } from '@/services/invoices';
+import { fetchOnboarding } from '@/services/onboarding';
 import { useSession } from '@/store/session';
 
 const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
@@ -37,10 +41,13 @@ export default function HomeScreen() {
 
   const kpis = useQuery({ queryKey: ['dashboard', 'kpis', range], queryFn: () => fetchDashboard(range) });
   const widgets = useQuery({ queryKey: ['dashboard', 'widgets', range], queryFn: () => fetchDashboardWidgets(range) });
+  const onboarding = useQuery({ queryKey: ONBOARDING_KEY, queryFn: fetchOnboarding });
+  // steps tick off in other screens (new customer, new invoice, share); re-check whenever Home regains focus
+  useFocusEffect(React.useCallback(() => { onboarding.refetch(); }, [])); // eslint-disable-line react-hooks/exhaustive-deps
   const k = kpis.data;
   const w = widgets.data;
 
-  const refresh = () => { kpis.refetch(); widgets.refetch(); };
+  const refresh = () => { kpis.refetch(); widgets.refetch(); onboarding.refetch(); };
   const trendHasData = !!w && w.trend.some((t) => t.total > 0);
   const growth = k?.percentage_change;
 
@@ -57,7 +64,11 @@ export default function HomeScreen() {
       <PeriodBar options={DASHBOARD_RANGES} value={range} onChange={setRange} />
 
       <View style={styles.pad}>
-        <ProUpsell />
+        <TrialBanner />
+        <VerifyEmailBanner />
+        <FirstRunChecklist data={onboarding.data} />
+        {/* an upgrade pitch before the first invoice competes with the one thing a new user should do */}
+        {k?.has_any_invoice && <ProUpsell />}
         {!!kpis.error && !k && <Text style={styles.error}>{errorMessage(kpis.error)}</Text>}
 
         {k && (
@@ -74,16 +85,19 @@ export default function HomeScreen() {
                 tone={k.overdue_count > 0 ? Palette.danger : undefined} />
             </View>
 
-            {canCreate && (
+            {!k.has_any_invoice ? (
+              <View style={styles.empty}>
+                <Text style={styles.emptyTitle}>Create your first invoice</Text>
+                <Text style={styles.emptyBody}>Takes about a minute. Your sales and GST numbers will fill in here as you go.</Text>
+                {canCreate && <Button title="Create invoice" onPress={() => router.push('/invoice/new')} />}
+              </View>
+            ) : canCreate && (
               <Button title="New invoice" onPress={() => router.push('/invoice/new')} style={{ marginBottom: 16 }} />
-            )}
-            {!k.has_any_invoice && (
-              <Text style={styles.hint}>No invoices yet. Create your first one and your analytics will appear here.</Text>
             )}
           </>
         )}
 
-        {w && canViewInvoices && (
+        {w && canViewInvoices && !!k?.has_any_invoice && (
           <>
             <Section title="Sales · last 6 months">
               {trendHasData ? (
@@ -182,7 +196,9 @@ const styles = StyleSheet.create({
   cardValue: { fontSize: 22, fontWeight: '800', color: Palette.text, marginTop: 6 },
   cardSub: { fontSize: 12, color: Palette.textMuted, marginTop: 4 },
   error: { color: Palette.danger, marginTop: 24 },
-  hint: { marginBottom: 16, color: Palette.textMuted, lineHeight: 20 },
+  empty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: Palette.border, borderRadius: 16, padding: 20, marginBottom: 16, alignItems: 'stretch' },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: Palette.text, textAlign: 'center' },
+  emptyBody: { fontSize: 14, color: Palette.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 16, lineHeight: 20 },
   muted: { fontSize: 13, color: Palette.textMuted },
   trendRow: { flexDirection: 'row', marginTop: 10 },
   trendCell: { flex: 1, alignItems: 'center' },

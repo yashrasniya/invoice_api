@@ -15,7 +15,10 @@ Tenant Admin management APIs (all guarded by IsTenantAdmin, tenant-scoped).
     /api/authz/audit-log/                 GET           (company-scoped, read-only)
     /api/authz/me/                        GET           (my perms/features/subscription)
 """
+from datetime import date
+
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -184,13 +187,20 @@ class MyAccessView(APIView):
 
     def get(self, request):
         sub = request.subscription
+        sub_data = dict(sub) if sub else None
+        if sub_data:
+            is_trial = sub_data.get('status') == 'trialing'
+            sub_data['is_trial'] = is_trial
+            sub_data['trial_days_left'] = (
+                max(0, (date.fromisoformat(sub_data['end_date']) - timezone.localdate()).days)
+                if is_trial else None)
         return Response({
             'company_id': request.company.id if request.company else None,
             'company_name': request.company.company_name if request.company else None,
             'company_state_code': request.company.state_code if request.company else None,
             'permissions': sorted(request.permissions or set()),
             'features': sorted(request.features or set()),
-            'subscription': dict(sub) if sub else None,
+            'subscription': sub_data,
             'is_tenant_admin': 'role.manage' in (request.permissions or set()),
             'is_product_owner': bool(request.user.is_superuser or
                                      request.user.roles.filter(

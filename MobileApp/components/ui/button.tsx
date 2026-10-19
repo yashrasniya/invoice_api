@@ -1,6 +1,7 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
 import { Palette } from '@/constants/theme';
 
 type Props = {
@@ -9,14 +10,20 @@ type Props = {
   loading?: boolean;
   disabled?: boolean;
   variant?: 'primary' | 'outline' | 'danger';
+  icon?: keyof typeof Ionicons.glyphMap;
   style?: ViewStyle;
 };
 
-export function Button({ title, onPress, loading, disabled, variant = 'primary', style }: Props) {
+export function Button({ title, onPress, loading, disabled, variant = 'primary', icon, style }: Props) {
   const inactive = loading || disabled;
   const a11y = { accessibilityRole: 'button' as const, accessibilityLabel: title, accessibilityState: { disabled: !!inactive, busy: !!loading } };
   const label = (color: string) => (
-    loading ? <ActivityIndicator color={color} /> : <Text style={[styles.label, { color }]}>{title}</Text>
+    loading ? <ActivityIndicator color={color} /> : (
+      <>
+        {icon && <Ionicons name={icon} size={20} color={color} style={{ marginRight: 8 }} />}
+        <Text style={[styles.label, { color }]}>{title}</Text>
+      </>
+    )
   );
 
   if (variant === 'primary') {

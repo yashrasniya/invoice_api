@@ -5,8 +5,8 @@
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "jest"
@@ -16,6 +16,8 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "9.2.1",
     "@react-native-community/netinfo": "12.0.1",
+    "@react-native-firebase/app": "^26.4.0",
+    "@react-native-firebase/auth": "^26.4.0",
     "@react-native-google-signin/google-signin": "^16.1.5",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
@@ -26,6 +28,7 @@
     "axios": "^1.13.6",
     "babel-preset-expo": "~58.0.0",
     "expo": "^58.0.7",
+    "expo-build-properties": "~58.0.11",
     "expo-camera": "~58.0.9",
     "expo-constants": "~58.0.10",
     "expo-dev-client": "~58.0.12",
@@ -60,6 +63,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@expo/config-plugins": "~58.0.7",
     "@react-native/jest-preset": "^0.88.0-rc.4",
     "@types/jest": "^30.0.0",
     "@types/react": "~19.3.0",

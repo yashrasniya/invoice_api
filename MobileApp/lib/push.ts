@@ -46,6 +46,7 @@ export function configureNotifications() {
 /** Route a tapped notification to the screen it is about. */
 function routeFromNotification(data: Record<string, unknown> | undefined) {
   if (data?.type === 'ocr') router.push('/purchases/scan');
+  if (data?.type === 'trial_reminder') router.push('/billing');
 }
 
 /**

@@ -10,6 +10,8 @@ import { Palette } from '@/constants/theme';
 import { useCan } from '@/hooks/use-access';
 import { useIsFreePlan } from '@/hooks/use-plan';
 import { money } from '@/lib/invoice-calc';
+import { trialInfo } from '@/lib/trial';
+import { useSession } from '@/store/session';
 import { errorMessage, WEB_URL } from '@/services/api';
 import { fetchBilling, fetchPayments, fetchPlans } from '@/services/billing';
 
@@ -22,6 +24,7 @@ export default function BillingScreen() {
   const canView = useCan('subscription.view');
   const canManage = useCan('subscription.manage');
   const isFree = useIsFreePlan();
+  const trial = trialInfo(useSession((s) => s.access?.subscription));
   const status = useQuery({ queryKey: ['billing'], queryFn: fetchBilling, enabled: canView });
   const plans = useQuery({ queryKey: ['billing-plans'], queryFn: fetchPlans, enabled: canView });
   const payments = useQuery({ queryKey: ['billing-payments'], queryFn: fetchPayments, enabled: canView });
@@ -57,7 +60,7 @@ export default function BillingScreen() {
           {ent && !ent.is_working && <Text style={styles.warn}>This subscription is not active — some features are unavailable.</Text>}
         </View>
 
-        <Button title={isFree ? 'Upgrade your plan' : 'Change or manage plan on the web'} onPress={openWeb} style={{ marginBottom: 16 }} />
+        <Button title={isFree || trial ? 'Upgrade your plan' : 'Change or manage plan on the web'} onPress={openWeb} style={{ marginBottom: 16 }} />
         {!canManage && <Text style={styles.note}>Only admins with billing access can change the plan.</Text>}
 
         <Section title="Available plans">

@@ -1,0 +1,25 @@
+# EAS Build uploads the git repository. Only the mobile app belongs in that upload.
+# (When this file exists EAS uses it INSTEAD of .gitignore, so the usual exclusions are repeated below.)
+
+# everything at the top of the repo, except the app
+/*
+!/MobileApp
+
+# never upload: the old Android wrapper's signing key and builds, local env, secrets
+/MobileApp/.env
+/MobileApp/.env.*
+!/MobileApp/.env.example
+*.jks
+*.keystore
+*.p8
+*.p12
+*.key
+*.pem
+*.mobileprovision
+
+# regenerated on the build server
+node_modules/
+.expo/
+dist/
+web-build/
+ios/Pods/

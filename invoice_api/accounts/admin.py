@@ -1,14 +1,68 @@
-from django.contrib import admin
+from django.contrib import admin, messages
+from django.contrib.admin import helpers
+from django.template.response import TemplateResponse
 from django.contrib.auth.admin import UserAdmin
 from .models import User, Superuser, CR, UserCompanies
 from .utils import actions
+from . import deletion
 from django.db.models import Q
 from .models import ServiceToken
 
 # Register your models here.
 
+@admin.action(description="Permanently delete accounts that asked to be deleted")
+def purge_requested_accounts(modeladmin, request, queryset):
+    """Real delete of the user and everything they created (invoices, customers, vendors, ...), plus their company
+    if nobody else is in it. Only touches users who asked to be deleted; superusers are always skipped."""
+    done, skipped = [], 0
+    for user in queryset:
+        try:
+            done.append(deletion.purge_user(user))
+        except ValueError:
+            skipped += 1
+    if done:
+        modeladmin.message_user(request, f"Permanently deleted: {', '.join(done)}", messages.SUCCESS)
+    if skipped:
+        modeladmin.message_user(request, f"{skipped} selected user(s) skipped: they have not asked to be deleted.", messages.WARNING)
+
+
+@admin.action(description="PERMANENTLY delete user + their entire company and all data (irreversible)")
+def purge_user_and_company(modeladmin, request, queryset):
+    """Shows a warning page listing what will be destroyed; only deletes after the admin confirms."""
+    if request.POST.get('confirm_full_purge'):
+        done = []
+        for user in queryset:
+            try:
+                done.append(deletion.purge_user_and_company(user))
+            except ValueError as e:
+                modeladmin.message_user(request, f"Skipped: {e}", messages.WARNING)
+        if done:
+            modeladmin.message_user(request, f"Permanently deleted: {'; '.join(done)}", messages.SUCCESS)
+        return None
+    items = []
+    for user in queryset.select_related('user_company'):
+        company = user.user_company
+        items.append({
+            'user': user,
+            'company': company,
+            'members': list(company.user_set.all()) if company else [user],
+            'blocked': user.is_superuser or bool(company and company.user_set.filter(is_superuser=True).exists()),
+        })
+    context = {
+        **modeladmin.admin_site.each_context(request),
+        'title': 'Permanently delete users and their companies',
+        'items': items,
+        'queryset': queryset,
+        'opts': modeladmin.model._meta,
+        'action_checkbox_name': helpers.ACTION_CHECKBOX_NAME,
+        'action_name': 'purge_user_and_company',
+    }
+    return TemplateResponse(request, 'admin/accounts/user/purge_confirmation.html', context)
+
+
 @admin.register(User)
 class UserAdmin(actions,UserAdmin):
+    actions = list(getattr(actions, 'actions', []) or []) + [purge_requested_accounts, purge_user_and_company]
     fieldsets = (
         (None, {"fields": ("username", "password")}),
         (("Personal info"), {"fields": ("first_name", "last_name", "email",'gender','profile','dob')}),
@@ -34,6 +88,7 @@ class UserAdmin(actions,UserAdmin):
             ),
         }),
 
+        (("Account deletion"), {"fields": ("deletion_requested_at",)}),
         # (("Important dates"), {"fields": ("last_login", "date_joined")}),
     )
     add_fieldsets = (
@@ -45,16 +100,16 @@ class UserAdmin(actions,UserAdmin):
             },
         ),
     )
-    list_filter=['is_staff','gender','date_joined']
+    list_filter=['is_staff','gender','date_joined', ('deletion_requested_at', admin.EmptyFieldListFilter)]
     search_fields = [
-        'roll_number',
+        'mobile_number',
         'username',
         'email',
 
         'dob',
 
     ]
-    list_display = ("username", "name",'date_joined')
+    list_display = ("username", "name", "email", 'date_joined', 'deletion_requested_at')
     ordering = ("username",)
     # def get_queryset(self, request):
     #     return self.model.objects.filter(is_superuser=False)

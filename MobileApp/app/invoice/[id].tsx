@@ -10,6 +10,7 @@ import { useCan } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { summarizeLine } from '@/lib/line-display';
 import { errorMessage } from '@/services/api';
+import { reportFirstShare } from '@/services/onboarding';
 import { deleteInvoice, downloadPdf, getInvoice, METHOD_LABEL, shareOnWhatsapp, updateInvoice } from '@/services/invoices';
 
 export default function InvoiceDetailScreen() {
@@ -39,6 +40,7 @@ export default function InvoiceDetailScreen() {
     const uri = await downloadPdf(id);
     if (!(await Sharing.isAvailableAsync())) throw new Error('Sharing is not available on this device.');
     await Sharing.shareAsync(uri, { mimeType: 'application/pdf', dialogTitle: `Invoice ${inv?.invoice_number ?? id}`, UTI: 'com.adobe.pdf' });
+    reportFirstShare().catch(() => {}); // ticks the "Send it to a customer" step; best-effort
   });
 
   const whatsapp = () => {

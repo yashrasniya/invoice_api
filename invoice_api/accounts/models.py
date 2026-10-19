@@ -1,6 +1,7 @@
 import secrets
 
 from django.db import models
+from django.utils import timezone
 from django.contrib.auth.models import AbstractUser, BaseUserManager
 
 from invoice_api.softdelete import SoftDeleteModel
@@ -52,6 +53,22 @@ class User(AbstractUser):
     profile = models.FileField(upload_to='accounts/profile/',null=True,blank=True)
     user_company = models.ForeignKey('UserCompanies',on_delete=models.CASCADE,null=True)
     is_company_admin = models.BooleanField(default=False)
+    # Set when the person asks to delete their account: sign-in is blocked immediately and the account is
+    # permanently removed by an admin, or automatically after accounts.deletion.PURGE_AFTER_DAYS.
+    deletion_requested_at = models.DateTimeField(null=True, blank=True, db_index=True)
+
+    # Ownership proofs. A claimed email/number is just text until the person proves they control it (email link,
+    # SMS code, or a Google/Firebase login). Account linking by email or number only trusts a verified claim, so
+    # nobody can pre-register someone else's identifier and inherit the real owner when they later sign in.
+    email_verified = models.BooleanField(default=False)
+    mobile_verified = models.BooleanField(default=False)
+    # Tokens issued before this moment are rejected (see accounts.authenticate); set when an account is taken
+    # back from a possible pre-registration so the squatter's existing sessions die too.
+    sessions_valid_from = models.DateTimeField(null=True, blank=True)
+
+    def revoke_sessions(self):
+        self.sessions_valid_from = timezone.now()
+        self.save(update_fields=['sessions_valid_from'])
 
     def __str__(self):
         return self.name()
@@ -78,12 +95,12 @@ class CR(User):
 
 class UserCompanies(models.Model):
     is_varified = models.BooleanField(default=False)
-    company_name = models.CharField(max_length=30, blank=True, null=True)
-    company_address = models.CharField(max_length=30, blank=True, null=True)
+    company_name = models.CharField(max_length=100, blank=True, null=True)
+    company_address = models.CharField(max_length=255, blank=True, null=True)
     company_gst_number = models.CharField(max_length=30, blank=True, null=True)
-    state = models.CharField(max_length=30, blank=True, null=True)
+    state = models.CharField(max_length=50, blank=True, null=True)
     state_code = models.IntegerField(null=True, blank=True)
-    company_email_id = models.EmailField(max_length=30, blank=True, null=True)
+    company_email_id = models.EmailField(max_length=254, blank=True, null=True)
     company_phone = models.CharField(max_length=20, blank=True, null=True)
     company_logo = models.ImageField(upload_to='accounts',null=True,blank=True)
     bank_name = models.CharField(max_length=30, blank=True, null=True)
@@ -110,6 +127,18 @@ class UserCompanies(models.Model):
         help_text="Let line items carry an attached photo on invoices (Pro plans only)")
 
     subscriptions_plan = models.ForeignKey('Subscriptions',on_delete=models.CASCADE,null=True,blank=True)
+
+    # First-run checklist on the app's Home screen. It hides itself once every step is done; these two record what
+    # can't be derived from other rows (a PDF shared through the OS share sheet leaves no server-side trace).
+    onboarding_dismissed_at = models.DateTimeField(null=True, blank=True)
+    first_invoice_shared_at = models.DateTimeField(null=True, blank=True)
+
+    # Set once, when the free trial is granted; never cleared. Deleting/re-creating subscription rows cannot
+    # restart a trial because eligibility is read from here, not from CompanySubscription.
+    trial_used_at = models.DateTimeField(null=True, blank=True)
+    # Stamped when each trial reminder goes out so the daily job never sends one twice.
+    trial_reminder_3d_at = models.DateTimeField(null=True, blank=True)
+    trial_reminder_final_at = models.DateTimeField(null=True, blank=True)
 
     def upi_payment_link(self, amount, note=None):
         """UPI deep link for `amount`, or None when this company has no QR."""
@@ -346,11 +375,11 @@ class ServiceToken(models.Model):
 
 
 class SocialAccount(models.Model):
-    PROVIDER_CHOICES = [('google', 'Google')]
+    PROVIDER_CHOICES = [('google', 'Google'), ('phone', 'Phone (Firebase)')]
 
     user = models.ForeignKey('User', on_delete=models.CASCADE, related_name='social_accounts')
     provider = models.CharField(max_length=30, choices=PROVIDER_CHOICES, default='google')
-    provider_uid = models.CharField(max_length=255)   # Google's stable 'sub' claim — NOT email
+    provider_uid = models.CharField(max_length=255)   # Google's stable 'sub' claim (NOT email) / Firebase uid for phone
     email = models.EmailField(blank=True)              # email at time of linking (informational)
     picture_url = models.URLField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

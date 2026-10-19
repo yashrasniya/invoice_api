@@ -1,0 +1,27 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<div style="border:2px solid #ba2121;background:#fff4f4;color:#7a1010;padding:14px 18px;margin-bottom:18px;border-radius:6px">
+  <strong>⚠ WARNING — THIS CANNOT BE UNDONE.</strong><br>
+  Everything below will be permanently deleted from the database: the users, their <em>entire company</em>,
+  <em>every other member</em> of that company, and all invoices, customers, vendors, payments, subscriptions,
+  integrations and uploaded files. This does <strong>not</strong> cancel any active paid plan on Razorpay.
+</div>
+{% for it in items %}
+  <div style="margin-bottom:14px">
+    <h3>{{ it.user.username }}{% if it.blocked %} <span style="color:#ba2121">— will be SKIPPED (superuser / company has a superuser)</span>{% endif %}</h3>
+    {% if it.company %}
+      <p>Company: <strong>{{ it.company.company_name }}</strong> — {{ it.members|length }} user(s) will be deleted:
+      {% for m in it.members %}{{ m.username }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+    {% else %}
+      <p>No company; only this user will be deleted.</p>
+    {% endif %}
+  </div>
+{% endfor %}
+<form method="post">{% csrf_token %}
+  {% for obj in queryset %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk }}">{% endfor %}
+  <input type="hidden" name="action" value="{{ action_name }}">
+  <input type="hidden" name="confirm_full_purge" value="yes">
+  <input type="submit" value="Yes, permanently delete everything" style="background:#ba2121">
+  <a href="{% url 'admin:accounts_user_changelist' %}" class="button cancel-link">No, take me back</a>
+</form>
+{% endblock %}

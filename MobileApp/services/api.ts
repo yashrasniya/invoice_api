@@ -76,3 +76,25 @@ export function isOfflineError(e: unknown) {
 }
 
 export default api;
+
+/**
+ * Per-field validation messages from a DRF 400 (`{ email: ['...'], password: ['...'] }`), first message per field.
+ * Empty when the response isn't field-shaped, so callers fall back to errorMessage().
+ */
+export function fieldErrors(error: unknown): Record<string, string> {
+  const d = (error as AxiosError<any>)?.response?.data;
+  if (!d || typeof d !== 'object' || Array.isArray(d)) return {};
+  const out: Record<string, string> = {};
+  for (const [field, v] of Object.entries(d)) {
+    if (field === 'code' || field === 'detail' || field === 'error') continue;
+    const msg = Array.isArray(v) ? v[0] : v;
+    if (typeof msg === 'string' && msg) out[field] = msg;
+  }
+  return out;
+}
+
+/** The machine-readable `code` the backend adds to some errors (e.g. 'email_exists'), if any. */
+export const apiErrorCode = (error: unknown): string | undefined => {
+  const code = (error as AxiosError<any>)?.response?.data?.code;
+  return typeof code === 'string' ? code : undefined;
+};

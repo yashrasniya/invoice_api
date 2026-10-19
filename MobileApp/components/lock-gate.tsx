@@ -30,7 +30,7 @@ export function LockGate({ children }: { children: React.ReactNode }) {
     setBusy(true);
     try {
       const res = await LocalAuthentication.authenticateAsync({
-        promptMessage: 'Unlock Invoice Pro',
+        promptMessage: 'Unlock Orvine Invoice',
         cancelLabel: 'Cancel',
         // allow the device passcode as a fallback so a failed face/finger never locks the user out
         disableDeviceFallback: false,
@@ -65,7 +65,7 @@ export function LockGate({ children }: { children: React.ReactNode }) {
     return (
       <View style={styles.screen}>
         <Ionicons name="lock-closed" size={56} color={Palette.primary} />
-        <Text style={styles.title}>Invoice Pro is locked</Text>
+        <Text style={styles.title}>Orvine Invoice is locked</Text>
         <Text style={styles.sub}>Unlock to see your invoices.</Text>
         <Button title="Unlock" onPress={unlock} loading={busy} style={{ alignSelf: 'stretch', marginTop: 12 }} />
         <Button title="Sign out" variant="outline" onPress={() => useSession.getState().signOut()} style={{ alignSelf: 'stretch' }} />
