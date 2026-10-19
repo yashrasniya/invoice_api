@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/5.0/ref/settings/
 from pathlib import Path
 import os
 import sys
+from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -71,20 +72,20 @@ def _env_list(name, default=''):
 # and SQL on a live site.
 DEBUG = _env_bool('DJANGO_DEBUG', False)
 
-INSECURE_FALLBACK_KEY = 'django-insecure-ek$w%80pal+0$dygovaza-4fc!fedaex=+(wrl)s_*z3d03$yd'
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY') or INSECURE_FALLBACK_KEY
-
-# SECRET_KEY signs session cookies AND (via SimpleJWT) every access token, so a
-# published key means anyone can mint a token for any user. The fallback above
-# is committed to git and must never be used off a developer machine.
-if not DEBUG and SECRET_KEY == INSECURE_FALLBACK_KEY and 'test' not in sys.argv:
-    sys.stderr.write(
-        '\n*** SECURITY: DJANGO_SECRET_KEY is not set, so the committed '
-        'development key is in use.\n'
-        '    It signs session cookies and JWTs — anyone with the repo can '
-        'forge a login.\n'
-        '    Set DJANGO_SECRET_KEY in .env and restart. Rotating it logs every '
-        'user out once.\n\n')
+# SECRET_KEY signs session cookies AND (via SimpleJWT) every access token, so it
+# must come from the environment and never be committed. Only DEBUG and the test
+# runner may fall back to a throwaway per-process key (sessions/tokens then reset
+# on every restart); anywhere else a missing key refuses to start.
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    if DEBUG or 'test' in sys.argv:
+        from django.core.management.utils import get_random_secret_key
+        SECRET_KEY = get_random_secret_key()
+    else:
+        raise ImproperlyConfigured(
+            'DJANGO_SECRET_KEY is not set. Generate one with '
+            '`python -c "import secrets; print(secrets.token_urlsafe(64))"` '
+            'and put it in .env.')
 
 ALLOWED_HOSTS = _env_list('DJANGO_ALLOWED_HOSTS') or (
     ['*'] if DEBUG else ['invoice.orvine.in', 'yashadvertisinggroup.com',
