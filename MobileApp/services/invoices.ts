@@ -3,6 +3,7 @@ import api, { errorMessage } from './api';
 import { addMovement } from './inventory';
 import { getToken } from './token-storage';
 import { calculateLine } from '@/lib/invoice-calc';
+import { HeaderConfig, resolveHeader } from '@/lib/header-config';
 
 export type Paged<T> = { count: number; next: string | null; previous: string | null; results: T[] };
 
@@ -40,6 +41,13 @@ export type Invoice = {
   invoice_type: 'sales' | 'purchase';
   payment_status: PaymentStatus;
   payment_method: PaymentMethod | null;
+  due_date: string | null;
+  /** GST state code of the place of supply; null means "the customer's state" */
+  place_of_supply: number | null;
+  /** the customer's state code, when they have one */
+  receiver_state_code: number | null;
+  customer_notes: string;
+  terms: string;
 };
 
 export const STATUS_LABEL: Record<PaymentStatus, string> = {
@@ -86,9 +94,24 @@ export type InvoiceInput = {
   party: number;
   date: string;
   invoice_number?: string;
-  payment_status: PaymentStatus;
+  /** Header fields below are left out when the company hides them, so the server fills its own default. */
+  payment_status?: PaymentStatus;
   payment_method?: PaymentMethod | null;
+  due_date?: string | null;
+  place_of_supply?: number | null;
+  customer_notes?: string;
+  terms?: string;
 };
+
+/** The company's header-field settings. Falls back to "everything shown" if they can't be read. */
+export async function fetchHeaderConfig(): Promise<HeaderConfig> {
+  try {
+    const { data } = await api.get<{ fields?: Record<string, never> }>('invoice-header-config/');
+    return resolveHeader(data?.fields);
+  } catch {
+    return resolveHeader(null);
+  }
+}
 
 /** Totals for a set of new lines under the company's column config. */
 export function totalsFor(lines: NewLine[], columns: Column[]) {
@@ -191,18 +214,31 @@ export const deleteInvoice = (id: number) => api.delete('invoice/', { params: { 
  */
 const partyBody = (type: InvoiceType, party: number) => (type === 'purchase' ? { vendor: party } : { receiver: party });
 
-export async function createInvoice(input: InvoiceInput, lines: NewLine[], columns: Column[], type: InvoiceType = 'sales') {
-  const t = totalsFor(lines, columns);
+const OPTIONAL_HEADER_FIELDS = ['payment_status', 'payment_method', 'due_date', 'place_of_supply', 'customer_notes', 'terms'] as const;
+
+/**
+ * The body for creating an invoice. Anything left blank is omitted rather than sent empty: a missing invoice
+ * number is auto-generated, and a missing optional field gets the company's default, both by the server.
+ */
+export function invoiceBody(input: InvoiceInput, type: InvoiceType, totals: { total: number; gst: number }) {
   const { party, ...rest } = input;
   const body: Record<string, unknown> = {
     ...rest,
     ...partyBody(type, party),
     invoice_type: type,
-    total_final_amount: t.total.toFixed(2),
-    gst_final_amount: t.gst.toFixed(2),
+    total_final_amount: totals.total.toFixed(2),
+    gst_final_amount: totals.gst.toFixed(2),
   };
-  if (!input.invoice_number?.trim()) delete body.invoice_number; // omitted => server auto-numbers
-  if (!input.payment_method) delete body.payment_method;
+  if (!input.invoice_number?.trim()) delete body.invoice_number;
+  for (const key of OPTIONAL_HEADER_FIELDS) {
+    const v = body[key];
+    if (v === undefined || v === null || (typeof v === 'string' && !v.trim())) delete body[key];
+  }
+  return body;
+}
+
+export async function createInvoice(input: InvoiceInput, lines: NewLine[], columns: Column[], type: InvoiceType = 'sales') {
+  const body = invoiceBody(input, type, totalsFor(lines, columns));
 
   const { data: inv } = await api.post<Invoice>('invoice/', body);
   try {
@@ -220,10 +256,22 @@ export async function updateInvoice(
   patch: Partial<Omit<InvoiceInput, 'party'>> & { party?: number; total_final_amount?: string; gst_final_amount?: string },
   type: InvoiceType = 'sales',
 ) {
+  return (await api.post<Invoice>(`invoice/${id}/update/`, invoicePatchBody(patch, type))).data;
+}
+
+/**
+ * The body for editing an invoice. Clearing the due date sends null: the API is JSON here, and a date field
+ * accepts null but rejects an empty string.
+ */
+export function invoicePatchBody(
+  patch: Partial<Omit<InvoiceInput, 'party'>> & { party?: number; total_final_amount?: string; gst_final_amount?: string },
+  type: InvoiceType,
+) {
   const { party, ...rest } = patch;
   const body: Record<string, unknown> = { ...rest, ...(party != null ? partyBody(type, party) : {}) };
   if (patch.invoice_number !== undefined && !patch.invoice_number.trim()) body.invoice_number = '';
-  return (await api.post<Invoice>(`invoice/${id}/update/`, body)).data;
+  if (patch.due_date !== undefined && !patch.due_date) body.due_date = null;
+  return body;
 }
 
 /** Recompute and store the invoice totals from its current lines. */

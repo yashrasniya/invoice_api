@@ -8,20 +8,20 @@ import { Button } from '@/components/ui/button';
 import { Chip, Centered } from '@/components/ui/bits';
 import { LineItemModal } from '@/components/line-item-modal';
 import { PartyPicker } from '@/components/party-picker';
+import { StatePicker } from '@/components/state-picker';
 import { Palette } from '@/constants/theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
+import { defaultOf, HeaderConfig, HeaderKey, isVisible, resolveHeader } from '@/lib/header-config';
+import { addDaysYmd, dueAfterDateChange, parseYmd, PAYMENT_TERMS, termDays, ymd } from '@/lib/invoice-dates';
 import { summarizeLine, summarizeNewLine } from '@/lib/line-display';
 import { errorMessage, isOfflineError } from '@/services/api';
 import { useDrafts } from '@/store/drafts';
 import { useSession } from '@/store/session';
 import {
-  InvoiceType, addLineItem, createInvoice, deductStock, fetchColumns, Invoice, lineValues, METHOD_LABEL, NewLine, PaymentMethod, PaymentStatus,
+  InvoiceInput, InvoiceType, addLineItem, createInvoice, deductStock, fetchColumns, fetchHeaderConfig, Invoice, lineValues, METHOD_LABEL, NewLine, PaymentMethod, PaymentStatus,
   removeLineItem, STATUS_LABEL, syncTotals, totalsFor, updateInvoice, updateLineItem,
 } from '@/services/invoices';
-
-const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-const parseYmd = (s: string) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
 
 const STATUSES: PaymentStatus[] = ['unpaid', 'partially_paid', 'paid', 'overdue'];
 const METHODS = Object.keys(METHOD_LABEL) as PaymentMethod[];
@@ -34,7 +34,14 @@ type Props = {
   type?: InvoiceType;
 };
 
-export function InvoiceForm({ invoice, copyFrom, type: typeProp }: Props) {
+/** Loads the company's header-field settings first, so the form starts with the right fields and defaults. */
+export function InvoiceForm(props: Props) {
+  const headerQ = useQuery({ queryKey: ['invoice-header-config'], queryFn: fetchHeaderConfig, staleTime: 5 * 60_000 });
+  if (headerQ.isLoading) return <Centered />;
+  return <InvoiceFormBody {...props} header={headerQ.data ?? resolveHeader(null)} />;
+}
+
+function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & { header: HeaderConfig }) {
   const qc = useQueryClient();
   const editing = !!invoice;
   const type: InvoiceType = invoice?.invoice_type ?? copyFrom?.invoice_type ?? typeProp ?? 'sales';
@@ -54,8 +61,24 @@ export function InvoiceForm({ invoice, copyFrom, type: typeProp }: Props) {
   const [customer, setCustomer] = useState<{ id: number; name: string } | null>(seedParty);
   const [date, setDate] = useState(invoice?.date ?? ymd(new Date()));
   const [number, setNumber] = useState(invoice?.invoice_number ?? '');
-  const [status, setStatus] = useState<PaymentStatus>(invoice?.payment_status ?? 'unpaid');
-  const [method, setMethod] = useState<PaymentMethod | null>(seed?.payment_method ?? null);
+  // A new invoice starts from the company's defaults for the fields it shows; an existing one keeps its own values.
+  const show = (key: HeaderKey) => isVisible(header, key);
+  const [status, setStatus] = useState<PaymentStatus>(
+    invoice?.payment_status ?? defaultOf<PaymentStatus>(header, 'payment_status') ?? 'unpaid');
+  const [method, setMethod] = useState<PaymentMethod | null>(
+    invoice ? invoice.payment_method : (copyFrom?.payment_method ?? defaultOf<PaymentMethod>(header, 'payment_method') ?? null));
+  const [due, setDue] = useState<string | null>(() => {
+    if (invoice) return invoice.due_date;
+    const days = defaultOf<number>(header, 'payment_terms');
+    return days === undefined ? null : addDaysYmd(ymd(new Date()), Number(days));
+  });
+  const [pos, setPos] = useState<number | null>(
+    invoice ? invoice.place_of_supply : (copyFrom?.place_of_supply ?? defaultOf<number>(header, 'place_of_supply') ?? null));
+  const [notes, setNotes] = useState(
+    invoice ? invoice.customer_notes : (copyFrom?.customer_notes || defaultOf<string>(header, 'customer_notes') || ''));
+  const [terms, setTerms] = useState(
+    invoice ? invoice.terms : (copyFrom?.terms || defaultOf<string>(header, 'terms') || ''));
+  const [showDue, setShowDue] = useState(false);
   const [newLines, setNewLines] = useState<NewLine[]>([]);
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   // existing lines the user changed: productId -> new values by column id (applied on save)
@@ -96,6 +119,29 @@ export function InvoiceForm({ invoice, copyFrom, type: typeProp }: Props) {
 
   const lineCount = newLines.length + keptExisting.length;
 
+  // Only fields the company shows are sent. A hidden field is left out, so on a new invoice the server applies
+  // the company's default for it and on an edit the stored value is untouched.
+  const showPos = !purchase && show('place_of_supply');
+  const buildInput = (party: number): InvoiceInput => ({
+    party, date, invoice_number: number,
+    ...(show('payment_status') ? { payment_status: status } : {}),
+    ...(show('payment_method') ? { payment_method: method } : {}),
+    ...(show('payment_terms') ? { due_date: due } : {}),
+    ...(showPos ? { place_of_supply: pos } : {}),
+    ...(show('customer_notes') ? { customer_notes: notes } : {}),
+    ...(show('terms') ? { terms } : {}),
+  });
+  const changeDate = (next: string) => {
+    setDue((d) => dueAfterDateChange(date, next, d));
+    setDate(next);
+  };
+  const term = termDays(date, due);
+  const posHint = pos != null
+    ? "Overrides the customer's state for GST."
+    : seed?.receiver_state_code
+      ? `Using the customer's state (${String(seed.receiver_state_code).padStart(2, '0')}).`
+      : "Defaults to the customer's state.";
+
   const save = async () => {
     if (!customer) return Alert.alert(`${partyLabel} required`, purchase ? 'Choose who this bill is from.' : 'Choose who this invoice is for.');
     if (lineCount === 0) return Alert.alert('No items', 'Add at least one item.');
@@ -106,18 +152,14 @@ export function InvoiceForm({ invoice, copyFrom, type: typeProp }: Props) {
       let warnings: string[] = [];
       if (invoice) {
         id = invoice.id;
-        await updateInvoice(id, {
-          party: customer.id, date, invoice_number: number, payment_status: status, payment_method: method,
-        }, type);
+        await updateInvoice(id, buildInput(customer.id), type);
         for (const pid of removedIds) await removeLineItem(pid);
         for (const p of keptExisting) if (edited[p.id]) await updateLineItem(p, edited[p.id], columns);
         for (const l of newLines) await addLineItem(id, l, columns);
         if (removedIds.length || newLines.length || Object.keys(edited).length) await syncTotals(id);
         warnings = await deductStock(id, newLines, columns);
       } else {
-        const created = await createInvoice(
-          { party: customer.id, date, invoice_number: number, payment_status: status, payment_method: method },
-          newLines, columns, type);
+        const created = await createInvoice(buildInput(customer.id), newLines, columns, type);
         id = created.invoice.id;
         warnings = created.warnings;
       }
@@ -135,7 +177,7 @@ export function InvoiceForm({ invoice, copyFrom, type: typeProp }: Props) {
             useDrafts.getState().add({
               owner: useSession.getState().user?.username ?? '',
               type, partyName: party.name, columns, lines: newLines,
-              input: { party: party.id, date, invoice_number: number, payment_status: status, payment_method: method },
+              input: buildInput(party.id),
             });
             router.back();
             Alert.alert('Draft saved', 'Find it under More → Drafts.');
@@ -187,22 +229,72 @@ export function InvoiceForm({ invoice, copyFrom, type: typeProp }: Props) {
         {showDate && (
           <DateTimePicker
             value={parseYmd(date)} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            onChange={(_, d) => { if (Platform.OS !== 'ios') setShowDate(false); if (d) setDate(ymd(d)); }}
+            onChange={(_, d) => { if (Platform.OS !== 'ios') setShowDate(false); if (d) changeDate(ymd(d)); }}
           />
         )}
         {showDate && Platform.OS === 'ios' && (
           <Button title="Done" variant="outline" onPress={() => setShowDate(false)} style={{ height: 44, marginBottom: 12 }} />
         )}
 
-        <Text style={styles.label}>Payment status</Text>
-        <View style={styles.chips}>
-          {STATUSES.map((s) => <Chip key={s} label={STATUS_LABEL[s]} active={status === s} onPress={() => setStatus(s)} />)}
-        </View>
+        {show('payment_terms') && (
+          <>
+            <Text style={styles.label}>Payment terms</Text>
+            <View style={styles.chips}>
+              <Chip label="No due date" active={due === null} onPress={() => setDue(null)} />
+              {PAYMENT_TERMS.map((t) => (
+                <Chip key={t.days} label={t.label} active={term === t.days} onPress={() => setDue(addDaysYmd(date, t.days))} />
+              ))}
+            </View>
+            {due !== null && (
+              <>
+                <Text style={styles.label}>Due date</Text>
+                <TouchableOpacity style={styles.select} onPress={() => setShowDue(true)} accessibilityRole="button" accessibilityLabel="Due date">
+                  <Text style={styles.selectText}>{due}</Text>
+                  <Ionicons name="calendar-outline" size={18} color={Palette.textMuted} />
+                </TouchableOpacity>
+              </>
+            )}
+            {showDue && due !== null && (
+              <DateTimePicker
+                value={parseYmd(due)} mode="date" minimumDate={parseYmd(date)} display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={(_, d) => { if (Platform.OS !== 'ios') setShowDue(false); if (d) setDue(ymd(d)); }}
+              />
+            )}
+            {showDue && due !== null && Platform.OS === 'ios' && (
+              <Button title="Done" variant="outline" onPress={() => setShowDue(false)} style={{ height: 44, marginBottom: 12 }} />
+            )}
+          </>
+        )}
 
-        <Text style={styles.label}>Payment method</Text>
-        <View style={styles.chips}>
-          {METHODS.map((m) => <Chip key={m} label={METHOD_LABEL[m]} active={method === m} onPress={() => setMethod(method === m ? null : m)} />)}
-        </View>
+        {showPos && (
+          <>
+            <StatePicker label="Place of supply" value={pos} onChange={setPos} />
+            <Text style={styles.hint2}>{posHint}</Text>
+            {pos != null && (
+              <TouchableOpacity onPress={() => setPos(null)} accessibilityRole="button" hitSlop={8}>
+                <Text style={styles.link}>Use the customer&apos;s state</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        )}
+
+        {show('payment_status') && (
+          <>
+            <Text style={styles.label}>Payment status</Text>
+            <View style={styles.chips}>
+              {STATUSES.map((s) => <Chip key={s} label={STATUS_LABEL[s]} active={status === s} onPress={() => setStatus(s)} />)}
+            </View>
+          </>
+        )}
+
+        {show('payment_method') && (
+          <>
+            <Text style={styles.label}>Payment method</Text>
+            <View style={styles.chips}>
+              {METHODS.map((m) => <Chip key={m} label={METHOD_LABEL[m]} active={method === m} onPress={() => setMethod(method === m ? null : m)} />)}
+            </View>
+          </>
+        )}
 
         <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Items</Text>
         {keptExisting.map((p) => {
@@ -245,6 +337,21 @@ export function InvoiceForm({ invoice, copyFrom, type: typeProp }: Props) {
           <Ionicons name="add-circle-outline" size={22} color={Palette.primary} />
           <Text style={styles.addLineText}>Add item</Text>
         </TouchableOpacity>
+
+        {show('customer_notes') && (
+          <>
+            <Text style={styles.label}>Notes</Text>
+            <TextInput style={[styles.input, styles.textarea]} value={notes} onChangeText={setNotes} multiline maxLength={2000}
+              placeholder="Thanks for your business" placeholderTextColor={Palette.textFaint} accessibilityLabel="Notes" />
+          </>
+        )}
+        {show('terms') && (
+          <>
+            <Text style={styles.label}>Terms and conditions</Text>
+            <TextInput style={[styles.input, styles.textarea]} value={terms} onChangeText={setTerms} multiline maxLength={2000}
+              placeholder="Payment due within the terms above" placeholderTextColor={Palette.textFaint} accessibilityLabel="Terms and conditions" />
+          </>
+        )}
       </ScrollView>
 
       <View style={styles.footer}>
@@ -282,6 +389,9 @@ const styles = StyleSheet.create({
   select: { height: 50, borderRadius: 12, backgroundColor: Palette.surface, borderWidth: 1.5, borderColor: Palette.border, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   selectText: { fontSize: 16, color: Palette.text, flexShrink: 1 },
   input: { height: 50, borderRadius: 12, backgroundColor: Palette.surface, borderWidth: 1.5, borderColor: Palette.border, paddingHorizontal: 14, fontSize: 16, color: Palette.text },
+  textarea: { height: undefined, minHeight: 84, paddingTop: 12, textAlignVertical: 'top' },
+  hint2: { fontSize: 12, color: Palette.textMuted, marginTop: 6 },
+  link: { fontSize: 13, fontWeight: '700', color: Palette.primary, marginTop: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   sectionTitle: { fontSize: 18, fontWeight: '800', color: Palette.text },
   hint: { color: Palette.textMuted, textAlign: 'center', marginTop: 8, lineHeight: 20 },

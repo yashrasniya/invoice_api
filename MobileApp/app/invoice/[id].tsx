@@ -5,6 +5,7 @@ import * as Sharing from 'expo-sharing';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Centered, StatusBadge } from '@/components/ui/bits';
+import { GST_STATES } from '@/constants/gst';
 import { Palette } from '@/constants/theme';
 import { useCan } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
@@ -74,6 +75,10 @@ export default function InvoiceDetailScreen() {
   const purchase = inv.invoice_type === 'purchase';
   const partyName = purchase ? inv.vendor_name : inv.receiver_name;
   const taxable = Number(inv.total_final_amount || 0) - Number(inv.gst_final_amount || 0);
+  const supplyState = inv.place_of_supply != null ? GST_STATES.find((st) => st.code === inv.place_of_supply) : undefined;
+  const supply = inv.place_of_supply != null
+    ? (supplyState ? `${supplyState.name} (${String(supplyState.code).padStart(2, '0')})` : String(inv.place_of_supply))
+    : '';
 
   return (
     <>
@@ -90,6 +95,8 @@ export default function InvoiceDetailScreen() {
           <Text style={styles.meta}>
             {inv.date}{inv.payment_method ? ` · ${METHOD_LABEL[inv.payment_method]}` : ''}
           </Text>
+          {!!inv.due_date && <Text style={styles.meta}>Due {inv.due_date}</Text>}
+          {!purchase && !!supply && <Text style={styles.meta}>Place of supply: {supply}</Text>}
         </View>
 
         <Text style={styles.section}>Items</Text>
@@ -115,6 +122,19 @@ export default function InvoiceDetailScreen() {
           <View style={[styles.rowBetween, styles.totalRow]}><Text style={styles.totalLabel}>Total</Text><Text style={styles.total}>{money(inv.total_final_amount)}</Text></View>
         </View>
 
+        {!!inv.customer_notes && (
+          <>
+            <Text style={styles.section}>Notes</Text>
+            <View style={styles.card}><Text style={styles.body}>{inv.customer_notes}</Text></View>
+          </>
+        )}
+        {!!inv.terms && (
+          <>
+            <Text style={styles.section}>Terms and conditions</Text>
+            <View style={styles.card}><Text style={styles.body}>{inv.terms}</Text></View>
+          </>
+        )}
+
         <View style={{ gap: 10, marginTop: 8 }}>
           {!purchase && <Button title="Share PDF" onPress={sharePdf} loading={busy === 'pdf'} />}
           {canWhatsapp && !purchase && <Button title="Send on WhatsApp" variant="outline" onPress={whatsapp} loading={busy === 'wa'} />}
@@ -136,6 +156,7 @@ const styles = StyleSheet.create({
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   customer: { fontSize: 20, fontWeight: '800', color: Palette.text, flex: 1, marginRight: 8 },
   meta: { fontSize: 13, color: Palette.textMuted },
+  body: { fontSize: 14, color: Palette.text, lineHeight: 20 },
   section: { fontSize: 13, fontWeight: '700', color: Palette.textMuted, textTransform: 'uppercase', marginVertical: 8, marginLeft: 4 },
   line: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
   lineBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Palette.border },
