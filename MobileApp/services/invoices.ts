@@ -48,6 +48,9 @@ export type Invoice = {
   receiver_state_code: number | null;
   customer_notes: string;
   terms: string;
+  /** list rows only: what is still owing, and whether it counts as overdue */
+  balance_due?: number;
+  is_overdue?: boolean;
 };
 
 export const STATUS_LABEL: Record<PaymentStatus, string> = {

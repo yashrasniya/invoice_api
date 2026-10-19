@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
 import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { router } from 'expo-router';
-import { useInfiniteQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Centered, Chip, EmptyState, Fab, StatusBadge } from '@/components/ui/bits';
+import { GST_STATES } from '@/constants/gst';
 import { Palette } from '@/constants/theme';
 import { useCan } from '@/hooks/use-access';
+import { isVisible } from '@/lib/header-config';
 import { money } from '@/lib/invoice-calc';
+import { dueNote } from '@/lib/invoice-dates';
 import { errorMessage } from '@/services/api';
-import { InvoiceType, listInvoices, PaymentStatus, STATUS_LABEL } from '@/services/invoices';
+import { fetchHeaderConfig, InvoiceType, listInvoices, PaymentStatus, STATUS_LABEL } from '@/services/invoices';
 
 const FILTERS: (PaymentStatus | '')[] = ['', 'unpaid', 'overdue', 'partially_paid', 'paid'];
 
@@ -36,6 +39,12 @@ export function InvoiceList({ type, title, topInset = 0, header }: Props) {
   });
   const rows = q.data?.pages.flatMap((p) => p.results) ?? [];
 
+  // Show due date and place of supply only if the company shows them. Nothing is shown until the settings
+  // arrive, so a company that hides them never sees them flash up first.
+  const headerQ = useQuery({ queryKey: ['invoice-header-config'], queryFn: fetchHeaderConfig, staleTime: 5 * 60_000 });
+  const showDue = !!headerQ.data && isVisible(headerQ.data, 'payment_terms');
+  const showPlace = !purchase && !!headerQ.data && isVisible(headerQ.data, 'place_of_supply');
+
   const list = !canView ? (
     <EmptyState icon="lock-closed-outline" title="No access" hint="You don't have permission to view invoices." />
   ) : q.isLoading ? <Centered /> : (
@@ -51,20 +60,31 @@ export function InvoiceList({ type, title, topInset = 0, header }: Props) {
         : <EmptyState icon="document-text-outline" title={purchase ? 'No purchase bills' : 'No invoices'}
             hint={search || status ? 'Try a different filter.' : purchase ? 'Scan a bill or tap + to add one.' : 'Tap + to create your first invoice.'} />}
       ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} color={Palette.primary} /> : undefined}
-      renderItem={({ item }) => (
+      renderItem={({ item }) => {
+        const note = showDue ? dueNote(item.due_date, item.payment_status !== 'paid' && Number(item.balance_due) > 0) : null;
+        const state = showPlace && item.place_of_supply != null ? GST_STATES.find((s) => s.code === item.place_of_supply) : undefined;
+        return (
         <TouchableOpacity style={styles.card} onPress={() => router.push(`/invoice/${item.id}`)}>
           <View style={{ flex: 1, gap: 4 }}>
             <Text style={styles.name} numberOfLines={1}>
               {(purchase ? item.vendor_name : item.receiver_name) || (purchase ? 'No vendor' : 'No customer')}
             </Text>
             <Text style={styles.sub}>{item.invoice_number ? `#${item.invoice_number}` : `${purchase ? 'Bill' : 'Invoice'} ${item.id}`} · {item.date}</Text>
+            {showDue && !!item.due_date && (
+              <Text style={styles.sub}>
+                Due {item.due_date}
+                {note ? <Text style={note.late ? styles.late : undefined}>{`  ·  ${note.text}`}</Text> : null}
+              </Text>
+            )}
+            {!!state && <Text style={styles.sub} numberOfLines={1}>{state.name}</Text>}
           </View>
           <View style={{ alignItems: 'flex-end', gap: 6 }}>
             <Text style={styles.amount}>{money(item.total_final_amount)}</Text>
             <StatusBadge status={item.payment_status} />
           </View>
         </TouchableOpacity>
-      )}
+        );
+      }}
     />
   );
 
@@ -97,5 +117,6 @@ const styles = StyleSheet.create({
   card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Palette.white, borderRadius: 16, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: Palette.border },
   name: { fontSize: 16, fontWeight: '700', color: Palette.text },
   sub: { fontSize: 13, color: Palette.textMuted },
+  late: { color: Palette.danger, fontWeight: '700' },
   amount: { fontSize: 16, fontWeight: '800', color: Palette.text },
 });

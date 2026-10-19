@@ -49,3 +49,16 @@ export function dueAfterDateChange(oldDate: string, newDate: string, due: string
   const term = daysBetweenYmd(oldDate, due);
   return addDaysYmd(newDate, term === null ? 0 : Math.max(term, 0));
 }
+
+/**
+ * What to say under a due date in a list: how far away it is, or how late. Only for invoices still owing
+ * (a paid invoice's due date no longer matters). `today` is injectable for tests.
+ */
+export function dueNote(due: string | null | undefined, owing: boolean, today: string = ymd(new Date())) {
+  if (!due || !owing) return null;
+  const days = daysBetweenYmd(today, due);
+  if (days === null) return null;
+  if (days < 0) return { text: `${-days} day${days === -1 ? '' : 's'} overdue`, late: true };
+  if (days === 0) return { text: 'Due today', late: false };
+  return { text: `Due in ${days} day${days === 1 ? '' : 's'}`, late: false };
+}

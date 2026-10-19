@@ -1,4 +1,4 @@
-import { addDaysYmd, daysBetweenYmd, dueAfterDateChange, parseYmd, PAYMENT_TERMS, termDays, ymd } from '@/lib/invoice-dates';
+import { addDaysYmd, daysBetweenYmd, dueAfterDateChange, dueNote, parseYmd, PAYMENT_TERMS, termDays, ymd } from '@/lib/invoice-dates';
 
 describe('date strings', () => {
   it('round-trips through a Date without drifting a day', () => {
@@ -52,5 +52,31 @@ describe('moving the invoice date', () => {
 
   it('has nothing to carry without a due date', () => {
     expect(dueAfterDateChange('2026-08-10', '2026-09-01', null)).toBeNull();
+  });
+});
+
+describe('dueNote (the line under a due date in a list)', () => {
+  const today = '2026-08-10';
+
+  it('says how far away it is', () => {
+    expect(dueNote('2026-08-25', true, today)).toEqual({ text: 'Due in 15 days', late: false });
+    expect(dueNote('2026-08-11', true, today)).toEqual({ text: 'Due in 1 day', late: false });
+    expect(dueNote('2026-08-10', true, today)).toEqual({ text: 'Due today', late: false });
+  });
+
+  it('flags a late invoice', () => {
+    expect(dueNote('2026-08-09', true, today)).toEqual({ text: '1 day overdue', late: true });
+    expect(dueNote('2026-08-01', true, today)).toEqual({ text: '9 days overdue', late: true });
+  });
+
+  it('says nothing once paid, or without a usable due date', () => {
+    expect(dueNote('2026-08-01', false, today)).toBeNull();
+    expect(dueNote(null, true, today)).toBeNull();
+    expect(dueNote(undefined, true, today)).toBeNull();
+    expect(dueNote('soon', true, today)).toBeNull();
+  });
+
+  it('counts across a month end', () => {
+    expect(dueNote('2026-09-04', true, today)).toEqual({ text: 'Due in 25 days', late: false });
   });
 });
