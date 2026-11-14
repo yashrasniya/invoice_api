@@ -6,6 +6,8 @@ Daily subscription expiry job (run via cron or celery beat):
 - trialing past end_date          → Free plan (soft lock: data stays readable, paid features stop)
 - active past end_date            → past_due (auto_renew) or expired
 - past_due past grace period     → expired
+- expired / canceled with no working subscription left → Free plan
+  (catches cancellations whose Razorpay webhook was missed, and lapsed paid plans)
 - clears company_sub cache for every touched company (natural expiry fires
   no signal, so this job is what invalidates the cache).
 """
@@ -13,8 +15,10 @@ from datetime import timedelta
 
 from django.core.cache import cache
 from django.core.management.base import BaseCommand
+from django.db import transaction
 from django.utils import timezone
 
+from accounts.models import UserCompanies
 from billing.services import revert_to_free
 from companies.models import CompanySubscription
 
@@ -49,8 +53,25 @@ class Command(BaseCommand):
             sub.save(update_fields=['status', 'updated_at'])
             touched_companies.add(sub.company_id)
 
+        # Anyone left on a dead (expired/canceled) subscription with nothing
+        # working or in grace is moved onto Free. Idempotent: once reverted the
+        # company has an active Free row and drops out of this query.
+        working_ids = CompanySubscription.objects.filter(
+            status__in=['active', 'trialing', 'past_due']).values('company_id')
+        dead_company_ids = (CompanySubscription.objects
+                            .filter(status__in=['expired', 'canceled'])
+                            .exclude(company_id__in=working_ids)
+                            .values_list('company_id', flat=True).distinct())
+        reverted = 0
+        for company in UserCompanies.objects.filter(id__in=list(dead_company_ids)):
+            with transaction.atomic():
+                if revert_to_free(company, reason='subscription expired/canceled'):
+                    reverted += 1
+                    touched_companies.add(company.id)
+
         for company_id in touched_companies:
             cache.delete(f"company_sub:{company_id}")
 
         self.stdout.write(self.style.SUCCESS(
-            f"Expired/downgraded subscriptions for {len(touched_companies)} companies."))
+            f"Expired/downgraded subscriptions for {len(touched_companies)} companies "
+            f"({reverted} moved to Free)."))

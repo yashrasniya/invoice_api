@@ -737,3 +737,46 @@ class PlanSyncTests(BillingTestBase):
         from decimal import Decimal
         self.assertEqual(to_paise(Decimal('499.99')), 49999)
         self.assertEqual(to_paise(Decimal('0.1') + Decimal('0.2')), 30)
+
+
+# ---------------------------------------------------------------------------
+# expire_subscriptions: lapsed / cancelled paid plans land on Free
+# ---------------------------------------------------------------------------
+
+class ExpireToFreeTests(BillingTestBase):
+
+    def _run(self):
+        from django.core.management import call_command
+        call_command('expire_subscriptions', stdout=MagicMock())
+
+    def test_paid_plan_past_end_without_auto_renew_moves_to_free(self):
+        sub = self._set_entitlement(self.pro, days=-3)
+        sub.auto_renew = False
+        sub.save()
+        self._run()
+        ent = self.entitlement()
+        self.assertEqual(ent.subscription_plan.code, 'free')
+        self.assertEqual(ent.status, 'active')
+
+    def test_canceled_row_moves_to_free(self):
+        self._set_entitlement(self.pro, status='canceled')
+        self._run()
+        self.assertEqual(self.entitlement().subscription_plan.code, 'free')
+
+    def test_past_due_within_grace_keeps_plan(self):
+        self._set_entitlement(self.pro, days=-2, status='past_due')
+        self._run()
+        ent = self.entitlement()
+        self.assertEqual(ent.subscription_plan.code, 'pro')
+        self.assertEqual(ent.status, 'past_due')
+
+    def test_past_due_beyond_grace_moves_to_free(self):
+        self._set_entitlement(self.pro, days=-30, status='past_due')
+        self._run()
+        self.assertEqual(self.entitlement().subscription_plan.code, 'free')
+
+    def test_paid_and_active_is_untouched_and_rerun_is_idempotent(self):
+        self._set_entitlement(self.pro, days=20)
+        self._run()
+        self._run()
+        self.assertEqual(self.entitlement().subscription_plan.code, 'pro')
