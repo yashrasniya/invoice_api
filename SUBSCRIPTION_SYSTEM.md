@@ -36,6 +36,10 @@ Natural expiry is enforced at read time (an expired subscription stops working o
 0 2 * * * cd /path/to/invoice_api && python manage.py expire_subscriptions >> logs/expire.log 2>&1
 ```
 
+**Installed in production** (2026-11-14): this entry is in the `ubuntu` crontab on the server (`crontab -l`), run from `/home/ubuntu/invoice_api/invoice_api` with `../venv/bin/python`, logging to `logs/expire.log`. `apply_scheduled_plan_changes` is scheduled alongside it (see `BILLING.md`).
+
+Besides tidying statuses, the job moves any company left on an `expired` or `canceled` plan to Free (this catches a missed `subscription.cancelled` webhook). A `past_due` company inside the 7-day grace window keeps its plan.
+
 ## Environment variables
 
 | Var | Purpose |
