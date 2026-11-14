@@ -183,26 +183,29 @@ class CompaniesView(StatsOptInMixin, ListAPIView):
         return response
 
     def post(self,request,*args,**kwargs):
-        print(request.POST)
-        if kwargs.get('id','') :
-            if Customers.objects.filter(id=kwargs.get('id')):
-                serializer = CompanySerializer(Customers.objects.get(id=kwargs.get('id')), data=request.data)
-            else:
+        creating = not kwargs.get('id', '')
+        if not creating:
+            # scoped lookup: a foreign id must look exactly like a missing one
+            instance = Customers.objects.filter(
+                user_scope_q(request), id=kwargs.get('id')).first()
+            if instance is None:
                 return Response({'error':'Company id not found'}, status=status.HTTP_404_NOT_FOUND)
+            serializer = CompanySerializer(instance, data=request.data)
         else:
             serializer = CompanySerializer(data=request.data)
         if serializer.is_valid():
-            print(serializer.validated_data)
-            serializer.save(user=self.request.user)
+            # only stamp the creator on new rows; an edit must never re-parent
+            serializer.save(user=self.request.user) if creating else serializer.save()
             return Response(serializer.data,status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self,request,id,*args, **kwargs):
-
-        if not Customers.objects.filter(id=self.kwargs.get('id')):
+        instance = Customers.objects.filter(
+            user_scope_q(request), id=self.kwargs.get('id')).first()
+        if instance is None:
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-        Customers.objects.get(id=self.kwargs.get('id')).delete()
+        instance.delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
 
@@ -245,24 +248,25 @@ class VendorView(StatsOptInMixin, ListAPIView):
         return response
 
     def post(self,request,*args,**kwargs):
-        print(request.POST)
-        if kwargs.get('id','') :
-            if Vendor.objects.filter(id=kwargs.get('id')):
-                serializer = VendorSerializer(Vendor.objects.get(id=kwargs.get('id')), data=request.data)
-            else:
+        creating = not kwargs.get('id', '')
+        if not creating:
+            instance = Vendor.objects.filter(
+                user_scope_q(request), id=kwargs.get('id')).first()
+            if instance is None:
                 return Response({'error':'Vendor id not found'}, status=status.HTTP_404_NOT_FOUND)
+            serializer = VendorSerializer(instance, data=request.data)
         else:
             serializer = VendorSerializer(data=request.data)
         if serializer.is_valid():
-            print(serializer.validated_data)
-            serializer.save(user=self.request.user)
+            serializer.save(user=self.request.user) if creating else serializer.save()
             return Response(serializer.data,status=status.HTTP_200_OK)
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self,request,id,*args, **kwargs):
-
-        if not Vendor.objects.filter(id=self.kwargs.get('id')):
+        instance = Vendor.objects.filter(
+            user_scope_q(request), id=self.kwargs.get('id')).first()
+        if instance is None:
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-        Vendor.objects.get(id=self.kwargs.get('id')).delete()
+        instance.delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)

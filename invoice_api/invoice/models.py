@@ -74,6 +74,12 @@ class Invoice(SoftDeleteModel):
             self.date = timezone.now().date()
         super().save(*args, **kwargs)
 class Product(models.Model):
+    # Who created the line item. Tenant scoping goes through this (via the
+    # company of the creator, the same rule as invoices) because a line item
+    # is created before it is attached to an invoice. Null only on rows that
+    # were never attached to an invoice before this field existed.
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                             related_name='+')
     product_properties = models.ManyToManyField('Product_properties')  # connect to Product_property model
     gst_amount = models.DecimalField(max_digits=20,decimal_places=2)
     total_amount = models.DecimalField(max_digits=20,decimal_places=2)

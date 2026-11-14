@@ -349,6 +349,7 @@ class Command(BaseCommand):
                     payment_method=method,
                 )
                 inv.products.set(lines)
+                Product.objects.filter(pk__in=[l.pk for l in lines]).update(user=inv.user)
                 created.append(inv)
                 counter += 1
 
@@ -378,6 +379,7 @@ class Command(BaseCommand):
                 payment_method=method,
             )
             inv.products.set(lines)
+            Product.objects.filter(pk__in=[l.pk for l in lines]).update(user=inv.user)
             created.append(inv)
 
             self.record_payment(user, company, inv, status, method, when, 'made')

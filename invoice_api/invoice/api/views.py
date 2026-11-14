@@ -472,7 +472,7 @@ class Invoice_product_action(APIView):
             return Response({'message': 'id not found'}, status=status.HTTP_404_NOT_FOUND)
         if not request.data.get('product_id',''):
             return Response({'message': 'product_id not found'}, status=status.HTTP_404_NOT_FOUND)
-        if not Product.objects.filter(id=request.data.get('product_id')):
+        if not _owned_products(request).filter(id=request.data.get('product_id')):
             return Response({'message': 'product_id not found in db'}, status=status.HTTP_404_NOT_FOUND)
         if action == 'add':
             obj.first().products.add(request.data.get('product_id'))
@@ -540,23 +540,38 @@ class new_product_in_frontend_update_view(APIView):
         qs.first().delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
+def _owned_products(request):
+    """Line items belonging to the requester's company (see Product.user)."""
+    return Product.objects.filter(user_scope_q(request))
+
+
+def _owned_properties(request):
+    """Line-item field values whose column definition belongs to the
+    requester's company (the column set is owned by the company config owner)."""
+    return Product_properties.objects.filter(
+        new_product_in_frontend__user=company_config_owner(request))
+
+
 class ProductViewSet(APIView):
     permission_classes = [IsAuthenticated]
     def post(self,request,*args, **kwargs):
         context = {'request': request}
-        if kwargs.get('id',''):
-            if not Product.objects.filter(id=self.kwargs.get('id')):
+        creating = not kwargs.get('id','')
+        if not creating:
+            # a foreign id looks exactly like a missing one
+            instance = _owned_products(request).filter(id=self.kwargs.get('id')).first()
+            if instance is None:
                 return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-
-            product = ProductSerializer(Product.objects.get(id=self.kwargs.get('id')),data=request.data,context=context)
+            product = ProductSerializer(instance,data=request.data,context=context)
         else:
             product = ProductSerializer(data=request.data,context=context)
         if product.is_valid():
-            obj=product.save()
+            obj = product.save(user=request.user) if creating else product.save()
             if request.data.get('product_properties',''):
                 Product_properties_id_list=request.data.get('product_properties', '').split(',')
+                allowed = _owned_properties(request)
                 for i in Product_properties_id_list:
-                    if Product_properties.objects.filter(id=i).exists():
+                    if allowed.filter(id=i).exists():
                         if request.POST.get('action','')=='delete':
                             obj.product_properties.remove(i)
                         else:
@@ -566,29 +581,32 @@ class ProductViewSet(APIView):
             return Response(product.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self,request,id,*args, **kwargs):
-
-        if not Product.objects.filter(id=self.kwargs.get('id')):
+        instance = _owned_products(request).filter(id=self.kwargs.get('id')).first()
+        if instance is None:
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-        Product.objects.get(id=self.kwargs.get('id')).delete()
+        instance.delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
 class ProductPropertiesViewsSet(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self,request,format=None,*args, **kwargs):
-        Product_propertiesSerializer(data=request)
+        owner = company_config_owner(request)
+        column_id = request.data.get('new_product_in_frontend')
+        column = (new_product_in_frontend.objects.filter(id=column_id, user=owner).first()
+                  if column_id else None)
+        if request.data.get('new_product_in_frontend') and column is None:
+            return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
         if kwargs.get('id',''):
-            if not Product_properties.objects.filter(id=self.kwargs.get('id')):
+            instance = _owned_properties(request).filter(id=self.kwargs.get('id')).first()
+            if instance is None:
                 return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-
-            product = Product_propertiesSerializer(Product_properties.objects.get(id=self.kwargs.get('id')),data=request.data)
+            product = Product_propertiesSerializer(instance,data=request.data)
         else:
             product = Product_propertiesSerializer(data=request.data)
         if product.is_valid():
-            if  request.data.get('new_product_in_frontend') and new_product_in_frontend.objects.filter(id=request.data.get('new_product_in_frontend')):
-
-                product.save(new_product_in_frontend=new_product_in_frontend.objects.get(id=request.data.get('new_product_in_frontend','')))
-
+            if column is not None:
+                product.save(new_product_in_frontend=column)
                 return Response(product.data)
             else:
                 if kwargs.get('id',''):
@@ -600,10 +618,10 @@ class ProductPropertiesViewsSet(APIView):
             return Response(product.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def delete(self,request,id,*args, **kwargs):
-
-        if not Product_properties.objects.filter(id=self.kwargs.get('id')):
+        instance = _owned_properties(request).filter(id=self.kwargs.get('id')).first()
+        if instance is None:
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
-        Product_properties.objects.get(id=self.kwargs.get('id')).delete()
+        instance.delete()
         return Response({"message":"delete successfully"},status=status.HTTP_204_NO_CONTENT)
 
 

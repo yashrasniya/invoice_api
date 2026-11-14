@@ -220,6 +220,16 @@ class InviteAcceptView(APIView):
         if user and user.user_company_id:
             raise ValidationError('This account already belongs to a company.')
 
+        if user is not None:
+            # The invite link alone must never log anyone in. An existing
+            # account (e.g. a company-less platform admin) has to prove it is
+            # theirs with the account password. One generic message so this
+            # cannot be used to probe accounts.
+            password = request.data.get('password') or ''
+            if not user.is_active or not user.check_password(password):
+                raise PermissionDenied(
+                    'Enter the password of your existing account to accept this invitation.')
+
         if user is None:
             username = (request.data.get('username') or '').strip()
             password = request.data.get('password') or ''
@@ -237,7 +247,6 @@ class InviteAcceptView(APIView):
         # join the company as a regular member
         user.user_company = invite.company
         user.is_company_admin = False
-        user.is_active = True
         user.save()
 
         # assign role (invited role or default Member system role)
