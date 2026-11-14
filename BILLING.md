@@ -118,7 +118,9 @@ For local testing, expose your dev server (`ngrok http 8000`) and register the n
 
 The second one applies downgrades whose effective date has arrived. It is idempotent.
 
-> `expire_subscriptions` was already documented as required in `SUBSCRIPTION_SYSTEM.md` but is scheduled nowhere in the repo (BUGS.md H41). Both lines belong in the same crontab.
+> **Installed in production** (2026-11-14): both entries are in the `ubuntu` crontab on the server (`crontab -l`), run from `/home/ubuntu/invoice_api/invoice_api` with `../venv/bin/python`. Logs: `logs/expire.log` and `logs/billing.log`.
+>
+> `expire_subscriptions` also moves companies left on an `expired` or `canceled` plan to Free (this catches a missed `subscription.cancelled` webhook). A `past_due` company inside the 7-day grace window keeps its plan.
 
 ---
 
@@ -273,6 +275,6 @@ Touched outside the app: `settings.py` (Razorpay config, `INSTALLED_APPS`, `bill
 1. Set `RAZORPAY_WEBHOOK_SECRET` — webhooks are rejected without it.
 2. Configure Redis `CACHES` — otherwise paid upgrades appear inconsistently across workers.
 3. Swap the test keys for live keys, and **rotate the test secret** that has been shared in chat and sits in git-tracked reach.
-4. Add both cron entries.
+4. Add both cron entries (already installed on the production server; do this on any new server).
 5. Run `verify_razorpay --probe-subscriptions` against the live account.
 6. Confirm `/api/admin/billing/health/` is all green.
