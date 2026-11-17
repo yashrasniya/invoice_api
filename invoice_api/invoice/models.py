@@ -237,6 +237,12 @@ class CreditDebitNote(models.Model):
     note_number = models.CharField(max_length=50, blank=True, null=True)
     
     amount = models.DecimalField(max_digits=20, decimal_places=2)
+    # The GST included in `amount`. Null on notes recorded before this existed
+    # (or without it): the GST report then can't net the note into the
+    # liability and says so, rather than guessing a rate.
+    gst_amount = models.DecimalField(
+        max_digits=20, decimal_places=2, null=True, blank=True,
+        help_text="GST included in the amount")
     date = models.DateField(default=timezone.now)
     reason = models.TextField(blank=True, null=True)
     
@@ -252,6 +258,11 @@ class CreditDebitNote(models.Model):
             models.Index(fields=['company', '-date'], name='note_company_date_idx'),
             models.Index(fields=['customer', '-date'], name='note_customer_date_idx'),
         ]
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+        if self.gst_amount is not None and (self.gst_amount < 0 or self.gst_amount > (self.amount or 0)):
+            raise ValidationError({'gst_amount': 'GST must be between 0 and the note amount.'})
 
     def save(self, *args, **kwargs):
         if not self.company and hasattr(self, 'user') and self.user and hasattr(self.user, 'user_company') and self.user.user_company:

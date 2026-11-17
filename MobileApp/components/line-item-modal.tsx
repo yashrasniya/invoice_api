@@ -8,6 +8,7 @@ import { calculateLine, money } from '@/lib/invoice-calc';
 import { InventoryPicker } from '@/components/inventory-picker';
 import type { InventoryProduct } from '@/services/inventory';
 import type { Column, NewLine } from '@/services/invoices';
+import { isGstColumn } from '@/constants/gst';
 
 type Props = {
   visible: boolean;
@@ -67,7 +68,7 @@ export function LineItemModal({ visible, columns, onClose, onSave, useInventory,
           )}
           {columns.map((c) => {
             const presets = c.presets ? c.presets.split(',').map((s) => s.trim()).filter(Boolean) : [];
-            const numeric = c.is_calculable || c.input_title === 'GST';
+            const numeric = c.is_calculable || isGstColumn(c.input_title);
             return (
               <View key={c.id} style={{ marginBottom: 16 }}>
                 <Text style={styles.label}>{c.input_title}{c.formula ? `  (${c.formula})` : ''}</Text>

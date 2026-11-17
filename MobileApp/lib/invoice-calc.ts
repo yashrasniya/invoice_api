@@ -1,4 +1,5 @@
 import type { Column } from '@/services/invoices';
+import { isGstColumn } from '@/constants/gst';
 
 export type PropValue = { column: Column; value: string };
 
@@ -12,7 +13,7 @@ export function calculateLine(props: PropValue[], columns: Column[]) {
   // The running total starts at 1 so columns can multiply into it. With nothing to multiply
   // (no quantity/rate typed yet) that would leave a phantom ₹1 line — a blank line is worth 0.
   const hasAmountInput = props.some(
-    (p) => p.column.is_calculable && p.column.input_title !== 'GST' && (p.value ?? '').toString().trim() !== '',
+    (p) => p.column.is_calculable && !isGstColumn(p.column.input_title) && (p.value ?? '').toString().trim() !== '',
   );
   if (!hasAmountInput) return { total_amount: 0, gst_amount: 0 };
 
@@ -30,7 +31,7 @@ export function calculateLine(props: PropValue[], columns: Column[]) {
         case '%+': { const x = (val / 100) * total; c.on_with_out_gst_amount ? (extra += x) : (total += x); break; }
         case '%-': { const x = (val / 100) * total; c.on_with_out_gst_amount ? (extra -= x) : (total -= x); break; }
       }
-    } else if (value && c.input_title !== 'GST') {
+    } else if (value && !isGstColumn(c.input_title)) {
       total *= parseFloat(value);
     }
   };
@@ -41,7 +42,7 @@ export function calculateLine(props: PropValue[], columns: Column[]) {
     .forEach(apply);
 
   let gst = 0;
-  const gstCol = columns.find((c) => c.input_title === 'GST');
+  const gstCol = columns.find((c) => isGstColumn(c.input_title));
   if (props.length > 0 && gstCol) {
     const raw = props.find((p) => p.column.id === gstCol.id)?.value;
     gst = raw ? total * (parseFloat(raw) / 100) : 0;

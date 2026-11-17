@@ -5,13 +5,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Palette } from '@/constants/theme';
 import { GST_STATES } from '@/constants/gst';
 
-type Props = { label: string; value: number | null; onChange: (code: number) => void; error?: string };
+type State = { code: number; name: string };
+
+type Props = { label: string; value: number | null; onChange: (code: number) => void; error?: string; states?: State[] };
 
 /** A field that opens a searchless full-height list of GST states — 37 entries, so a list beats chips. */
-export function StatePicker({ label, value, onChange, error }: Props) {
+export function StatePicker({ label, value, onChange, error, states = GST_STATES }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
-  const selected = GST_STATES.find((s) => s.code === value);
+  const selected = states.find((s) => s.code === value);
 
   return (
     <View style={styles.group}>
@@ -35,7 +37,7 @@ export function StatePicker({ label, value, onChange, error }: Props) {
             </TouchableOpacity>
           </View>
           <FlatList
-            data={[...GST_STATES].sort((a, b) => a.name.localeCompare(b.name))}
+            data={[...states].sort((a, b) => a.name.localeCompare(b.name))}
             keyExtractor={(s) => String(s.code)}
             contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
             renderItem={({ item }) => (

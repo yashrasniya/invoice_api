@@ -19,6 +19,7 @@ amount in an `unclassified` bucket and raise a warning rather than
 guessing — an unsupported split silently rendered as CGST/SGST would be
 filed, and filing a guess is worse than filing nothing.
 """
+import re
 from calendar import monthrange
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
@@ -28,9 +29,12 @@ from django.db.models.functions import Coalesce
 
 ZERO = Value(Decimal('0'), output_field=DecimalField(max_digits=20, decimal_places=2))
 
-# GSTIN state codes: 01-38 are the states/UTs, 97 Other Territory,
-# 99 Centre Jurisdiction. Anything else is a data-entry error.
-VALID_STATE_CODES = set(range(1, 39)) | {97, 99}
+# Place-of-supply codes: 01-38 are the states/UTs, 96 Other Countries (the
+# place of supply on an export invoice), 97 Other Territory, 99 Centre
+# Jurisdiction. Anything else is a data-entry error. 96 is never a GSTIN
+# prefix, so accounts/gst_utils.STATE_CODES (used to parse GSTINs) omits it.
+FOREIGN_STATE_CODE = 96
+VALID_STATE_CODES = set(range(1, 39)) | {FOREIGN_STATE_CODE, 97, 99}
 
 # Names for the codes in use today (25 and 28 were merged away). Mirrors
 # accounts/gst_utils.STATE_CODES, the frontend's constants/gst.js and the
@@ -43,12 +47,57 @@ STATE_NAMES = {
     23: 'Madhya Pradesh', 24: 'Gujarat', 26: 'Dadra and Nagar Haveli and Daman and Diu',
     27: 'Maharashtra', 29: 'Karnataka', 30: 'Goa', 31: 'Lakshadweep', 32: 'Kerala', 33: 'Tamil Nadu',
     34: 'Puducherry', 35: 'Andaman and Nicobar Islands', 36: 'Telangana', 37: 'Andhra Pradesh',
-    38: 'Ladakh', 97: 'Other Territory',
+    38: 'Ladakh', 96: 'Other Countries', 97: 'Other Territory',
 }
 
-# Rates that legally exist. Used only to validate, never to infer.
-VALID_GST_SLABS = (Decimal('0'), Decimal('0.25'), Decimal('3'),
-                   Decimal('5'), Decimal('12'), Decimal('18'), Decimal('28'))
+# Rates that legally exist, including the slabs retired in the Sept 2025
+# rationalisation (12, 28) since older invoices still carry them and the
+# 40% rate it introduced. Used only to flag, never to infer or block.
+VALID_GST_SLABS = (Decimal('0'), Decimal('0.25'), Decimal('1.5'), Decimal('3'),
+                   Decimal('5'), Decimal('12'), Decimal('18'), Decimal('28'),
+                   Decimal('40'))
+
+# Titles a company gives the line-item column that holds the GST *rate*.
+# Matching used to be `input_title == 'GST'` exactly, so a column renamed
+# "GST %" or "Tax" stopped being read as tax and was instead multiplied into
+# the line total. "GST Amount" is deliberately not here: it is an amount.
+_GST_COLUMN_KEYS = {'gst', 'gstrate', 'gstpercent', 'gstpercentage',
+                    'tax', 'taxrate', 'taxpercent', 'taxpercentage', 'igst'}
+
+
+def is_gst_column(title):
+    """True when a line-item column with this title holds the GST rate."""
+    key = re.sub(r'[^a-z]', '', str(title or '').lower())
+    return key in _GST_COLUMN_KEYS
+
+
+def gst_rate_error(value):
+    """User-facing message when `value` can't be a GST rate, else None.
+
+    Blank is allowed (an untaxed line). Off-slab rates are allowed here and
+    flagged on the GST report instead, so a rate this table doesn't know yet
+    never blocks billing.
+    """
+    raw = str(value if value is not None else '').strip().rstrip('%').strip()
+    if raw == '':
+        return None
+    try:
+        rate = Decimal(raw)
+    except Exception:
+        return 'GST rate must be a number, e.g. 18.'
+    if not rate.is_finite() or rate < 0 or rate > 100:
+        return 'GST rate must be between 0 and 100.'
+    return None
+
+
+def is_standard_slab(value):
+    raw = str(value if value is not None else '').strip().rstrip('%').strip()
+    if raw == '':
+        return True
+    try:
+        return Decimal(raw) in VALID_GST_SLABS
+    except Exception:
+        return False
 
 
 def rupees(value):
@@ -61,6 +110,78 @@ def is_valid_state_code(code):
         return int(code) in VALID_STATE_CODES
     except (TypeError, ValueError):
         return False
+
+
+# ── intra- vs inter-state ──────────────────────────────────────────────
+
+def supply_type(invoice, home_state_code):
+    """'intra', 'inter', or None when the states needed aren't known.
+
+    Sales: we supply from our state to the place of supply (the invoice's own
+    `place_of_supply`, else the customer's state). Purchases: the vendor
+    supplies from their state to the place of supply (the invoice's, else
+    ours). Same fallbacks as `split_tax`, so a PDF and the GST report agree.
+    """
+    if getattr(invoice, 'invoice_type', 'sales') == 'purchase':
+        party = invoice.vendor or invoice.receiver
+        origin = getattr(party, 'state_code', None) if party else None
+        dest = invoice.place_of_supply or home_state_code
+    else:
+        origin = home_state_code
+        party = invoice.receiver
+        dest = invoice.place_of_supply or (getattr(party, 'state_code', None) if party else None)
+    if not (is_valid_state_code(origin) and is_valid_state_code(dest)):
+        return None
+    return 'intra' if int(origin) == int(dest) else 'inter'
+
+
+def tax_heads(taxable, gst, supply):
+    """Footer tax fields for a printed invoice.
+
+    Inter-state supply is IGST only; intra-state is CGST + SGST. When the
+    supply type is unknown (a state code missing) the old CGST/SGST halves
+    are kept, matching what such invoices have always printed — the GST
+    report separately lists them as unclassified.
+    """
+    gst = round(float(gst or 0), 2)
+    taxable = float(taxable or 0)
+    rate = round(gst / taxable * 100, 2) if taxable else 0
+    if supply == 'inter':
+        return {
+            'supply_type': 'inter',
+            'center_gst_amount': 0, 'state_gst_amount': 0, 'igst_amount': gst,
+            'gst': rate, 'center_gst': 0, 'state_gst': 0, 'igst': rate,
+        }
+    cgst = round(gst / 2, 2)
+    return {
+        'supply_type': supply or '',
+        # SGST takes the remainder so the pair sums to the GST printed
+        'center_gst_amount': cgst, 'state_gst_amount': round(gst - cgst, 2),
+        'igst_amount': 0,
+        'gst': rate, 'center_gst': round(rate / 2, 2),
+        'state_gst': round(rate - round(rate / 2, 2), 2), 'igst': 0,
+    }
+
+
+# Templates designed before IGST was printed label their two tax slots
+# "CGST"/"SGST". For an inter-state invoice the CGST slot is relabelled to
+# IGST and the SGST slot dropped, rather than printing CGST 0 / SGST 0 with
+# the tax missing from the face of the invoice.
+_CGST_AMT_RE = re.compile(r'CGST([^<{]*)\{\{\s*footer\.center_gst_amount\s*\}\}')
+_CGST_PCT_RE = re.compile(r'CGST([^<{]*)\{\{\s*footer\.center_gst\s*\}\}')
+_SGST_RE = re.compile(r'SGST[^<{]*\{\{\s*footer\.state_gst(?:_amount)?\s*\}\}\s*(?:/-|%)?')
+
+
+def adapt_html_for_igst(html):
+    """Relabel a CGST/SGST-only HTML template for an inter-state invoice.
+
+    Templates that already reference IGST are returned untouched.
+    """
+    if 'igst' in html.lower():
+        return html
+    html = _CGST_AMT_RE.sub(lambda m: 'IGST' + m.group(1) + '{{ footer.igst_amount }}', html)
+    html = _CGST_PCT_RE.sub(lambda m: 'IGST' + m.group(1) + '{{ footer.igst }}', html)
+    return _SGST_RE.sub('', html)
 
 
 # ── periods ────────────────────────────────────────────────────────────
@@ -164,29 +285,73 @@ def split_tax(sales_qs, home_state_code):
 # ── notes ──────────────────────────────────────────────────────────────
 
 def note_totals(notes_qs, start, end):
-    """Credit and debit note values in the period.
+    """Credit and debit note values in the period, and their effect on tax.
 
-    `CreditDebitNote` stores a single `amount` with no tax component, so
-    the note value is reported separately rather than being silently
-    treated as tax — see the caller's `notes_reduce_liability` flag.
+    A note on a customer (or on a sales invoice) adjusts output tax: a credit
+    note reduces it, a debit note adds to it. A note on a vendor (or on a
+    purchase invoice) adjusts input credit the same way. Only notes with
+    `gst_amount` recorded are netted; the rest are counted in
+    `notes_without_gst` so the report can say the liability is incomplete
+    instead of treating the whole note value as tax.
     """
-    agg = notes_qs.filter(date__gte=start, date__lte=end).aggregate(
-        credit=Coalesce(Sum('amount', filter=Q(note_type='credit')), ZERO),
-        credit_count=Count('id', filter=Q(note_type='credit')),
-        debit=Coalesce(Sum('amount', filter=Q(note_type='debit')), ZERO),
-        debit_count=Count('id', filter=Q(note_type='debit')),
+    notes = notes_qs.filter(date__gte=start, date__lte=end)
+    purchase_side = Q(vendor__isnull=False) | Q(invoice__invoice_type='purchase')
+    credit, debit = Q(note_type='credit'), Q(note_type='debit')
+
+    def tax(side, kind):
+        return Coalesce(Sum('gst_amount', filter=side & kind), ZERO)
+
+    agg = notes.aggregate(
+        credit=Coalesce(Sum('amount', filter=credit), ZERO),
+        credit_count=Count('id', filter=credit),
+        debit=Coalesce(Sum('amount', filter=debit), ZERO),
+        debit_count=Count('id', filter=debit),
+        out_credit=tax(~purchase_side, credit), out_debit=tax(~purchase_side, debit),
+        in_credit=tax(purchase_side, credit), in_debit=tax(purchase_side, debit),
+        without_gst=Count('id', filter=Q(gst_amount__isnull=True)),
     )
     return {
         'credit_note_value': rupees(agg['credit']),
         'credit_note_count': agg['credit_count'],
         'debit_note_value': rupees(agg['debit']),
         'debit_note_count': agg['debit_count'],
+        # unrounded: the caller rounds once, after netting
+        'output_tax_adjustment': agg['out_debit'] - agg['out_credit'],
+        'input_tax_adjustment': agg['in_debit'] - agg['in_credit'],
+        'notes_without_gst': agg['without_gst'],
     }
 
 
 # ── data quality ───────────────────────────────────────────────────────
 
-def data_quality(company, sales_qs, purchase_qs, split, today=None):
+def _is_number(value):
+    try:
+        Decimal(str(value))
+        return True
+    except Exception:
+        return False
+
+
+def off_slab_rates(sales_qs):
+    """{rate: line count} for GST-rate cells on these invoices that aren't a
+    standard slab. Column titles are free text, so they are matched here in
+    Python after a cheap prefilter in SQL."""
+    from invoice.models import Product_properties
+    rows = (Product_properties.objects
+            .filter(product__invoice__in=sales_qs)
+            .filter(Q(new_product_in_frontend__input_title__icontains='gst')
+                    | Q(new_product_in_frontend__input_title__icontains='tax'))
+            .values_list('new_product_in_frontend__input_title', 'value'))
+    found = {}
+    for title, value in rows:
+        if is_gst_column(title) and not is_standard_slab(value):
+            key = str(value).strip().rstrip('%').strip()
+            found[key] = found.get(key, 0) + 1
+    return found
+
+
+def data_quality(company, sales_qs, purchase_qs, split, today=None, notes=None,
+                 off_slab=None):
     """Problems that make the numbers on this page untrustworthy.
 
     Surfaced to the user rather than swallowed: a GST report that looks
@@ -232,6 +397,31 @@ def data_quality(company, sales_qs, purchase_qs, split, today=None):
                        "actually paid on these, your input credit is understated and this "
                        "report overstates what you owe."),
             'fix': 'Purchases → edit the invoice and enter the GST amount',
+        })
+
+    if notes and notes.get('notes_without_gst'):
+        n = notes['notes_without_gst']
+        issues.append({
+            'level': 'warning',
+            'code': 'notes_without_gst',
+            'title': f"{n} credit/debit note(s) in this period have no GST amount",
+            'detail': ("Notes without a GST amount can't be netted into the tax figures, "
+                       "so net GST payable ignores them. A credit note to a customer "
+                       "normally reduces what you owe."),
+            'fix': 'Record the GST amount on each credit/debit note',
+        })
+
+    # {rate: line count} from off_slab_rates(), computed by the caller
+    if off_slab:
+        rates = ', '.join(f'{r}%' for r in sorted(off_slab, key=lambda r: Decimal(r) if _is_number(r) else Decimal('-1')))
+        issues.append({
+            'level': 'warning',
+            'code': 'non_standard_rate',
+            'title': f"{sum(off_slab.values())} sales line(s) use a non-standard GST rate",
+            'detail': (f"Rates found: {rates}. GST is charged at "
+                       + ', '.join(f'{r}%' for r in VALID_GST_SLABS)
+                       + ". Check these lines for a typo."),
+            'fix': 'Open the invoices and correct the GST % on those lines',
         })
 
     future_sales = sales_qs.filter(date__gt=today).count()

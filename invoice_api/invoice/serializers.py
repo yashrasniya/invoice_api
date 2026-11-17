@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from accounts.serializers.serializers import User_PublicSerializer
-from invoice_api.gst import STATE_NAMES, is_valid_state_code
+from invoice_api.gst import STATE_NAMES, is_valid_state_code, supply_type
 from invoice_api.media_urls import absolute_media_url
 from invoice_api.scoping import user_scope_q
 from .models import Invoice, Product, Product_properties, new_product_in_frontend, CustomField, ProductImage
@@ -264,6 +264,8 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
     # such as `due_date` or `notes` is filled from these keys.
     due_date = serializers.SerializerMethodField()
     place_of_supply = serializers.SerializerMethodField()
+    # 'intra' / 'inter' / '' — decides CGST+SGST vs IGST on the printed invoice
+    supply_type = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
     payment_method = serializers.SerializerMethodField()
     notes = serializers.SerializerMethodField()
@@ -281,6 +283,7 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             'date',
             'due_date',
             'place_of_supply',
+            'supply_type',
             'payment_status',
             'payment_method',
             'notes',
@@ -313,6 +316,10 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             return ''
         name = STATE_NAMES.get(code)
         return f'{name} ({code})' if name else str(code)
+
+    def get_supply_type(self, obj):
+        company = getattr(obj.user, 'user_company', None) if obj.user_id else None
+        return supply_type(obj, getattr(company, 'state_code', None)) or ''
 
     def get_payment_status(self, obj):
         return obj.get_payment_status_display()

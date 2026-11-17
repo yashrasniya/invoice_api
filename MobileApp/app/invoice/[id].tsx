@@ -5,7 +5,7 @@ import * as Sharing from 'expo-sharing';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Centered, StatusBadge } from '@/components/ui/bits';
-import { GST_STATES } from '@/constants/gst';
+import { PLACE_OF_SUPPLY_STATES } from '@/constants/gst';
 import { Palette } from '@/constants/theme';
 import { useCan } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
@@ -75,7 +75,7 @@ export default function InvoiceDetailScreen() {
   const purchase = inv.invoice_type === 'purchase';
   const partyName = purchase ? inv.vendor_name : inv.receiver_name;
   const taxable = Number(inv.total_final_amount || 0) - Number(inv.gst_final_amount || 0);
-  const supplyState = inv.place_of_supply != null ? GST_STATES.find((st) => st.code === inv.place_of_supply) : undefined;
+  const supplyState = inv.place_of_supply != null ? PLACE_OF_SUPPLY_STATES.find((st) => st.code === inv.place_of_supply) : undefined;
   const supply = inv.place_of_supply != null
     ? (supplyState ? `${supplyState.name} (${String(supplyState.code).padStart(2, '0')})` : String(inv.place_of_supply))
     : '';

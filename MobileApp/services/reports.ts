@@ -63,8 +63,13 @@ export type GstSummary = {
   output_gst: number; input_gst: number; net_gst_payable: number;
   sales_invoice_count: number; purchase_invoice_count: number;
   tax_split: { cgst: number; sgst: number; igst: number; unclassified: number; unclassified_invoices: number };
-  data_quality: unknown;
+  credit_note_value: number; credit_note_count: number; debit_note_value: number; debit_note_count: number;
+  /** Tax moved by notes that carry a GST amount; already included in net_gst_payable. */
+  output_tax_adjustment: number; input_tax_adjustment: number;
+  notes_without_gst: number; notes_reduce_liability: boolean;
+  data_quality: GstIssue[];
 };
+export type GstIssue = { level: 'error' | 'warning'; code: string; title: string; detail: string; fix: string };
 export const fetchGstSummary = async (period: GstPeriod) =>
   (await api.get<GstSummary>('gst-summary/', { params: { period } })).data;
 

@@ -9,6 +9,7 @@ import { Chip, Centered } from '@/components/ui/bits';
 import { LineItemModal } from '@/components/line-item-modal';
 import { PartyPicker } from '@/components/party-picker';
 import { StatePicker } from '@/components/state-picker';
+import { PLACE_OF_SUPPLY_STATES } from '@/constants/gst';
 import { Palette } from '@/constants/theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
@@ -268,7 +269,7 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
 
         {showPos && (
           <>
-            <StatePicker label="Place of supply" value={pos} onChange={setPos} />
+            <StatePicker label="Place of supply" value={pos} onChange={setPos} states={PLACE_OF_SUPPLY_STATES} />
             <Text style={styles.hint2}>{posHint}</Text>
             {pos != null && (
               <TouchableOpacity onPress={() => setPos(null)} accessibilityRole="button" hitSlop={8}>

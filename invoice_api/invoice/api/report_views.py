@@ -7,6 +7,7 @@ from invoice_api.scoping import user_scope_q
 from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 from django.db.models import F, Sum
 from datetime import datetime, timedelta
+from decimal import Decimal
 from dateutil.relativedelta import relativedelta
 from invoice.models import Invoice
 
@@ -183,7 +184,8 @@ class GSTSummaryAPIView(APIView):
     def get(self, request):
         from invoice.models import CreditDebitNote
         from invoice_api.gst import (data_quality, gst_period_bounds,
-                                     note_totals, rupees, split_tax)
+                                     note_totals, off_slab_rates, rupees,
+                                     split_tax)
 
         period = request.query_params.get('period')
         start_date_str = request.query_params.get('start_date')
@@ -240,7 +242,12 @@ class GSTSummaryAPIView(APIView):
             company,
             Invoice.objects.filter(scope, invoice_type='sales'),
             Invoice.objects.filter(scope, invoice_type='purchase'),
-            split)
+            split, notes=notes,
+            off_slab=off_slab_rates(Invoice.objects.filter(scope, invoice_type='sales')))
+        out_adj = notes.pop('output_tax_adjustment')
+        in_adj = notes.pop('input_tax_adjustment')
+        output_tax = Decimal(sales_gst) + out_adj
+        input_tax = Decimal(purchases_gst) + in_adj
 
         return Response({
             'period': period,
@@ -253,7 +260,10 @@ class GSTSummaryAPIView(APIView):
             'total_purchases_taxable': rupees(float(purchases_total) - float(purchases_gst)),
             'output_gst': rupees(sales_gst),
             'input_gst': rupees(purchases_gst),
-            'net_gst_payable': rupees(float(sales_gst) - float(purchases_gst)),
+            # after credit/debit notes that carry a GST amount
+            'output_tax_adjustment': rupees(out_adj),
+            'input_tax_adjustment': rupees(in_adj),
+            'net_gst_payable': rupees(output_tax - input_tax),
 
             'sales_invoice_count': sales_invoices.count(),
             'purchase_invoice_count': purchase_invoices.count(),
@@ -270,9 +280,9 @@ class GSTSummaryAPIView(APIView):
             },
 
             **notes,
-            # the notes carry no tax component in the data model, so they are
-            # reported alongside the liability rather than netted into it
-            'notes_reduce_liability': False,
+            # True when every note in the period had its GST netted in above;
+            # otherwise `notes_without_gst` of them were left out
+            'notes_reduce_liability': notes['notes_without_gst'] == 0,
 
             # rate-wise (GSTR-1 table 12) needs per-line tax that the invoice
             # line items don't reliably carry — see `rate_breakdown_available`

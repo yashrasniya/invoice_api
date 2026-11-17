@@ -15,6 +15,7 @@ from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
 from yaml_reader import num2words
+from invoice_api.gst import adapt_html_for_igst, is_gst_column, tax_heads
 from upi_qr import company_upi_link, make_qr_data_uri
 from pdf_fonts import inject_font_css
 import pandas as pd
@@ -177,7 +178,7 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                                 if on_without_gst: extra_cal -= calculated_val
                                 else: total -= calculated_val
                         else:
-                            if val_raw and title != 'gst':
+                            if val_raw and not is_gst_column(title):
                                 total *= val
                                 calculated_val = val_raw
                                 
@@ -223,7 +224,7 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                     gst_pct = 0.0
                     for prop in sorted_props:
                         cfg = prop.get('new_product_in_frontend', {})
-                        if str(cfg.get('input_title', '')).lower() == 'gst':
+                        if is_gst_column(cfg.get('input_title', '')):
                             try: gst_pct = float(prop.get('value') or 0)
                             except (TypeError, ValueError): gst_pct = 0.0
                     p['total_amount'] = f"{total + total * gst_pct / 100 + extra_cal:.2f}"
@@ -282,13 +283,9 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             footer_data["gst_amount"] = round(total_gst_amount_acc, 2)
             footer_data["total_amount_with_gst"] = round(total_amount_with_gst, 2)
             footer_data["total_amount_in_text"] = num2words(round(total_amount_with_gst, 2))
-            footer_data["center_gst_amount"] = round(total_gst_amount_acc / 2, 2)
-            footer_data["state_gst_amount"] = round(total_gst_amount_acc / 2, 2)
-            
-            avg_gst = (total_gst_amount_acc / total_taxable_amount * 100) if total_taxable_amount else 0
-            footer_data["gst"] = round(avg_gst, 2)
-            footer_data["center_gst"] = round(avg_gst / 2, 2)
-            footer_data["state_gst"] = round(avg_gst / 2, 2)
+            # CGST+SGST for intra-state, IGST for inter-state (was always halved)
+            supply = invoice_data.get('supply_type') or None
+            footer_data.update(tax_heads(total_taxable_amount, total_gst_amount_acc, supply))
 
             # The QR encodes this invoice's grand total, so it is built per
             # page rather than once per request. As a data: URI it survives
@@ -324,6 +321,10 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             for k, v in custom_header.items():
                 context_dict[k] = v
                 context_dict[k.lower()] = v
+            # Tax-invoice templates print `{{ igst }}` / `{{ igst_amount }}` at
+            # the top level; the computed split wins over any custom field.
+            context_dict['igst'] = footer_data['igst']
+            context_dict['igst_amount'] = footer_data['igst_amount']
             context = Context(context_dict)
             
             products = invoice_data.get("products", [])
@@ -332,7 +333,12 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                 products_data.append(i['props'])
 
             context['products_data'] = products_data
-            rendered_inner = django_template.render(context)
+            page_template = django_template
+            if supply == 'inter':
+                adapted = adapt_html_for_igst(inner_html)
+                if adapted != inner_html:
+                    page_template = Template(adapted)
+            rendered_inner = page_template.render(context)
             pages_html += f'<div style="position: relative; width: 595px; height: 842px; page-break-after: always; overflow: hidden; background: white;">\n{rendered_inner}\n</div>\n'
 
         full_html = f"""<!DOCTYPE html>

@@ -8,6 +8,7 @@ from django.conf import settings
 
 from submit import Submit
 from upi_qr import company_upi_link, make_qr_image
+from invoice_api.gst import is_gst_column, tax_heads
 from PIL import Image
 logger = logging.getLogger(__name__)
 
@@ -359,6 +360,7 @@ class FillValue:
         total_gst_amount_acc = 0
         total_taxable_amount_with_extra_non_gst = 0
         total_extra_cal_acc = 0
+        inter = self.data.get('supply_type') == 'inter'
 
         for index, product in enumerate(self.data.get("products")):
             print("Working on {}".format(index))
@@ -442,7 +444,7 @@ class FillValue:
                 calc_results[item_config.get('id')] = value
 
                 # Math extraction
-                if title == "GST":
+                if is_gst_column(title):
                     try: current_gst_pct = float(value) if value else 0.0
                     except: current_gst_pct = 0.0
                 elif is_calculable:
@@ -455,7 +457,7 @@ class FillValue:
                             "on_without_gst": on_without_gst
                         })
                     else:
-                        if value and str(value).strip() and title.lower() != 'gst':
+                        if value and str(value).strip() and not is_gst_column(title):
                             try:
                                 val_float = float(value)
                                 callable_values *= val_float
@@ -540,7 +542,10 @@ class FillValue:
                         col.value = round(row_total, 2)
                         self.products.append(col)
                     elif col.label == "C_GST":
-                        col.value = round(row_gst_amount / 2, 2)
+                        col.value = 0 if inter else round(row_gst_amount / 2, 2)
+                        self.products.append(col)
+                    elif col.label == "I_GST":
+                        col.value = round(row_gst_amount, 2) if inter else 0
                         self.products.append(col)
                     elif col.label == "row_total_with_out_gst":
                         col.value = round(row_total_with_out_gst, 2)
@@ -549,13 +554,14 @@ class FillValue:
                         col.value = round(extra_cal, 2)
                         self.products.append(col)
                     elif col.label == "S_GST":
-                        col.value = round(row_gst_amount / 2, 2)
+                        col.value = 0 if inter else round(row_gst_amount / 2, 2)
                         self.products.append(col)
+                    # per-head rate/amount: one head (IGST) inter-state, two halves otherwise
                     elif col.label == "gst":
-                        col.value = round(current_gst_pct / 2, 2)
+                        col.value = round(current_gst_pct if inter else current_gst_pct / 2, 2)
                         self.products.append(col)
                     elif col.label == "gst_amount":
-                        col.value = round(row_gst_amount / 2, 2)
+                        col.value = round(row_gst_amount if inter else row_gst_amount / 2, 2)
                         self.products.append(col)
 
             start -= self.yaml_obj.product_config.get("product_gap", 15)
@@ -566,13 +572,9 @@ class FillValue:
         self.raw_footer_data["gst_amount"] = round(total_gst_amount_acc, 2)
         self.raw_footer_data["total_amount_with_gst"] = round(total_taxable_amount + total_gst_amount_acc + total_extra_cal_acc, 2)
         self.raw_footer_data["total_amount_in_text"] = num2words(round(self.raw_footer_data["total_amount_with_gst"], 2))
-        self.raw_footer_data["center_gst_amount"] = round(total_gst_amount_acc / 2, 2)
-        self.raw_footer_data["state_gst_amount"] = round(total_gst_amount_acc / 2, 2)
-        
-        avg_gst = (total_gst_amount_acc / total_taxable_amount * 100) if total_taxable_amount else 0
-        self.raw_footer_data["gst"] = round(avg_gst, 2)
-        self.raw_footer_data["center_gst"] = round(avg_gst / 2, 2)
-        self.raw_footer_data["state_gst"] = round(avg_gst / 2, 2)
+        # CGST+SGST for intra-state, IGST for inter-state (was always halved)
+        self.raw_footer_data.update(tax_heads(
+            total_taxable_amount, total_gst_amount_acc, self.data.get('supply_type') or None))
 
     def set_footer(self):
         difference= 0
@@ -591,9 +593,23 @@ class FillValue:
 
             # if self.footers[-1].y - difference < 0:
             #     print(f"next page {difference=}")
+        # A template with no IGST slot: on an inter-state invoice its CGST
+        # slot becomes the IGST slot and its SGST slot is left blank, so the
+        # tax is printed under the right head instead of as CGST 0 / SGST 0.
+        relabel = (self.raw_footer_data.get('supply_type') == 'inter'
+                   and not any(str(i.label) in ('igst', 'igst_amount') for i in self.footers))
         for i in self.footers:
             if difference:
                 i.go_down(difference)
+            if relabel and i.label in ('center_gst_amount', 'center_gst'):
+                i.value = self.raw_footer_data['igst_amount' if i.label == 'center_gst_amount' else 'igst']
+                if i.prefix:
+                    i.prefix = i.prefix.replace('CGST', 'IGST').replace('Central', 'Integrated')
+                continue
+            if relabel and i.label in ('state_gst_amount', 'state_gst'):
+                i.value = ''
+                i.suffix = None
+                continue
             if self.raw_footer_data.get(i.label) is not None:
                 i.value=self.raw_footer_data.get(i.label)
 

@@ -27,6 +27,8 @@ from companies.models import Customers
 from companies.serializers import CompanySerializer
 from invoice.models import Invoice, Payment, Product, new_product_in_frontend, Product_properties, CustomField, ProductImage
 from invoice.numbering import next_invoice_number
+from invoice.line_calc import recompute_for_product, recompute_invoice_totals
+from invoice_api.gst import gst_rate_error, is_gst_column
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
@@ -203,7 +205,7 @@ class InvoiceView(ListAPIView):
 
         serializer = InvoiceSerializer(data=data, context={'request': request})
         if serializer.is_valid():
-            serializer.save(user=self.request.user)
+            recompute_invoice_totals(serializer.save(user=self.request.user))
             return Response(add_balance_fields([dict(serializer.data)])[0])
         else:
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -450,8 +452,9 @@ class Invoice_update(APIView):
                                        context={'request': request})
 
         if serializer.is_valid():
-            serializer.save()
-            print(serializer.data.get("date"))
+            # totals follow the lines; client-sent totals only stand for an
+            # invoice that has no lines
+            recompute_invoice_totals(serializer.save())
             # the editor shows "Balance due" under the total; same definition as the list
             return Response(add_balance_fields([dict(serializer.data)])[0],
                             status=status.HTTP_200_OK)
@@ -474,10 +477,12 @@ class Invoice_product_action(APIView):
             return Response({'message': 'product_id not found'}, status=status.HTTP_404_NOT_FOUND)
         if not _owned_products(request).filter(id=request.data.get('product_id')):
             return Response({'message': 'product_id not found in db'}, status=status.HTTP_404_NOT_FOUND)
+        invoice = obj.first()
         if action == 'add':
-            obj.first().products.add(request.data.get('product_id'))
+            invoice.products.add(request.data.get('product_id'))
         elif action == 'delete':
-            obj.first().products.remove(request.data.get('product_id'))
+            invoice.products.remove(request.data.get('product_id'))
+        recompute_invoice_totals(invoice)
 
         return Response({'message': 'success'}, status=status.HTTP_200_OK)
 
@@ -576,7 +581,9 @@ class ProductViewSet(APIView):
                             obj.product_properties.remove(i)
                         else:
                             obj.product_properties.add(i)
-            return Response(product.data)
+            # the stored amounts are recomputed from the line's columns
+            recompute_for_product(obj)
+            return Response(ProductSerializer(obj, context=context).data)
         else:
             return Response(product.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -597,6 +604,7 @@ class ProductPropertiesViewsSet(APIView):
                   if column_id else None)
         if request.data.get('new_product_in_frontend') and column is None:
             return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
+        instance = None
         if kwargs.get('id',''):
             instance = _owned_properties(request).filter(id=self.kwargs.get('id')).first()
             if instance is None:
@@ -604,16 +612,26 @@ class ProductPropertiesViewsSet(APIView):
             product = Product_propertiesSerializer(instance,data=request.data)
         else:
             product = Product_propertiesSerializer(data=request.data)
+        # a GST-rate cell must hold a rate: "abc" or 180 would print as tax
+        rate_column = column or (instance.new_product_in_frontend if instance else None)
+        if rate_column is not None and is_gst_column(rate_column.input_title) \
+                and 'value' in request.data:
+            message = gst_rate_error(request.data.get('value'))
+            if message:
+                return Response({'value': [message]}, status=status.HTTP_400_BAD_REQUEST)
         if product.is_valid():
             if column is not None:
-                product.save(new_product_in_frontend=column)
-                return Response(product.data)
+                saved = product.save(new_product_in_frontend=column)
+            elif kwargs.get('id',''):
+                saved = product.save()
             else:
-                if kwargs.get('id',''):
-                    product.save()
-                    return Response(product.data)
-                else:
-                    return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
+                saved = None
+            if saved is None:
+                return Response({'error': 'id not found'}, status=status.HTTP_400_BAD_REQUEST)
+            # editing a cell of a line already on an invoice moves its totals
+            for line in saved.product_set.all():
+                recompute_for_product(line)
+            return Response(product.data)
         else:
             return Response(product.errors, status=status.HTTP_400_BAD_REQUEST)
 
