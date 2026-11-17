@@ -7,10 +7,12 @@ import { GST_STATES } from '@/constants/gst';
 
 type State = { code: number; name: string };
 
-type Props = { label: string; value: number | null; onChange: (code: number) => void; error?: string; states?: State[] };
+type Props = { label: string; value: number | null; onChange: (code: number) => void; error?: string; states?: State[];
+  /** Shown under the field; with `locked`, the state can't be changed (e.g. it comes from the GSTIN). */
+  hint?: string; locked?: boolean };
 
 /** A field that opens a searchless full-height list of GST states — 37 entries, so a list beats chips. */
-export function StatePicker({ label, value, onChange, error, states = GST_STATES }: Props) {
+export function StatePicker({ label, value, onChange, error, states = GST_STATES, hint, locked }: Props) {
   const [open, setOpen] = useState(false);
   const insets = useSafeAreaInsets();
   const selected = states.find((s) => s.code === value);
@@ -20,13 +22,15 @@ export function StatePicker({ label, value, onChange, error, states = GST_STATES
       <Text style={styles.label}>{label}</Text>
       <TouchableOpacity
         accessibilityRole="button" accessibilityLabel={label}
-        style={[styles.field, !!error && { borderColor: Palette.danger }]} onPress={() => setOpen(true)}>
+        style={[styles.field, !!error && { borderColor: Palette.danger }, locked && { opacity: 0.7 }]} onPress={() => !locked && setOpen(true)}
+        accessibilityState={{ disabled: !!locked }}>
         <Text style={[styles.value, !selected && { color: Palette.textFaint }]} numberOfLines={1}>
           {selected ? `${selected.name} (${String(selected.code).padStart(2, '0')})` : 'Select state'}
         </Text>
-        <Ionicons name="chevron-down" size={20} color={Palette.textMuted} />
+        <Ionicons name={locked ? 'lock-closed' : 'chevron-down'} size={locked ? 16 : 20} color={Palette.textMuted} />
       </TouchableOpacity>
       {!!error && <Text style={styles.error}>{error}</Text>}
+      {!error && !!hint && <Text style={styles.hint}>{hint}</Text>}
 
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
         <View style={[styles.sheet, { paddingTop: insets.top + 12 }]}>
@@ -62,6 +66,7 @@ const styles = StyleSheet.create({
   },
   value: { flex: 1, fontSize: 16, fontWeight: '500', color: Palette.text },
   error: { color: Palette.danger, fontSize: 13, marginTop: 6, marginLeft: 4 },
+  hint: { color: Palette.textMuted, fontSize: 12, marginTop: 6, marginLeft: 4 },
   sheet: { flex: 1, backgroundColor: Palette.white },
   sheetHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingBottom: 12 },
   sheetTitle: { fontSize: 20, fontWeight: '800', color: Palette.text },

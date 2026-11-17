@@ -7,13 +7,14 @@ import { Centered, Chip } from '@/components/ui/bits';
 import { Field } from '@/components/ui/field';
 import { Palette } from '@/constants/theme';
 import { errorMessage } from '@/services/api';
+import { hsnError } from '@/constants/gst';
 import {
   addMovement, deleteInventoryProduct, getInventoryProduct, isLowStock, listCategories, listMovements,
   ProductInput, saveInventoryProduct,
 } from '@/services/inventory';
 
 const EMPTY: ProductInput = {
-  sku: '', name: '', description: '', category: null, price: '', gst_percentage: '18', reorder_level: '10', current_stock: '0',
+  sku: '', name: '', description: '', category: null, price: '', gst_percentage: '18', hsn_code: '', unit: '', reorder_level: '10', current_stock: '0',
 };
 
 export default function InventoryProductScreen() {
@@ -36,7 +37,7 @@ export default function InventoryProductScreen() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
     if (p) setForm({
       sku: p.sku, name: p.name, description: p.description ?? '', category: p.category,
-      price: String(p.price), gst_percentage: String(Number(p.gst_percentage)), reorder_level: String(p.reorder_level),
+      price: String(p.price), gst_percentage: String(Number(p.gst_percentage)), hsn_code: p.hsn_code ?? '', unit: p.unit ?? '', reorder_level: String(p.reorder_level),
     });
   }, [product.data]);
 
@@ -53,6 +54,8 @@ export default function InventoryProductScreen() {
     if (!form.price.trim() || !Number.isFinite(price) || price < 0) return Alert.alert('Invalid price', 'Enter a valid price.');
     const gst = Number(form.gst_percentage || 0);
     if (!Number.isFinite(gst) || gst < 0 || gst > 100) return Alert.alert('Invalid GST', 'GST must be between 0 and 100.');
+    const badHsn = hsnError(form.hsn_code);
+    if (badHsn) return Alert.alert('Invalid HSN/SAC', badHsn);
     setSaving(true);
     try {
       await saveInventoryProduct(form, id);
@@ -108,6 +111,11 @@ export default function InventoryProductScreen() {
           <View style={[styles.row, { marginTop: 18 }]}>
             <View style={{ flex: 1 }}><Field label="Price (₹)" value={form.price} onChangeText={set('price')} keyboardType="decimal-pad" /></View>
             <View style={{ flex: 1 }}><Field label="GST %" value={form.gst_percentage} onChangeText={set('gst_percentage')} keyboardType="decimal-pad" /></View>
+          </View>
+          <View style={styles.row}>
+            <View style={{ flex: 1 }}><Field label="HSN / SAC" value={form.hsn_code} onChangeText={set('hsn_code')} keyboardType="number-pad"
+              maxLength={8} placeholder="e.g. 8471" error={form.hsn_code ? hsnError(form.hsn_code) ?? undefined : undefined} /></View>
+            <View style={{ flex: 1 }}><Field label="Unit" value={form.unit} onChangeText={set('unit')} autoCapitalize="characters" maxLength={8} placeholder="NOS, KGS, LTR" /></View>
           </View>
           <View style={styles.row}>
             {isNew && <View style={{ flex: 1 }}><Field label="Opening stock" value={form.current_stock ?? ''} onChangeText={set('current_stock')} keyboardType="number-pad" /></View>}

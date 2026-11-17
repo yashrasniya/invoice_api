@@ -204,7 +204,40 @@ class InvoiceSerializer(serializers.ModelSerializer):
         if date and due and due < date:
             raise serializers.ValidationError(
                 {'due_date': "Due date can't be before the invoice date."})
+        self._check_gst_number(attrs, date)
         return attrs
+
+    def _check_gst_number(self, attrs, date):
+        """CGST Rule 46(b) for *sales* invoices: ≤16 chars of A-Z 0-9 - /, and
+        unique in the financial year. A purchase bill carries the vendor's own
+        number, so it is exempt. Checked only when the number is new or
+        changed, so editing an older invoice for something else still works."""
+        import datetime as _dt
+        from invoice import numbering
+        inv_type = attrs.get('invoice_type', getattr(self.instance, 'invoice_type', 'sales'))
+        if inv_type == 'purchase' or 'invoice_number' not in attrs:
+            return
+        number = (attrs.get('invoice_number') or '').strip()
+        if not number or (self.instance is not None and
+                          (self.instance.invoice_number or '').strip() == number):
+            return
+        problem = numbering.gst_number_error(number)
+        if problem:
+            raise serializers.ValidationError({'invoice_number': problem})
+        request = self.context.get('request')
+        if request is None:
+            return
+        day = date or _dt.date.today()
+        fy = numbering.fy_start_year(day)
+        clash = Invoice.objects.filter(
+            user_scope_q(request), invoice_type='sales', invoice_number__iexact=number,
+            date__range=[_dt.date(fy, 4, 1), _dt.date(fy + 1, 3, 31)])
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        if clash.exists():
+            raise serializers.ValidationError({'invoice_number': (
+                'Invoice number "%s" is already used in FY %d-%02d. GST invoice numbers '
+                'must be unique within a financial year.' % (number, fy, (fy + 1) % 100))})
 
     def get_vendor_name(self, obj):
         if obj.vendor:

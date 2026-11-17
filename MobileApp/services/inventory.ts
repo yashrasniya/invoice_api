@@ -11,6 +11,9 @@ export type InventoryProduct = {
   category_name: string | null;
   price: string;
   gst_percentage: string;
+  /** HSN/SAC code and GST unit code (NOS, KGS…); copied onto a bill line when the item is picked. */
+  hsn_code?: string;
+  unit?: string;
   current_stock: number;
   reorder_level: number;
 };
@@ -52,6 +55,8 @@ export type ProductInput = {
   category: number | null;
   price: string;
   gst_percentage: string;
+  hsn_code: string;
+  unit: string;
   reorder_level: string;
   /** only sent on create; afterwards stock changes through movements so history stays true */
   current_stock?: string;
@@ -65,6 +70,8 @@ export async function saveInventoryProduct(input: ProductInput, id?: number) {
     category: input.category,
     price: input.price.trim(),
     gst_percentage: input.gst_percentage.trim() || '0',
+    hsn_code: input.hsn_code.replace(/\s+/g, ''),
+    unit: input.unit.trim(),
     reorder_level: Number(input.reorder_level || 0),
   };
   if (!id) body.current_stock = Number(input.current_stock || 0);

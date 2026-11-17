@@ -312,7 +312,7 @@ class NumberingSettingsAPITest(TestCase):
         self.assertEqual(client.get(URL).status_code, 200)
 
     def test_post_saves_and_returns_preview(self):
-        r = self.client.post(URL, {'enabled': True, 'template': 'ACME/{FY}/{SEQ:4}',
+        r = self.client.post(URL, {'enabled': True, 'template': 'AC/{FY}/{SEQ:4}',
                                    'reset_period': 'fy', 'next_number': 120},
                              format='json')
         self.assertEqual(r.status_code, 200)
@@ -320,7 +320,15 @@ class NumberingSettingsAPITest(TestCase):
         self.assertEqual(r.data['next_number'], 120)
         self.assertTrue(r.data['preview'].endswith('/0120'))
         cfg = CompanyInvoiceNumbering.objects.get(company=self.company)
-        self.assertEqual(cfg.template, 'ACME/{FY}/{SEQ:4}')
+        self.assertEqual(cfg.template, 'AC/{FY}/{SEQ:4}')
+
+    def test_post_rejects_numbers_that_are_not_valid_gst_numbers(self):
+        # ACME/2026-27/0120 is 17 characters; CGST Rule 46(b) allows 16
+        r = self.client.post(URL, {'template': 'ACME/{FY}/{SEQ:4}', 'next_number': 120}, format='json')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('16 characters', r.data['error'])
+        r = self.client.post(URL, {'template': 'INV {SEQ}'}, format='json')    # space
+        self.assertEqual(r.status_code, 400)
 
     def test_post_rejects_bad_template(self):
         r = self.client.post(URL, {'template': 'INV-{PREFIX}-{SEQ}'}, format='json')

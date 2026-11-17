@@ -10,6 +10,8 @@ import { Palette } from '@/constants/theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
+import { StatePicker } from '@/components/state-picker';
+import { GST_STATES, gstinError, stateFromGstin } from '@/constants/gst';
 import { deleteParty, getParty, LABEL, Party, PartyInput, PartyKind, PERMISSION, saveParty } from '@/services/parties';
 
 const EMPTY: PartyInput = { name: '', address: '', gst_number: '', state: '', state_code: '', phone_number: '' };
@@ -63,6 +65,14 @@ export default function PartyScreen() {
   const [editMode, setEditMode] = useState(false);
   const [saving, setSaving] = useState(false);
   const set = (k: keyof PartyInput) => (v: string) => setForm((f) => ({ ...f, [k]: v }));
+  // A complete, valid GSTIN fixes the state: a business has one GST number per state.
+  const setGst = (v: string) => setForm((f) => {
+    const st = stateFromGstin(v);
+    return st && !gstinError(v) ? { ...f, gst_number: v, state: st.name, state_code: String(st.code) } : { ...f, gst_number: v };
+  });
+  const gstComplete = form.gst_number.trim().length >= 15;
+  const gstProblem = gstComplete ? gstinError(form.gst_number) : null;
+  const gstState = !gstProblem && gstComplete ? stateFromGstin(form.gst_number) : null;
 
   const q = useQuery({ queryKey: ['party', kind, id], queryFn: () => getParty(kind, id!), enabled: !isNew });
   useEffect(() => {
@@ -79,7 +89,8 @@ export default function PartyScreen() {
 
   const save = async () => {
     if (!form.name.trim()) return Alert.alert('Name required', `Enter the ${kind}'s name.`);
-    if (form.gst_number.trim() && form.gst_number.trim().length !== 15) return Alert.alert('Invalid GSTIN', 'A GSTIN has 15 characters.');
+    const badGst = gstinError(form.gst_number);
+    if (badGst) return Alert.alert('Invalid GSTIN', badGst);
     setSaving(true);
     try {
       await saveParty(kind, form, id);
@@ -149,12 +160,12 @@ export default function PartyScreen() {
             <>
               <Field label="Name" value={form.name} onChangeText={set('name')} />
               <Field label="Phone" value={form.phone_number} onChangeText={set('phone_number')} keyboardType="phone-pad" maxLength={15} />
-              <Field label="GST number" value={form.gst_number} onChangeText={set('gst_number')} autoCapitalize="characters" maxLength={15} />
+              <Field label="GST number" value={form.gst_number} onChangeText={setGst} autoCapitalize="characters" autoCorrect={false}
+                maxLength={15} error={gstProblem ?? undefined} />
               <Field label="Address" value={form.address} onChangeText={set('address')} multiline />
-              <View style={styles.row}>
-                <View style={{ flex: 2 }}><Field label="State" value={form.state} onChangeText={set('state')} /></View>
-                <View style={{ flex: 1 }}><Field label="Code" value={form.state_code} onChangeText={set('state_code')} keyboardType="number-pad" maxLength={2} /></View>
-              </View>
+              <StatePicker label="State" value={form.state_code ? Number(form.state_code) : null}
+                onChange={(code) => setForm((f) => ({ ...f, state_code: String(code), state: GST_STATES.find((s) => s.code === code)?.name ?? f.state }))}
+                locked={!!gstState} hint={gstState ? 'Taken from the GST number.' : 'Decides CGST + SGST or IGST on invoices.'} />
               {!isNew && <Button title={`Delete ${kind}`} variant="danger" onPress={remove} style={{ marginTop: 12 }} />}
             </>
           ) : p && (

@@ -62,7 +62,7 @@ class MobileInvoiceFlowTest(TestCase):
 
     def test_full_lifecycle(self):
         customer = self.post('/api/companies/', {
-            'name': 'Buyer Ltd', 'address': 'Pune', 'gst_number': '27AAAAA0000A1Z5',
+            'name': 'Buyer Ltd', 'address': 'Pune', 'gst_number': '27AAAAA0000A1Z2',
             'state': 'MH', 'state_code': 27, 'phone_number': None})
 
         inv = self.post('/api/invoice/', {

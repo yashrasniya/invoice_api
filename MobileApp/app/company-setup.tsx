@@ -3,7 +3,7 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, 
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { StatePicker } from '@/components/state-picker';
-import { GST_STATES, isValidGstin, normalizeGstin, stateFromGstin } from '@/constants/gst';
+import { GST_STATES, gstinError, isValidGstin, normalizeGstin, stateFromGstin } from '@/constants/gst';
 import { Palette } from '@/constants/theme';
 import api, { errorMessage } from '@/services/api';
 import { fetchProfile } from '@/services/auth';
@@ -29,7 +29,7 @@ export default function CompanySetupScreen() {
     if (!form.company_address.trim()) e.company_address = 'Required';
     if (!form.company_email_id.trim()) e.company_email_id = 'Required';
     if (hasGst) {
-      if (!isValidGstin(form.company_gst_number)) e.company_gst_number = 'Enter a valid 15-character GST number';
+      { const bad = gstinError(form.company_gst_number) ?? (isValidGstin(form.company_gst_number) ? null : 'Enter a valid 15-character GST number'); if (bad) e.company_gst_number = bad; }
     } else if (stateCode === null) {
       e.state = 'Select your state';
     }
@@ -78,7 +78,7 @@ export default function CompanySetupScreen() {
 
         {hasGst ? (
           <>
-            <Field label="GST number" placeholder="29ABCDE1234F1Z5" value={form.company_gst_number}
+            <Field label="GST number" placeholder="29ABCDE1234F1ZW" value={form.company_gst_number}
               onChangeText={set('company_gst_number')} autoCapitalize="characters" autoCorrect={false} maxLength={15}
               error={errors.company_gst_number} />
             {!!gstState && (

@@ -93,6 +93,18 @@ class InvoiceNumberingAPIView(APIView):
         except ValueError as exc:
             return Response({'error': str(exc)}, status=400)
 
+        # Auto-numbers must be valid GST invoice numbers, or every invoice
+        # drawn from the series would be refused on save.
+        try:
+            probe_seq = int(request.data.get('next_number') or (cfg.next_number if cfg else 1))
+        except (TypeError, ValueError):
+            probe_seq = 1
+        sample = numbering.render(template, timezone.localdate(), max(probe_seq, 1))
+        gst_problem = numbering.gst_number_error(sample)
+        if gst_problem:
+            return Response({'error': 'Numbers from this template are not valid GST invoice '
+                                      'numbers (e.g. "%s"). %s' % (sample, gst_problem)}, status=400)
+
         defaults = {'template': template, 'reset_period': reset_period,
                     'updated_by': request.user}
 

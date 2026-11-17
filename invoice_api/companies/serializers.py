@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from accounts.gst_utils import clean_party_gst
 from .models import Customers, Vendor
 
 
@@ -22,6 +24,13 @@ class CompanySerializer(serializers.ModelSerializer):
                         }
     def get_user(self, obj):
         return obj.user.username
+
+    def validate(self, attrs):
+        # a GSTIN must be real (format + check character) and fixes the state
+        try:
+            return clean_party_gst(attrs, self.instance)
+        except ValueError as e:
+            raise serializers.ValidationError(e.args[0])
 
 
 class CustomerStatsSerializer(CompanySerializer):
@@ -66,6 +75,13 @@ class VendorSerializer(serializers.ModelSerializer):
                         }
     def get_user(self, obj):
         return obj.user.username
+
+    def validate(self, attrs):
+        # a GSTIN must be real (format + check character) and fixes the state
+        try:
+            return clean_party_gst(attrs, self.instance)
+        except ValueError as e:
+            raise serializers.ValidationError(e.args[0])
 
 
 class VendorStatsSerializer(VendorSerializer):

@@ -290,3 +290,70 @@ class GSTSummaryAPIView(APIView):
 
             'data_quality': issues,
         })
+
+
+class GSTR1APIView(APIView):
+    """GSTR-1 for a filing period.
+
+    GET → summary of each table plus the issues to fix before filing.
+    GET ?download=1 → the portal / offline-tool JSON, refused (409, with the
+    issues) while any error-level issue remains, so a file with guessed or
+    missing data is never produced.
+
+    Periods are a month or an Indian FY quarter (QRMP filers file quarterly);
+    `fp` in the file is the period's last month.
+    """
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('advanced_reports')]
+    required_permissions_map = {'GET': 'report.view'}
+    PERIODS = ('this_month', 'last_month', 'this_quarter', 'last_quarter')
+
+    def get(self, request):
+        import json
+        from datetime import date as _date
+        from django.http import HttpResponse
+        from invoice.models import CreditDebitNote
+        from invoice_api.gst import gst_period_bounds
+        from invoice_api.gstr1 import Gstr1
+        from django.db.models import Q
+
+        period = request.query_params.get('period', 'last_month')
+        if period not in self.PERIODS:
+            return Response({'error': f"period must be one of {', '.join(self.PERIODS)}."}, status=400)
+        start, end, label = gst_period_bounds(period)
+
+        scope = user_scope_q(request)
+        company = getattr(request, 'company', None)
+        sales = Invoice.objects.filter(scope, invoice_type='sales', date__range=[start, end])
+        deleted = Invoice.all_objects.filter(scope, invoice_type='sales', is_deleted=True,
+                                             date__range=[start, end])
+        fy_start = _date(start.year if start.month >= 4 else start.year - 1, 4, 1)
+        fy_numbers = Invoice.objects.filter(
+            scope, invoice_type='sales', date__range=[fy_start, _date(fy_start.year + 1, 3, 31)]
+        ).values_list('invoice_number', 'id')
+        # outward-supply notes only: vendor notes belong to the purchase side
+        notes = (CreditDebitNote.objects.filter(scope, date__range=[start, end], vendor__isnull=True)
+                 .exclude(Q(invoice__isnull=False) & Q(invoice__invoice_type='purchase')))
+
+        ret = Gstr1(company, sales, notes, start, end, deleted_sales_qs=deleted, fy_numbers=fy_numbers)
+
+        if request.query_params.get('download'):
+            if ret.has_errors:
+                return Response({'error': 'Fix the errors before downloading the GSTR-1 file.',
+                                 'issues': ret.issues}, status=409)
+            body = json.dumps(ret.portal_json(), indent=2)
+            resp = HttpResponse(body, content_type='application/json')
+            fp = f'{end.month:02d}{end.year}'
+            resp['Content-Disposition'] = f'attachment; filename="GSTR1_{ret.gstin or "NA"}_{fp}.json"'
+            return resp
+
+        errors = sum(1 for i in ret.issues if i['level'] == 'error')
+        return Response({
+            'period': period, 'period_label': label,
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            'gstin': ret.gstin, 'fp': f'{end.month:02d}{end.year}',
+            **ret.summary(),
+            'issues': ret.issues,
+            'error_count': errors,
+            'warning_count': len(ret.issues) - errors,
+            'ready_to_file': errors == 0,
+        })

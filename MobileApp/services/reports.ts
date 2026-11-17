@@ -73,6 +73,35 @@ export type GstIssue = { level: 'error' | 'warning'; code: string; title: string
 export const fetchGstSummary = async (period: GstPeriod) =>
   (await api.get<GstSummary>('gst-summary/', { params: { period } })).data;
 
+// ── GSTR-1 ──────────────────────────────────────────────────────────────────
+export type Gstr1Period = 'last_month' | 'this_month' | 'last_quarter' | 'this_quarter';
+export const GSTR1_PERIOD_LABEL: Record<Gstr1Period, string> = {
+  last_month: 'Last month', this_month: 'This month', last_quarter: 'Last quarter', this_quarter: 'This quarter',
+};
+export type Gstr1Issue = {
+  level: 'error' | 'warning'; code: string; message: string;
+  ref: { kind: 'invoice' | 'note'; id: number; number: string; date: string } | null;
+};
+export type Gstr1Summary = {
+  period_label: string; start_date: string; end_date: string; gstin: string; fp: string;
+  tables: { table: string; label: string; count: number; taxable: number; tax: number }[];
+  b2b_customers: number; hsn_rows: number; total_taxable: number; total_tax: number;
+  documents: { num: number; from: string; to: string; totnum: number; cancel: number; net_issue: number }[];
+  issues: Gstr1Issue[]; error_count: number; warning_count: number; ready_to_file: boolean;
+};
+export const fetchGstr1 = async (period: Gstr1Period) =>
+  (await api.get<Gstr1Summary>('gstr1/', { params: { period } })).data;
+
+/** The portal / offline-tool JSON, saved to the cache dir. The server refuses (409) while errors remain. */
+export async function downloadGstr1(period: Gstr1Period, gstin: string, fp: string) {
+  const { data } = await api.get<string>('gstr1/', {
+    params: { period, download: 1 }, responseType: 'text', transformResponse: (d) => d,
+  });
+  const uri = `${FileSystem.cacheDirectory}GSTR1_${gstin || 'NA'}_${fp}.json`;
+  await FileSystem.writeAsStringAsync(uri, data);
+  return uri;
+}
+
 // ── ledger ──────────────────────────────────────────────────────────────────
 export type LedgerPeriod = GstPeriod | 'all_time';
 export type Ledger = {

@@ -71,6 +71,25 @@ def is_gst_column(title):
     return key in _GST_COLUMN_KEYS
 
 
+# Titles of the line-item column that holds the HSN/SAC code. "HNS" is how
+# one shipped template spells it.
+_HSN_COLUMN_KEYS = {'hsn', 'sac', 'hsncode', 'saccode', 'hsnsac', 'hsnsaccode', 'hsnorsac',
+                    'hns', 'hnscode'}
+HSN_RE = re.compile(r'^(\d{4}|\d{6}|\d{8})$')
+
+
+def is_hsn_column(title):
+    return re.sub(r'[^a-z]', '', str(title or '').lower()) in _HSN_COLUMN_KEYS
+
+
+def hsn_error(value):
+    """User-facing reason an HSN/SAC code is malformed, or None (blank is fine)."""
+    code = re.sub(r'\s+', '', str(value or ''))
+    if not code or HSN_RE.match(code):
+        return None
+    return 'HSN/SAC codes are 4, 6 or 8 digits (e.g. 8471 or 998314).'
+
+
 def gst_rate_error(value):
     """User-facing message when `value` can't be a GST rate, else None.
 

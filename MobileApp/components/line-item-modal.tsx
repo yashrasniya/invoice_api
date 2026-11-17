@@ -8,7 +8,7 @@ import { calculateLine, money } from '@/lib/invoice-calc';
 import { InventoryPicker } from '@/components/inventory-picker';
 import type { InventoryProduct } from '@/services/inventory';
 import type { Column, NewLine } from '@/services/invoices';
-import { isGstColumn } from '@/constants/gst';
+import { isGstColumn, isHsnColumn, isUnitColumn } from '@/constants/gst';
 
 type Props = {
   visible: boolean;
@@ -39,7 +39,9 @@ export function LineItemModal({ visible, columns, onClose, onSave, useInventory,
     const set = (c: Column | undefined, v: string) => { if (c) next[c.id] = v; };
     set(byTitle(/^name of product$/i) ?? byTitle(/^(item|product)/i), p.name);
     set(byTitle(/^rate$/i), String(Number(p.price)));
-    set(byTitle(/^gst$/i), String(Number(p.gst_percentage)));
+    set(columns.find((c) => isGstColumn(c.input_title)), String(Number(p.gst_percentage)));
+    if (p.hsn_code) set(columns.find((c) => isHsnColumn(c.input_title)), p.hsn_code);
+    if (p.unit) set(columns.find((c) => isUnitColumn(c.input_title)), p.unit);
     set(byTitle(/descri?p?tion|decription/i), p.description ?? '');
     setValues((s) => ({ ...s, ...next }));
     setInventoryId(p.id);

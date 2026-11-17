@@ -12,7 +12,7 @@ router.register(r'product-images', ProductImageViewSet, basename='product-image'
 
 from .views_numbering import InvoiceNumberingAPIView
 from .views_header_config import InvoiceHeaderConfigAPIView
-from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView
+from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView, GSTR1APIView
 from .sales_report_views import SalesReportAPIView
 
 urlpatterns = [
@@ -40,6 +40,7 @@ urlpatterns = [
     path('sales-report/', SalesReportAPIView.as_view()),
     path('cash-flow/', CashFlowReportAPIView.as_view()),
     path('gst-summary/', GSTSummaryAPIView.as_view()),
+    path('gstr1/', GSTR1APIView.as_view()),
     path('ledger/<str:entity_type>/<int:entity_id>/', LedgerAPIView.as_view()),
     path('purchase-summary/', PurchaseInvoiceSummaryAPIView.as_view()),
     path('purchase/upload/', InvoiceExtractAPIView.as_view()),

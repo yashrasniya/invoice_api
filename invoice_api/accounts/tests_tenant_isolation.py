@@ -96,7 +96,7 @@ class CustomerVendorIsolationTests(TenantTestBase):
         super().setUp()
         _give_all_permissions(self.company_a, self.admin_a)
         self.victim_customer = Customers.objects.create(
-            name='Victim Ltd', gst_number='29ABCDE1234F1Z5', user=self.admin_b)
+            name='Victim Ltd', gst_number='29ABCDE1234F1ZW', user=self.admin_b)
         self.victim_vendor = Vendor.objects.create(name='Victim Vendor', user=self.admin_b)
         self.mine = Customers.objects.create(name='Mine', user=self.admin_a)
         self.c = self.client_for(self.admin_a)

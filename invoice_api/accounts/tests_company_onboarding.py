@@ -15,13 +15,19 @@ class CompanySetupTests(APITestCase):
         return self.client.post('/api/user-companies/', body, format='json')
 
     def test_gstin_derives_state_and_code(self):
-        r = self.post(company_gst_number=' 29abcde1234f1z5 ')
+        r = self.post(company_gst_number=' 29abcde1234f1zw ')
         self.assertEqual(r.status_code, 201, r.data)
         c = UserCompanies.objects.get()
-        self.assertEqual((c.company_gst_number, c.state_code, c.state), ('29ABCDE1234F1Z5', 29, 'Karnataka'))
+        self.assertEqual((c.company_gst_number, c.state_code, c.state), ('29ABCDE1234F1ZW', 29, 'Karnataka'))
+
+    def test_gstin_with_a_typo_is_rejected(self):
+        # right pattern, wrong check character
+        r = self.post(company_gst_number='29ABCDE1234F1Z5')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('company_gst_number', r.data)
 
     def test_gstin_overrides_a_mismatched_state(self):
-        self.post(company_gst_number='29ABCDE1234F1Z5', state='Goa', state_code=30)
+        self.post(company_gst_number='29ABCDE1234F1ZW', state='Goa', state_code=30)
         c = UserCompanies.objects.get()
         self.assertEqual((c.state_code, c.state), (29, 'Karnataka'))
 

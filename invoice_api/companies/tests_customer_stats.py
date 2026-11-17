@@ -200,7 +200,7 @@ class CustomerStatsEndpointTests(APITestCase):
         # people look customers up by whatever they have to hand. The search
         # query param is `s` here (REST_FRAMEWORK SEARCH_PARAM), not DRF's `search`.
         other = Customers.objects.create(name='Other Co', user=self.admin,
-                                         gst_number='27ABCDE1234F1Z5',
+                                         gst_number='27ABCDE1234F1Z0',
                                          phone_number='9876501234')
         def ids(q):
             return [r['id'] for r in self.get(f'/api/companies/?s={q}').data['results']]
@@ -211,7 +211,7 @@ class CustomerStatsEndpointTests(APITestCase):
 
     def test_state_and_gst_filters(self):
         gst = Customers.objects.create(name='Registered', user=self.admin,
-                                       gst_number='27ABCDE1234F1Z5', state='Maharashtra')
+                                       gst_number='27ABCDE1234F1Z0', state='Maharashtra')
         def ids(q):
             return {r['id'] for r in self.get(f'/api/companies/?{q}').data['results']}
         self.assertEqual(ids('has_gst=1'), {gst.id})

@@ -59,7 +59,9 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
   const seedParty = purchase
     ? (seed?.vendor ? { id: seed.vendor, name: seed.vendor_name } : null)
     : (seed?.receiver ? { id: seed.receiver, name: seed.receiver_name } : null);
-  const [customer, setCustomer] = useState<{ id: number; name: string } | null>(seedParty);
+  const [customer, setCustomer] = useState<{ id: number; name: string; state_code?: number | null } | null>(
+    seedParty ? { ...seedParty, state_code: purchase ? null : seed?.receiver_state_code ?? null } : null);
+  const homeState = useSession((s) => s.access?.company_state_code ?? null);
   const [date, setDate] = useState(invoice?.date ?? ymd(new Date()));
   const [number, setNumber] = useState(invoice?.invoice_number ?? '');
   // A new invoice starts from the company's defaults for the fields it shows; an existing one keeps its own values.
@@ -137,11 +139,17 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
     setDate(next);
   };
   const term = termDays(date, due);
+  // The state GST will actually use, and what that means for the tax heads.
+  const effectivePos = pos ?? customer?.state_code ?? null;
+  const effectiveState = effectivePos != null ? PLACE_OF_SUPPLY_STATES.find((s) => s.code === effectivePos) : undefined;
+  const stateLabel = effectiveState ? `${effectiveState.name} (${String(effectiveState.code).padStart(2, '0')})` : '';
+  const taxKind = effectivePos == null || homeState == null ? ''
+    : effectivePos === homeState ? ' Intra-state: CGST + SGST.' : ' Inter-state: IGST.';
   const posHint = pos != null
-    ? "Overrides the customer's state for GST."
-    : seed?.receiver_state_code
-      ? `Using the customer's state (${String(seed.receiver_state_code).padStart(2, '0')}).`
-      : "Defaults to the customer's state.";
+    ? `Overrides the customer's state for GST.${taxKind}`
+    : effectiveState
+      ? `Using the customer's state, ${stateLabel}.${taxKind}`
+      : customer ? "This customer has no state. Pick the place of supply so GST can be split correctly." : "Defaults to the customer's state.";
 
   const save = async () => {
     if (!customer) return Alert.alert(`${partyLabel} required`, purchase ? 'Choose who this bill is from.' : 'Choose who this invoice is for.');
@@ -364,7 +372,7 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
       </View>
 
       <PartyPicker kind={partyKind} visible={pickCustomer} onClose={() => setPickCustomer(false)}
-        onPick={(p) => setCustomer({ id: p.id, name: p.name })} />
+        onPick={(p) => setCustomer({ id: p.id, name: p.name, state_code: p.state_code ?? null })} />
       {editingId != null && (() => {
         const line = (invoice?.products ?? []).find((p) => p.id === editingId);
         return line ? (

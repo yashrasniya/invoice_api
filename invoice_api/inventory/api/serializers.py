@@ -1,3 +1,4 @@
+import re
 from rest_framework import serializers
 from inventory.models import Category, Supplier, Product, StockMovement
 
@@ -46,6 +47,24 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = '__all__'
         read_only_fields = ('company',)
+
+    def validate_hsn_code(self, value):
+        from invoice_api.gst import hsn_error
+        value = re.sub(r'\s+', '', value or '')
+        problem = hsn_error(value)
+        if problem:
+            raise serializers.ValidationError(problem)
+        return value
+
+    def validate_unit(self, value):
+        from invoice_api.gstr1 import normalize_uqc
+        if not (value or '').strip():
+            return ''
+        code = normalize_uqc(value)
+        if not code:
+            raise serializers.ValidationError(
+                'Use a GST unit such as NOS, PCS, KGS, GMS, LTR, MTR, BOX, SET or OTH.')
+        return code
 
     def validate_sku(self, value):
         qs = Product.objects.filter(company=_request_company(self), sku=value)

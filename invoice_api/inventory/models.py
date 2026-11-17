@@ -54,6 +54,12 @@ class Product(SoftDeleteModel):
     vendor = models.ForeignKey('companies.Vendor', on_delete=models.SET_NULL, null=True, blank=True, related_name='inventory_products')
     price = models.DecimalField(max_digits=10, decimal_places=2)
     gst_percentage = models.DecimalField(max_digits=5, decimal_places=2, default=18.00)
+    # Defaults copied onto a bill line when this item is picked; GSTR-1 Table 12
+    # reports HSN/SAC + unit (GSTN unit code, e.g. NOS, KGS, LTR).
+    hsn_code = models.CharField(max_length=8, blank=True, default='',
+                                help_text='HSN (goods) or SAC (services): 4, 6 or 8 digits')
+    unit = models.CharField(max_length=3, blank=True, default='',
+                            help_text='GST unit quantity code, e.g. NOS, KGS, LTR')
     current_stock = models.IntegerField(default=0)
     reorder_level = models.IntegerField(default=10)
     created_at = models.DateTimeField(auto_now_add=True)

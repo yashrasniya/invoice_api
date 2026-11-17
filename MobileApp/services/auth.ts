@@ -19,6 +19,8 @@ export type User = {
 export type Access = {
   company_id: number | null;
   company_name: string | null;
+  /** GST state of the company: compared with the place of supply to pick CGST+SGST vs IGST. */
+  company_state_code?: number | null;
   permissions: string[];
   features: string[];
   subscription: Record<string, any> | null;

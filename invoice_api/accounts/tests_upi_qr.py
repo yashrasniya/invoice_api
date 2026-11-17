@@ -144,7 +144,7 @@ class CompanyOptInTests(TestCase):
 class CompanySerializerTests(APITestCase):
 
     base = {'company_name': 'Acme', 'company_address': 'MG Road',
-            'company_gst_number': '22AAAAA0000A1Z5', 'state': 'Karnataka',
+            'company_gst_number': '22AAAAA0000A1ZC', 'state': 'Karnataka',
             'state_code': 29, 'company_email_id': 'a@acme.com'}
 
     def test_valid_upi_id_saves(self):

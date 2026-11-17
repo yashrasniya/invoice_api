@@ -51,6 +51,7 @@ export default function ReportsHub() {
           <Card icon="trending-up" title="Sales report" hint="Totals, trends, top customers, GST" onPress={() => router.push('/reports/sales')} />
           <Card icon="swap-vertical" title="Cash flow" hint="Money in vs money out over time" onPress={() => router.push('/reports/cash-flow')} />
           <Card icon="receipt" title="GST summary" hint="Output vs input GST for filing" onPress={() => router.push('/reports/gst')} />
+          <Card icon="document-text" title="GSTR-1" hint="Check the return and download the portal file" onPress={() => router.push('/reports/gstr1')} />
           <Card icon="people" title="Customer ledger" hint="Statement and outstanding for a customer" onPress={() => setPicking('customer')} />
           <Card icon="business" title="Vendor ledger" hint="Statement and payables for a vendor" onPress={() => setPicking('vendor')} />
 

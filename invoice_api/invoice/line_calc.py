@@ -44,6 +44,18 @@ def calculate_line(props):
     `props` is an iterable of (column, value), column being a
     `new_product_in_frontend` row.
     """
+    detail = calculate_line_detail(props)
+    return None if detail is None else (detail['total'], detail['gst'])
+
+
+def calculate_line_detail(props):
+    """Like `calculate_line`, plus the parts a GST return needs.
+
+    Returns {'total', 'gst', 'taxable', 'rate'} (Decimals; rate is None when
+    the line has no GST-rate cell), or None when there is nothing to compute.
+    `taxable` is the GST base: charges added outside it (`on_with_out_gst_amount`)
+    are in `total` but not taxable.
+    """
     props = list(props)
     has_input = any(c.is_calculable and not is_gst_column(c.input_title)
                     and str(v if v is not None else '').strip() != ''
@@ -74,14 +86,16 @@ def calculate_line(props):
         elif str(value if value is not None else '').strip():
             total *= val
 
-    gst = 0.0
+    gst, rate = 0.0, None
     for c, value in props:
         if is_gst_column(c.input_title):
-            raw = str(value if value is not None else '').strip().rstrip('%')
+            raw = str(value if value is not None else '').strip().rstrip('%').strip()
             gst = total * (_num(raw) / 100) if raw else 0.0
+            rate = Decimal(str(_num(raw))) if raw else Decimal('0')
             break
 
-    return _money(total + gst + extra), _money(gst)
+    return {'total': _money(total + gst + extra), 'gst': _money(gst),
+            'taxable': _money(total), 'rate': rate}
 
 
 def recompute_product(product):

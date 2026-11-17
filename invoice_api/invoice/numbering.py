@@ -19,9 +19,23 @@ logger = logging.getLogger(__name__)
 # Invoice.invoice_number is CharField(max_length=30)
 MAX_RENDERED_LEN = 30
 
-# CGST Rule 46(b) caps a tax invoice number at 16 characters. Advisory only —
-# the API reports it as a warning and never blocks on it.
+# CGST Rule 46(b): a tax invoice number is at most 16 characters of letters,
+# digits, '-' and '/'. Enforced on sales invoices (InvoiceSerializer) and on
+# the numbering template when its settings are saved.
 GST_RECOMMENDED_MAX_LEN = 16
+GST_NUMBER_RE = re.compile(r'^[A-Za-z0-9/-]{1,16}$')
+
+
+def gst_number_error(number):
+    """Why `number` can't be a GST tax invoice number, or None."""
+    number = str(number or '')
+    if len(number) > GST_RECOMMENDED_MAX_LEN:
+        return ('GST invoice numbers can be at most 16 characters; "%s" has %d.'
+                % (number, len(number)))
+    if not GST_NUMBER_RE.match(number):
+        return ('GST invoice numbers can only use letters, digits, "-" and "/" '
+                '(no spaces or other symbols).')
+    return None
 
 DEFAULT_TEMPLATE = 'INV-{FY}-{SEQ:4}'
 

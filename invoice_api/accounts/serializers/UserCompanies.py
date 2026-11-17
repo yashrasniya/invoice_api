@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from upi_qr import is_valid_upi_id
-from ..gst_utils import STATE_CODES, parse_gstin, state_code_for_name
+from ..gst_utils import STATE_CODES, gstin_error, parse_gstin, state_code_for_name
 from ..models import UserCompanies
 
 class UserCompaniesSerializer(serializers.ModelSerializer):
@@ -60,6 +60,10 @@ class UserCompaniesSerializer(serializers.ModelSerializer):
                 gst, derived = parse_gstin(gst)
             except ValueError as exc:
                 raise serializers.ValidationError({'company_gst_number': str(exc)})
+            # pattern alone lets a single mistyped character through
+            typo = gstin_error(gst)
+            if typo:
+                raise serializers.ValidationError({'company_gst_number': typo})
             if code != derived or not state:
                 state = STATE_CODES[derived]
             attrs.update(company_gst_number=gst, state_code=derived, state=state)

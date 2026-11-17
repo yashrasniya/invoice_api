@@ -44,7 +44,7 @@ class VendorApiTests(APITestCase):
         self.today = datetime.date.today()
         self.when = self.today.replace(day=1)
         self.steel = Vendor.objects.create(name='Steel Supplies', user=self.admin,
-                                           gst_number='27ABCDE1234F1Z5', phone_number='9876501234',
+                                           gst_number='27ABCDE1234F1Z0', phone_number='9876501234',
                                            state='Maharashtra', email='sales@steel.example')
         self.paper = Vendor.objects.create(name='Paper Mart', user=self.admin)
 

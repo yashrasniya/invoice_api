@@ -28,7 +28,7 @@ from companies.serializers import CompanySerializer
 from invoice.models import Invoice, Payment, Product, new_product_in_frontend, Product_properties, CustomField, ProductImage
 from invoice.numbering import next_invoice_number
 from invoice.line_calc import recompute_for_product, recompute_invoice_totals
-from invoice_api.gst import gst_rate_error, is_gst_column
+from invoice_api.gst import gst_rate_error, hsn_error, is_gst_column, is_hsn_column
 from submit import Submit
 from yaml_manager.models import Yaml
 from yaml_reader import YamalReader, FillValue
@@ -614,9 +614,14 @@ class ProductPropertiesViewsSet(APIView):
             product = Product_propertiesSerializer(data=request.data)
         # a GST-rate cell must hold a rate: "abc" or 180 would print as tax
         rate_column = column or (instance.new_product_in_frontend if instance else None)
-        if rate_column is not None and is_gst_column(rate_column.input_title) \
-                and 'value' in request.data:
-            message = gst_rate_error(request.data.get('value'))
+        if rate_column is not None and 'value' in request.data:
+            if is_gst_column(rate_column.input_title):
+                message = gst_rate_error(request.data.get('value'))
+            elif is_hsn_column(rate_column.input_title):
+                # a malformed HSN would be rejected by the GSTR-1 upload later
+                message = hsn_error(request.data.get('value'))
+            else:
+                message = None
             if message:
                 return Response({'value': [message]}, status=status.HTTP_400_BAD_REQUEST)
         if product.is_valid():
