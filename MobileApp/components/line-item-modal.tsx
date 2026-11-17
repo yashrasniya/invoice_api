@@ -8,7 +8,7 @@ import { calculateLine, money } from '@/lib/invoice-calc';
 import { InventoryPicker } from '@/components/inventory-picker';
 import type { InventoryProduct } from '@/services/inventory';
 import type { Column, NewLine } from '@/services/invoices';
-import { isGstColumn, isHsnColumn, isUnitColumn } from '@/constants/gst';
+import { isGstColumn, isHsnColumn, isUnitColumn, TaxCategory, ZERO_RATE_CATEGORIES } from '@/constants/gst';
 
 type Props = {
   visible: boolean;
@@ -19,18 +19,26 @@ type Props = {
   useInventory?: boolean;
   /** editing an existing line: pre-fill these values (by column id) instead of the defaults */
   initialValues?: Record<number, string>;
+  /** editing an existing line: its stored 0% category */
+  initialCategory?: TaxCategory;
   title?: string;
   saveLabel?: string;
 };
 
 const initial = (cols: Column[]) => Object.fromEntries(cols.map((c) => [c.id, c.default_value ?? '']));
 
-export function LineItemModal({ visible, columns, onClose, onSave, useInventory, initialValues, title = 'Add item', saveLabel = 'Add to invoice' }: Props) {
+export function LineItemModal({ visible, columns, onClose, onSave, useInventory, initialValues, initialCategory, title = 'Add item', saveLabel = 'Add to invoice' }: Props) {
   const [values, setValues] = useState<Record<number, string>>(() => initial(columns));
+  const [category, setCategory] = useState<TaxCategory>(initialCategory ?? 'nil');
   const [inventoryId, setInventoryId] = useState<number | undefined>();
   const [picking, setPicking] = useState(false);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
-  useEffect(() => { if (visible) { setValues(initialValues ?? initial(columns)); setInventoryId(undefined); } }, [visible, columns, initialValues]);
+  useEffect(() => {
+    if (visible) {
+      setValues(initialValues ?? initial(columns)); setInventoryId(undefined);
+      setCategory(initialCategory && initialCategory !== 'taxable' ? initialCategory : 'nil');
+    }
+  }, [visible, columns, initialValues, initialCategory]);
 
   // Same mapping the web form uses: columns are matched by their title.
   const fromInventory = (p: InventoryProduct) => {
@@ -45,6 +53,7 @@ export function LineItemModal({ visible, columns, onClose, onSave, useInventory,
     set(byTitle(/descri?p?tion|decription/i), p.description ?? '');
     setValues((s) => ({ ...s, ...next }));
     setInventoryId(p.id);
+    if (p.tax_category && p.tax_category !== 'taxable') setCategory(p.tax_category);
   };
 
   const calc = useMemo(
@@ -52,7 +61,11 @@ export function LineItemModal({ visible, columns, onClose, onSave, useInventory,
     [columns, values],
   );
 
-  const save = () => onSave({ values, inventoryProductId: inventoryId });
+  // A 0% line is nil-rated, exempt or non-GST (GSTR-1 Table 8); only asked when the rate is 0.
+  const gstCol = columns.find((c) => isGstColumn(c.input_title));
+  const rawRate = gstCol ? (values[gstCol.id] ?? '').toString().trim() : '';
+  const zeroRated = !!gstCol && rawRate !== '' && Number(rawRate) === 0;
+  const save = () => onSave({ values, inventoryProductId: inventoryId, taxCategory: zeroRated ? category : 'taxable' });
 
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
@@ -92,6 +105,16 @@ export function LineItemModal({ visible, columns, onClose, onSave, useInventory,
               </View>
             );
           })}
+          {zeroRated && (
+            <>
+              <Text style={styles.label}>0% supply type</Text>
+              <View style={styles.chips}>
+                {ZERO_RATE_CATEGORIES.map((c) => (
+                  <Chip key={c.value} label={c.label} active={category === c.value} onPress={() => setCategory(c.value)} />
+                ))}
+              </View>
+            </>
+          )}
         </ScrollView>
         <View style={styles.footer}>
           <View>
@@ -116,5 +139,6 @@ const styles = StyleSheet.create({
   pickText: { color: Palette.primary, fontWeight: '700', fontSize: 15 },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20, paddingBottom: 32, borderTopWidth: 1, borderTopColor: Palette.border },
   footLabel: { fontSize: 12, color: Palette.textMuted },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
   footValue: { fontSize: 20, fontWeight: '800', color: Palette.text },
 });

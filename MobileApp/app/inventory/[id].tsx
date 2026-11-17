@@ -7,14 +7,14 @@ import { Centered, Chip } from '@/components/ui/bits';
 import { Field } from '@/components/ui/field';
 import { Palette } from '@/constants/theme';
 import { errorMessage } from '@/services/api';
-import { hsnError } from '@/constants/gst';
+import { hsnError, ZERO_RATE_CATEGORIES } from '@/constants/gst';
 import {
   addMovement, deleteInventoryProduct, getInventoryProduct, isLowStock, listCategories, listMovements,
   ProductInput, saveInventoryProduct,
 } from '@/services/inventory';
 
 const EMPTY: ProductInput = {
-  sku: '', name: '', description: '', category: null, price: '', gst_percentage: '18', hsn_code: '', unit: '', reorder_level: '10', current_stock: '0',
+  sku: '', name: '', description: '', category: null, price: '', gst_percentage: '18', hsn_code: '', unit: '', tax_category: 'nil', reorder_level: '10', current_stock: '0',
 };
 
 export default function InventoryProductScreen() {
@@ -37,7 +37,8 @@ export default function InventoryProductScreen() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
     if (p) setForm({
       sku: p.sku, name: p.name, description: p.description ?? '', category: p.category,
-      price: String(p.price), gst_percentage: String(Number(p.gst_percentage)), hsn_code: p.hsn_code ?? '', unit: p.unit ?? '', reorder_level: String(p.reorder_level),
+      price: String(p.price), gst_percentage: String(Number(p.gst_percentage)), hsn_code: p.hsn_code ?? '', unit: p.unit ?? '',
+      tax_category: p.tax_category && p.tax_category !== 'taxable' ? p.tax_category : 'nil', reorder_level: String(p.reorder_level),
     });
   }, [product.data]);
 
@@ -117,6 +118,17 @@ export default function InventoryProductScreen() {
               maxLength={8} placeholder="e.g. 8471" error={form.hsn_code ? hsnError(form.hsn_code) ?? undefined : undefined} /></View>
             <View style={{ flex: 1 }}><Field label="Unit" value={form.unit} onChangeText={set('unit')} autoCapitalize="characters" maxLength={8} placeholder="NOS, KGS, LTR" /></View>
           </View>
+          {form.gst_percentage.trim() !== '' && Number(form.gst_percentage) === 0 && (
+            <>
+              <Text style={styles.label}>0% supply type</Text>
+              <View style={[styles.chips, { marginBottom: 18 }]}>
+                {ZERO_RATE_CATEGORIES.map((c) => (
+                  <Chip key={c.value} label={c.label} active={form.tax_category === c.value}
+                    onPress={() => setForm((f) => ({ ...f, tax_category: c.value }))} />
+                ))}
+              </View>
+            </>
+          )}
           <View style={styles.row}>
             {isNew && <View style={{ flex: 1 }}><Field label="Opening stock" value={form.current_stock ?? ''} onChangeText={set('current_stock')} keyboardType="number-pad" /></View>}
             <View style={{ flex: 1 }}><Field label="Reorder level" value={form.reorder_level} onChangeText={set('reorder_level')} keyboardType="number-pad" /></View>

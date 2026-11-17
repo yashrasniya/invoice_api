@@ -148,10 +148,34 @@ def supply_type(invoice, home_state_code):
     else:
         origin = home_state_code
         party = invoice.receiver
+        # supplies to an SEZ and exports are inter-state whatever the states
+        # (IGST Act s.7(5)): always IGST
+        if getattr(party, 'gst_treatment', '') in ('sez', 'overseas'):
+            return 'inter'
         dest = invoice.place_of_supply or (getattr(party, 'state_code', None) if party else None)
     if not (is_valid_state_code(origin) and is_valid_state_code(dest)):
         return None
     return 'intra' if int(origin) == int(dest) else 'inter'
+
+
+def taxable_value(total, gst, reverse_charge=False):
+    """An invoice's taxable value from its stored totals.
+
+    Normally the total includes the GST, so taxable = total − gst. On a
+    reverse-charge invoice the supplier collects no GST: the total is what the
+    recipient pays the supplier and the GST is paid by the recipient on top,
+    so the total *is* the taxable value.
+    """
+    total = Decimal(total or 0)
+    return total if reverse_charge else total - Decimal(gst or 0)
+
+
+def has_valid_lut(company, on_date):
+    """Whether the company's LUT covers `on_date` (exports/SEZ without IGST)."""
+    if not company or not (getattr(company, 'lut_number', '') or '').strip() or not on_date:
+        return False
+    start, end = getattr(company, 'lut_valid_from', None), getattr(company, 'lut_valid_to', None)
+    return bool(start and end and start <= on_date <= end)
 
 
 def tax_heads(taxable, gst, supply):
@@ -279,13 +303,19 @@ def split_tax(sales_qs, home_state_code):
     # state; with neither set the row stays unclassified rather than guessed.
     rows = (sales_qs
             .annotate(_pos=Coalesce('place_of_supply', 'receiver__state_code'))
-            .values_list('_pos', 'total_final_amount', 'gst_final_amount'))
+            .values_list('_pos', 'total_final_amount', 'gst_final_amount', 'receiver__gst_treatment'))
 
-    for state_code, total, gst in rows:
+    for row in rows:
+        state_code, total, gst = row[:3]
+        treatment = row[3] if len(row) > 3 else ''
         gst = Decimal(gst or 0)
         taxable = Decimal(total or 0) - gst
 
-        if not home_ok or not is_valid_state_code(state_code):
+        if treatment in ('sez', 'overseas'):
+            # always IGST (IGST Act s.7(5)), whatever the state codes say
+            result['igst'] += gst
+            result['inter_taxable'] += taxable
+        elif not home_ok or not is_valid_state_code(state_code):
             result['unclassified'] += gst
             result['unclassified_taxable'] += taxable
             result['unclassified_invoices'] += 1

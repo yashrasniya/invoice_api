@@ -10,6 +10,7 @@ export type Party = {
   gst_number: string;
   phone_number: string | null;
   state: string;
+  gst_treatment?: string;
   state_code: number | null;
   // present only on plans with customer stats
   invoice_count?: number;
@@ -20,6 +21,7 @@ export type Party = {
 export type PartyInput = Pick<Party, 'name' | 'address' | 'gst_number' | 'state'> & {
   phone_number: string;
   state_code: string;
+  gst_treatment: string;
 };
 
 const path = (k: PartyKind) => (k === 'customer' ? 'companies/' : 'vendors/');
@@ -55,6 +57,7 @@ function body(input: PartyInput) {
     state: input.state.trim(),
     state_code: input.state_code.trim() ? Number(input.state_code) : null,
     phone_number: input.phone_number.trim() || null,
+    gst_treatment: input.gst_treatment || '',
   };
 }
 

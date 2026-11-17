@@ -67,22 +67,53 @@ def gstin_error(value):
     return None
 
 
-def clean_party_gst(attrs, instance=None):
-    """Validate a customer/vendor GSTIN and derive its state from it.
+#: GST treatments that need the party's GSTIN, and those that can't have one.
+GSTIN_TREATMENTS = {'registered', 'composition', 'sez', 'deemed_export'}
+NO_GSTIN_TREATMENTS = {'unregistered', 'consumer', 'overseas'}
+OVERSEAS_STATE_CODE = 96
 
-    Mutates and returns `attrs`. A blank GSTIN (unregistered party) leaves the
-    state as given. A GSTIN that fails `gstin_error` raises ValueError with
-    {'gst_number': message}; one whose state prefix contradicts an explicitly
-    sent state code raises {'state_code': message}. Otherwise the state code and
-    name are set from the GSTIN, which is where the party is registered.
+
+def clean_party_gst(attrs, instance=None):
+    """Validate a customer/vendor GSTIN + GST treatment and derive the state.
+
+    Mutates and returns `attrs`; raises ValueError({field: message}).
+
+    * A GSTIN must pass `gstin_error`, and its state prefix fixes the state
+      (a different explicitly sent state code is refused).
+    * `gst_treatment` must agree with the GSTIN: registered / composition /
+      SEZ / deemed export need one; unregistered / consumer / overseas can't
+      have one. When the treatment isn't sent, it follows the GSTIN (adding a
+      GSTIN makes the party registered, clearing it makes it unregistered),
+      so a client that doesn't know about treatments keeps working.
+    * Overseas parties are placed in state 96 (Other Countries).
     """
-    if 'gst_number' not in attrs and not ({'state', 'state_code'} & set(attrs)):
+    touched = {'gst_number', 'state', 'state_code', 'gst_treatment'} & set(attrs)
+    if not touched:
         return attrs
     raw = attrs['gst_number'] if 'gst_number' in attrs else getattr(instance, 'gst_number', '')
     gst = re.sub(r'\s+', '', raw or '').upper()
     if 'gst_number' in attrs:
         attrs['gst_number'] = gst
+
+    sent_treatment = attrs.get('gst_treatment') or ''
+    treatment = sent_treatment or getattr(instance, 'gst_treatment', '') or ''
+    if not sent_treatment:
+        if gst and treatment not in GSTIN_TREATMENTS:
+            treatment = 'registered'
+        elif not gst and treatment not in NO_GSTIN_TREATMENTS:
+            treatment = 'unregistered'
+    elif gst and treatment in NO_GSTIN_TREATMENTS:
+        raise ValueError({'gst_treatment': (
+            'A party with a GST number is a registered business; remove the GST number '
+            'or choose a registered treatment.')})
+    elif not gst and treatment in GSTIN_TREATMENTS:
+        raise ValueError({'gst_number': 'Enter the GST number for this treatment.'})
+    attrs['gst_treatment'] = treatment
+
     if not gst:
+        if treatment == 'overseas':
+            attrs['state_code'] = OVERSEAS_STATE_CODE
+            attrs['state'] = attrs.get('state') or 'Other Countries'
         return attrs
     err = gstin_error(gst)
     if err:

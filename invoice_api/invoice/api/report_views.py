@@ -8,6 +8,10 @@ from django.db.models.functions import TruncDay, TruncWeek, TruncMonth
 from django.db.models import F, Sum
 from datetime import datetime, timedelta
 from decimal import Decimal
+from django.db.models import DecimalField, Q, Value
+from django.db.models.functions import Coalesce
+
+ZERO_D = Value(Decimal('0'), output_field=DecimalField(max_digits=20, decimal_places=2))
 from dateutil.relativedelta import relativedelta
 from invoice.models import Invoice
 
@@ -219,19 +223,29 @@ class GSTSummaryAPIView(APIView):
         sales_invoices = in_period.filter(invoice_type='sales')
         purchase_invoices = in_period.filter(invoice_type='purchase')
 
+        # Reverse charge: the *recipient* pays the GST. An RCM sale adds nothing
+        # to our output tax; an RCM purchase is tax we must pay (in cash) and
+        # can then claim as input credit. On an RCM invoice the stored total
+        # excludes the GST, so taxable = total there (see gst.taxable_value).
+        rcm = Q(reverse_charge=True)
+        tsum = lambda q: Coalesce(Sum('total_final_amount', filter=q), ZERO_D)
+        gsum = lambda q: Coalesce(Sum('gst_final_amount', filter=q), ZERO_D)
+
         sales_data = sales_invoices.aggregate(
-            total_final=Sum('total_final_amount'), total_gst=Sum('gst_final_amount'))
-        sales_total = sales_data['total_final'] or 0
-        sales_gst = sales_data['total_gst'] or 0
+            total=tsum(~rcm), gst=gsum(~rcm), rcm_total=tsum(rcm), rcm_gst=gsum(rcm))
+        sales_gst = sales_data['gst']
+        sales_taxable = sales_data['total'] - sales_data['gst'] + sales_data['rcm_total']
+        rcm_sales_gst = sales_data['rcm_gst']
 
         purchases_data = purchase_invoices.aggregate(
-            total_final=Sum('total_final_amount'), total_gst=Sum('gst_final_amount'))
-        purchases_total = purchases_data['total_final'] or 0
-        purchases_gst = purchases_data['total_gst'] or 0
+            total=tsum(~rcm), gst=gsum(~rcm), rcm_total=tsum(rcm), rcm_gst=gsum(rcm))
+        rcm_payable = purchases_data['rcm_gst']
+        purchases_gst = purchases_data['gst'] + rcm_payable       # RCM tax is claimable credit too
+        purchases_taxable = purchases_data['total'] - purchases_data['gst'] + purchases_data['rcm_total']
 
         company = getattr(request, 'company', None)
         home_state = getattr(company, 'state_code', None) if company else None
-        split = split_tax(sales_invoices, home_state)
+        split = split_tax(sales_invoices.filter(reverse_charge=False), home_state)
 
         notes = note_totals(CreditDebitNote.objects.filter(scope),
                             start_date, end_date)
@@ -246,7 +260,8 @@ class GSTSummaryAPIView(APIView):
             off_slab=off_slab_rates(Invoice.objects.filter(scope, invoice_type='sales')))
         out_adj = notes.pop('output_tax_adjustment')
         in_adj = notes.pop('input_tax_adjustment')
-        output_tax = Decimal(sales_gst) + out_adj
+        # output liability includes the tax we owe on RCM purchases
+        output_tax = Decimal(sales_gst) + out_adj + rcm_payable
         input_tax = Decimal(purchases_gst) + in_adj
 
         return Response({
@@ -256,8 +271,12 @@ class GSTSummaryAPIView(APIView):
             'end_date': end_date.isoformat(),
 
             # headline figures, in whole rupees as returns are filed
-            'total_sales_taxable': rupees(float(sales_total) - float(sales_gst)),
-            'total_purchases_taxable': rupees(float(purchases_total) - float(purchases_gst)),
+            'total_sales_taxable': rupees(sales_taxable),
+            'total_purchases_taxable': rupees(purchases_taxable),
+            # reverse charge: payable by us in cash on RCM purchases (counted in
+            # net_gst_payable and as input credit); RCM sales' tax is the buyer's
+            'rcm_payable': rupees(rcm_payable),
+            'rcm_sales_tax': rupees(rcm_sales_gst),
             'output_gst': rupees(sales_gst),
             'input_gst': rupees(purchases_gst),
             # after credit/debit notes that carry a GST amount

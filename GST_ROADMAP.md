@@ -13,7 +13,8 @@ registration, and what needs one first. Numbers (#) match the feature comparison
 **Already built:**
 - CGST+SGST vs IGST on PDFs and reports (#5, #32).
 - GST summary with data-quality warnings.
-- GSTR-1 summary, portal JSON and pre-filing errors (#13–15). The JSON has not been test-uploaded to the portal yet.
+- GSTR-1 summary, portal JSON and pre-filing errors (#13–15), in the app (Reports → GSTR-1) and on the
+  web (Reports → GSTR-1, `/gstr1`). The JSON has not been test-uploaded to the portal yet.
 - Credit/debit notes that move the GST liability (#29).
 - Server-side tax recalculation.
 - Place of supply 96 for exports.
@@ -90,6 +91,64 @@ mobile typecheck + jest; web build.
 | 33 | Export under LUT | Store the LUT number + validity on the company; print it on export invoices; choose WPAY/WOPAY explicitly. | S |
 | 9 | Reverse charge | Invoice flag; "Reverse charge: Yes" on the PDF; `rchrg: Y` in GSTR-1; liability moves to 3B 3.1(d) for RCM purchases. | M |
 | 10 | Cess | Optional cess rate per item/line; carried through PDF, GSTR-1 (`csamt`) and 3B. | M |
+
+**Status: Phase 2 implemented 17 Nov 2026** (tests in `invoice/tests_gst_phase2.py`). #10 cess dropped,
+see below. Open gap: on the web, a bill line doesn't yet pick up an inventory item's 0% category
+(the app does).
+
+#### Phase 2: detailed plan (approved 17 Nov 2026)
+
+**#3 + #22: GST treatment per customer/vendor**
+- `gst_treatment` on Customers and Vendor: `registered`, `composition`, `unregistered`, `consumer`,
+  `overseas`, `sez`, `deemed_export`. Migration backfills it: GSTIN → registered, none → unregistered.
+- On save, a blank treatment is derived the same way. Registered, composition, SEZ and deemed export
+  require a GSTIN; unregistered, consumer and overseas must not have one. Overseas sets the state to
+  96 (Other Countries).
+- `supply_type()`: SEZ and overseas are always inter-state (IGST), whatever the state codes say
+  (IGST Act s.7(5)).
+- GSTR-1 classifies by treatment: registered/composition → B2B `R`; SEZ → B2B `SEWP` (with tax) or
+  `SEWOP` (without tax, needs a LUT); deemed export → B2B `DE`; overseas → 6A exports. Rows saved
+  before this field existed fall back to "has a GSTIN?" and place of supply 96.
+- App + web party forms: a treatment picker that follows the GSTIN as it's typed.
+
+**#33: Export / SEZ under LUT**
+- Company gets `lut_number`, `lut_valid_from`, `lut_valid_to` (an LUT is filed per financial year).
+- GSTR-1: an export or SEZ invoice with zero tax needs a LUT valid on the invoice date, else an error.
+  With tax → `WPAY` / `SEWP`.
+- PDF: a `lut_declaration` field ("Supply meant for export / to SEZ under LUT No. … without payment of
+  IGST") for templates to print.
+- Web company form gets the LUT fields; the app has no company-settings screen, so it's web-only.
+
+**#8: Nil-rated / exempt / non-GST lines**
+- `tax_category` on bill lines and inventory items: `taxable` (default), `nil`, `exempt`, `non_gst`.
+  Only meaningful at 0%: a 0% `taxable` line counts as nil-rated, which is what 0% means.
+- GSTR-1 Table 8 fills `nil_amt` / `expt_amt` / `ngsup_amt` per category. Non-GST lines stay out of
+  Table 12. A non-taxable category on a line with a non-zero rate is an error.
+- App: line-item screen offers the category when the rate is 0; inventory items carry a default.
+  Web: inventory items carry it, and picking an item applies it.
+- *Not covered:* a "bill of supply" document type for exempt-only sales.
+
+**#9: Reverse charge**
+- `reverse_charge` flag on invoices. On such an invoice the supplier collects no GST:
+  `gst_final_amount` = tax the recipient pays, `total_final_amount` = amount payable to the supplier
+  (excludes that tax). Line totals still include tax; the invoice total subtracts it.
+- One helper gives taxable value everywhere (`total` if RCM, else `total − gst`): GST summary, tax
+  split, list serializer, PDF and GSTR-1.
+- GST summary: RCM sales are left out of your output tax (the buyer pays it). RCM purchases add
+  "payable under reverse charge" (must be paid in cash) and count as input credit.
+- GSTR-1: `rchrg: "Y"`; allowed only on B2B invoices (error otherwise).
+- PDF: `reverse_charge` = Yes/No and `rcm_tax_amount` for templates; the footer total excludes the tax.
+- App + web invoice forms: a "Reverse charge" switch.
+- *Unverified:* whether the portal expects GSTR-1 `val` on RCM invoices with or without the tax. It's
+  sent with tax included; confirm with the first real upload.
+
+**#10: Cess, dropped.** Compensation cess ended on 1 Feb 2026 (GST 2.0 had already removed it from
+everything except tobacco in Sept 2025). It was replaced by excise duty and a health cess that sit
+outside GST, so there's nothing left to report in GSTR-1 for current invoices.
+
+**Tests:** treatment validation and derivation; GSTR-1 for SEZ (with and without payment), deemed
+export, overseas without a state, LUT missing or expired, nil/exempt/non-GST in Table 8, RCM in B2B
+and RCM rejected on B2C; RCM totals and GST-summary netting; app typecheck + jest; web build.
 
 ### Phase 3: More returns from the same data
 

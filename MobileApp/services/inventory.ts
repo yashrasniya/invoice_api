@@ -1,4 +1,5 @@
 import api from './api';
+import type { TaxCategory } from '@/constants/gst';
 
 export type Category = { id: number; name: string; description: string | null };
 
@@ -14,6 +15,7 @@ export type InventoryProduct = {
   /** HSN/SAC code and GST unit code (NOS, KGS…); copied onto a bill line when the item is picked. */
   hsn_code?: string;
   unit?: string;
+  tax_category?: TaxCategory;
   current_stock: number;
   reorder_level: number;
 };
@@ -57,6 +59,7 @@ export type ProductInput = {
   gst_percentage: string;
   hsn_code: string;
   unit: string;
+  tax_category: TaxCategory;
   reorder_level: string;
   /** only sent on create; afterwards stock changes through movements so history stays true */
   current_stock?: string;
@@ -72,6 +75,8 @@ export async function saveInventoryProduct(input: ProductInput, id?: number) {
     gst_percentage: input.gst_percentage.trim() || '0',
     hsn_code: input.hsn_code.replace(/\s+/g, ''),
     unit: input.unit.trim(),
+    // only a 0% item can be nil-rated / exempt / non-GST
+    tax_category: Number(input.gst_percentage || 0) === 0 ? input.tax_category : 'taxable',
     reorder_level: Number(input.reorder_level || 0),
   };
   if (!id) body.current_stock = Number(input.current_stock || 0);

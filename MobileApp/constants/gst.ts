@@ -70,3 +70,25 @@ export const hsnError = (raw: string | null | undefined): string | null => {
   const code = String(raw || '').replace(/\s+/g, '');
   return !code || /^(\d{4}|\d{6}|\d{8})$/.test(code) ? null : 'HSN/SAC codes are 4, 6 or 8 digits (e.g. 8471 or 998314).';
 };
+
+/** How GST applies to a customer/vendor. Mirrors companies.models.GST_TREATMENT_CHOICES. */
+export type GstTreatment = 'registered' | 'composition' | 'unregistered' | 'consumer' | 'overseas' | 'sez' | 'deemed_export';
+export const TREATMENTS_WITH_GSTIN: { value: GstTreatment; label: string }[] = [
+  { value: 'registered', label: 'Registered' }, { value: 'composition', label: 'Composition' },
+  { value: 'sez', label: 'SEZ' }, { value: 'deemed_export', label: 'Deemed export' },
+];
+export const TREATMENTS_WITHOUT_GSTIN: { value: GstTreatment; label: string }[] = [
+  { value: 'unregistered', label: 'Unregistered business' }, { value: 'consumer', label: 'Consumer' },
+  { value: 'overseas', label: 'Overseas' },
+];
+/** Keep a treatment consistent with whether there is a GSTIN, the same rule the server applies. */
+export function treatmentFor(current: string | null | undefined, hasGstin: boolean): GstTreatment {
+  const ok = (hasGstin ? TREATMENTS_WITH_GSTIN : TREATMENTS_WITHOUT_GSTIN).some((t) => t.value === current);
+  return ok ? (current as GstTreatment) : hasGstin ? 'registered' : 'unregistered';
+}
+
+/** What a 0% line is, for GSTR-1 Table 8. A 0% "taxable" line counts as nil-rated. */
+export type TaxCategory = 'taxable' | 'nil' | 'exempt' | 'non_gst';
+export const ZERO_RATE_CATEGORIES: { value: TaxCategory; label: string }[] = [
+  { value: 'nil', label: 'Nil-rated' }, { value: 'exempt', label: 'Exempt' }, { value: 'non_gst', label: 'Non-GST' },
+];

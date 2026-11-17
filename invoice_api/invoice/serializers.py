@@ -91,6 +91,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'product_properties',
             'gst_amount',
             'total_amount',
+            'tax_category',
             'image',
             'image_id',
         )
@@ -139,6 +140,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'date',
             'due_date',
             'place_of_supply',
+            'reverse_charge',
             'customer_notes',
             'terms',
             'products',
@@ -299,6 +301,11 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
     place_of_supply = serializers.SerializerMethodField()
     # 'intra' / 'inter' / '' — decides CGST+SGST vs IGST on the printed invoice
     supply_type = serializers.SerializerMethodField()
+    # printable: "Yes"/"No", the tax the recipient pays, and the LUT line an
+    # export/SEZ invoice without IGST must carry
+    reverse_charge = serializers.SerializerMethodField()
+    rcm_tax_amount = serializers.SerializerMethodField()
+    lut_declaration = serializers.SerializerMethodField()
     payment_status = serializers.SerializerMethodField()
     payment_method = serializers.SerializerMethodField()
     notes = serializers.SerializerMethodField()
@@ -317,6 +324,9 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             'due_date',
             'place_of_supply',
             'supply_type',
+            'reverse_charge',
+            'rcm_tax_amount',
+            'lut_declaration',
             'payment_status',
             'payment_method',
             'notes',
@@ -349,6 +359,27 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             return ''
         name = STATE_NAMES.get(code)
         return f'{name} ({code})' if name else str(code)
+
+    def get_reverse_charge(self, obj):
+        return 'Yes' if obj.reverse_charge else 'No'
+
+    def get_rcm_tax_amount(self, obj):
+        return f'{obj.gst_final_amount or 0:.2f}' if obj.reverse_charge else ''
+
+    def get_lut_declaration(self, obj):
+        from invoice_api.gst import has_valid_lut
+        party = obj.receiver
+        treatment = getattr(party, 'gst_treatment', '') if party else ''
+        export = treatment == 'overseas' or obj.place_of_supply == 96
+        if obj.invoice_type == 'purchase' or not (export or treatment == 'sez'):
+            return ''
+        if obj.gst_final_amount:
+            return ''               # IGST paid: no LUT declaration
+        company = getattr(obj.user, 'user_company', None) if obj.user_id else None
+        if not has_valid_lut(company, obj.date):
+            return ''
+        what = 'export' if export else 'supply to SEZ unit/developer for authorised operations'
+        return f'Supply meant for {what} under LUT No. {company.lut_number} without payment of IGST.'
 
     def get_supply_type(self, obj):
         company = getattr(obj.user, 'user_company', None) if obj.user_id else None
@@ -428,7 +459,8 @@ class InvoiceSerializerForCSV(serializers.ModelSerializer):
 
     def get_taxable_amount(self, obj):
         try:
-            return float(obj.total_final_amount or 0) - float(obj.gst_final_amount or 0)
+            from invoice_api.gst import taxable_value
+            return float(taxable_value(obj.total_final_amount, obj.gst_final_amount, obj.reverse_charge))
         except:
             return 0
 

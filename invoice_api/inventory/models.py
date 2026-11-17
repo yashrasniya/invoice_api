@@ -60,6 +60,9 @@ class Product(SoftDeleteModel):
                                 help_text='HSN (goods) or SAC (services): 4, 6 or 8 digits')
     unit = models.CharField(max_length=3, blank=True, default='',
                             help_text='GST unit quantity code, e.g. NOS, KGS, LTR')
+    tax_category = models.CharField(max_length=10, default='taxable',
+                                    choices=[('taxable', 'Taxable'), ('nil', 'Nil-rated'),
+                                             ('exempt', 'Exempt'), ('non_gst', 'Non-GST supply')])
     current_stock = models.IntegerField(default=0)
     reorder_level = models.IntegerField(default=10)
     created_at = models.DateTimeField(auto_now_add=True)

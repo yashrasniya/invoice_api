@@ -1,4 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
+import type { TaxCategory } from '@/constants/gst';
 import api, { errorMessage } from './api';
 import { addMovement } from './inventory';
 import { getToken } from './token-storage';
@@ -20,7 +21,7 @@ export type Column = {
 };
 
 export type LineProperty = { id: number; value: string | null; new_product_in_frontend: Column };
-export type LineItem = { id: number; product_properties: LineProperty[]; gst_amount: string; total_amount: string };
+export type LineItem = { id: number; product_properties: LineProperty[]; gst_amount: string; total_amount: string; tax_category?: TaxCategory };
 
 export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'overdue';
 export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'cheque' | 'card' | 'other';
@@ -44,6 +45,7 @@ export type Invoice = {
   due_date: string | null;
   /** GST state code of the place of supply; null means "the customer's state" */
   place_of_supply: number | null;
+  reverse_charge?: boolean;
   /** the customer's state code, when they have one */
   receiver_state_code: number | null;
   customer_notes: string;
@@ -90,6 +92,8 @@ export type NewLine = {
   values: Record<number, string>;
   /** set when the line was filled from an inventory product; stock is deducted on save */
   inventoryProductId?: number;
+  /** what a 0% line is (GSTR-1 Table 8); taxed lines are always 'taxable' */
+  taxCategory?: TaxCategory;
 };
 
 export type InvoiceInput = {
@@ -102,6 +106,8 @@ export type InvoiceInput = {
   payment_method?: PaymentMethod | null;
   due_date?: string | null;
   place_of_supply?: number | null;
+  /** the recipient pays the GST; the invoice total leaves it out */
+  reverse_charge?: boolean;
   customer_notes?: string;
   terms?: string;
 };
@@ -138,7 +144,8 @@ export async function addLineItem(invoiceId: number, line: NewLine, columns: Col
   const calc = calculateLine(columns.map((c) => ({ column: c, value: line.values[c.id] ?? '' })), columns);
   const amounts = { gst_amount: calc.gst_amount.toFixed(2), total_amount: calc.total_amount.toFixed(2) };
 
-  const { data: product } = await api.post<{ id: number }>('product/', { product_properties: '', ...amounts });
+  const tax_category = line.taxCategory ?? 'taxable';
+  const { data: product } = await api.post<{ id: number }>('product/', { product_properties: '', tax_category, ...amounts });
   await api.post(`invoice/${invoiceId}/product/add/`, { product_id: product.id });
 
   const ids: number[] = [];
@@ -149,7 +156,7 @@ export async function addLineItem(invoiceId: number, line: NewLine, columns: Col
     });
     ids.push(data.id);
   }
-  await api.post(`product/${product.id}/update/`, { product_properties: ids.join(','), ...amounts });
+  await api.post(`product/${product.id}/update/`, { product_properties: ids.join(','), tax_category, ...amounts });
   return product.id;
 }
 
@@ -188,7 +195,7 @@ export const lineValues = (line: LineItem): Record<number, string> =>
  * a column the line never had a value for (added to the company's config later) gets a new property
  * attached. The line's amounts are recomputed from the new values.
  */
-export async function updateLineItem(line: LineItem, values: Record<number, string>, columns: Column[]) {
+export async function updateLineItem(line: LineItem, values: Record<number, string>, columns: Column[], taxCategory?: TaxCategory) {
   const calc = calculateLine(columns.map((c) => ({ column: c, value: values[c.id] ?? '' })), columns);
   const amounts = { gst_amount: calc.gst_amount.toFixed(2), total_amount: calc.total_amount.toFixed(2) };
 
@@ -203,7 +210,10 @@ export async function updateLineItem(line: LineItem, values: Record<number, stri
       attach.push(data.id);
     }
   }
-  await api.post(`product/${line.id}/update/`, { ...(attach.length ? { product_properties: attach.join(',') } : {}), ...amounts });
+  await api.post(`product/${line.id}/update/`, {
+    ...(attach.length ? { product_properties: attach.join(',') } : {}),
+    tax_category: taxCategory ?? line.tax_category ?? 'taxable', ...amounts,
+  });
 }
 
 export const removeLineItem = (productId: number) => api.delete(`product/${productId}/update/`);

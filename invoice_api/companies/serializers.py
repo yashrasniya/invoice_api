@@ -16,7 +16,8 @@ class CompanySerializer(serializers.ModelSerializer):
             'gst_number',
             'phone_number',
             'state',
-            'state_code'
+            'state_code',
+            'gst_treatment',
         )
         extra_kwargs = {
             "name": {"required": True, "allow_null": False},
@@ -67,7 +68,8 @@ class VendorSerializer(serializers.ModelSerializer):
             'phone_number',
             'email',
             'state',
-            'state_code'
+            'state_code',
+            'gst_treatment',
         )
         extra_kwargs = {
             "name": {"required": True, "allow_null": False},

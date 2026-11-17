@@ -570,7 +570,10 @@ class FillValue:
         self.raw_footer_data["total_amount_with_out_gst"] = round(total_taxable_amount, 2)
         self.raw_footer_data["total_taxable_amount_with_extra_non_gst"] = round(total_taxable_amount_with_extra_non_gst, 2)
         self.raw_footer_data["gst_amount"] = round(total_gst_amount_acc, 2)
-        self.raw_footer_data["total_amount_with_gst"] = round(total_taxable_amount + total_gst_amount_acc + total_extra_cal_acc, 2)
+        # reverse charge: the recipient pays the GST, so it isn't in the amount due
+        rcm = self.data.get('reverse_charge') == 'Yes'
+        self.raw_footer_data["total_amount_with_gst"] = round(
+            total_taxable_amount + (0 if rcm else total_gst_amount_acc) + total_extra_cal_acc, 2)
         self.raw_footer_data["total_amount_in_text"] = num2words(round(self.raw_footer_data["total_amount_with_gst"], 2))
         # CGST+SGST for intra-state, IGST for inter-state (was always halved)
         self.raw_footer_data.update(tax_heads(

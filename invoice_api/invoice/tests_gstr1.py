@@ -51,7 +51,10 @@ class Gstr1Tests(TestCase):
     def setUp(self):
         cache.clear()
         self.company = UserCompanies.objects.create(
-            company_name='Seller', is_varified=True, state_code=29, company_gst_number=SELLER)
+            company_name='Seller', is_varified=True, state_code=29, company_gst_number=SELLER,
+            # exports below go out without IGST, which needs a LUT
+            lut_number='AD290326000001X', lut_valid_from=datetime.date(2020, 4, 1),
+            lut_valid_to=datetime.date(2099, 3, 31))
         self.user = User.objects.create_user(username='g1', email='g@e.com', password='pw-123456')
         self.user.user_company = self.company
         self.user.is_company_admin = True

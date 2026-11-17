@@ -28,6 +28,9 @@ class Invoice(SoftDeleteModel):
     place_of_supply = models.PositiveSmallIntegerField(
         null=True, blank=True, help_text="GST state code of the place of supply")
     # shown to the customer on the invoice (`notes` is taken: credit/debit notes' reverse accessor)
+    # Reverse charge: the recipient pays the GST. gst_final_amount is that
+    # tax; total_final_amount is what is payable to the supplier, without it.
+    reverse_charge = models.BooleanField(default=False)
     customer_notes = models.TextField(blank=True, default='')
     terms = models.TextField(blank=True, default='')
 
@@ -73,6 +76,14 @@ class Invoice(SoftDeleteModel):
         if not self.date:
             self.date = timezone.now().date()
         super().save(*args, **kwargs)
+TAX_CATEGORY_CHOICES = [
+    ('taxable', 'Taxable'),
+    ('nil', 'Nil-rated'),
+    ('exempt', 'Exempt'),
+    ('non_gst', 'Non-GST supply'),
+]
+
+
 class Product(models.Model):
     # Who created the line item. Tenant scoping goes through this (via the
     # company of the creator, the same rule as invoices) because a line item
@@ -83,6 +94,9 @@ class Product(models.Model):
     product_properties = models.ManyToManyField('Product_properties')  # connect to Product_property model
     gst_amount = models.DecimalField(max_digits=20,decimal_places=2)
     total_amount = models.DecimalField(max_digits=20,decimal_places=2)
+    # For a 0% line: nil-rated, exempt or non-GST (GSTR-1 Table 8 columns).
+    # A 0% "taxable" line is nil-rated, which is what a 0% rate means.
+    tax_category = models.CharField(max_length=10, default='taxable', choices=TAX_CATEGORY_CHOICES)
     image = models.ForeignKey('ProductImage', on_delete=models.SET_NULL, null=True, blank=True,
                               related_name='line_items')
 

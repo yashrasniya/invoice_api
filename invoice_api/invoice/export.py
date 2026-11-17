@@ -276,7 +276,10 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             
             total_amount_with_gst = float(invoice_data.get('total_final_amount') or 0)
             total_gst_amount_acc = float(invoice_data.get('gst_final_amount') or 0)
-            total_taxable_amount = total_amount_with_gst - total_gst_amount_acc
+            # reverse charge: the stored total already excludes the tax the
+            # recipient pays, so it *is* the taxable value
+            rcm = invoice_data.get('reverse_charge') == 'Yes'
+            total_taxable_amount = total_amount_with_gst if rcm else total_amount_with_gst - total_gst_amount_acc
 
             footer_data = {}
             footer_data["total_amount_with_out_gst"] = round(total_taxable_amount, 2)

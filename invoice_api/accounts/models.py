@@ -98,6 +98,12 @@ class UserCompanies(models.Model):
     company_name = models.CharField(max_length=100, blank=True, null=True)
     company_address = models.CharField(max_length=255, blank=True, null=True)
     company_gst_number = models.CharField(max_length=30, blank=True, null=True)
+    # Letter of Undertaking: lets exports and SEZ supplies go out without
+    # paying IGST. Filed once per financial year on the GST portal.
+    lut_number = models.CharField(max_length=30, blank=True, default='',
+                                  help_text='LUT ARN / reference number')
+    lut_valid_from = models.DateField(null=True, blank=True)
+    lut_valid_to = models.DateField(null=True, blank=True)
     state = models.CharField(max_length=50, blank=True, null=True)
     state_code = models.IntegerField(null=True, blank=True)
     company_email_id = models.EmailField(max_length=254, blank=True, null=True)

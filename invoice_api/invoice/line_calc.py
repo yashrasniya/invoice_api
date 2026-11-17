@@ -114,13 +114,17 @@ def recompute_product(product):
 
 
 def recompute_invoice_totals(invoice):
-    """Invoice totals = sum of its lines. An invoice with no lines (header-only
-    bills, e.g. a scanned purchase) keeps the totals it was given."""
+    """Invoice totals = sum of its lines (minus their GST on a reverse-charge
+    invoice). An invoice with no lines (header-only bills, e.g. a scanned
+    purchase) keeps the totals it was given."""
     lines = list(invoice.products.values_list('total_amount', 'gst_amount'))
     if not lines:
         return False
     total = sum((Decimal(t or 0) for t, _ in lines), Decimal('0')).quantize(CENT)
     gst = sum((Decimal(g or 0) for _, g in lines), Decimal('0')).quantize(CENT)
+    if invoice.reverse_charge:
+        # the recipient pays the GST: the supplier is owed the lines without it
+        total -= gst
     if invoice.total_final_amount == total and invoice.gst_final_amount == gst:
         return False
     invoice.total_final_amount, invoice.gst_final_amount = total, gst

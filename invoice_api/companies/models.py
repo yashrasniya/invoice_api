@@ -103,6 +103,17 @@ class CompanySubscription(models.Model):
         return False
 
 
+GST_TREATMENT_CHOICES = [
+    ("registered", "Registered business (regular)"),
+    ("composition", "Registered business (composition)"),
+    ("unregistered", "Unregistered business"),
+    ("consumer", "Consumer"),
+    ("overseas", "Overseas"),
+    ("sez", "Special Economic Zone"),
+    ("deemed_export", "Deemed export"),
+]
+
+
 class Customers(SoftDeleteModel):
     # Basic Info
     name = models.CharField(max_length=255, default="Unnamed Company")
@@ -123,6 +134,9 @@ class Customers(SoftDeleteModel):
 
     # Govt Identifiers
     gst_number = models.CharField(max_length=15, blank=True, default="", help_text="GSTIN (15 characters)")
+    # How GST applies to this party; decides the GSTR-1 table. Blank on rows
+    # saved before it existed, then derived from the GSTIN (see gst_utils).
+    gst_treatment = models.CharField(max_length=20, blank=True, default="", choices=GST_TREATMENT_CHOICES)
     pan_number = models.CharField(max_length=10, blank=True, default="")
 
     # Banking Details
@@ -175,6 +189,9 @@ class Vendor(SoftDeleteModel):
 
     # Govt Identifiers
     gst_number = models.CharField(max_length=15, blank=True, default="", help_text="GSTIN (15 characters)")
+    # How GST applies to this party; decides the GSTR-1 table. Blank on rows
+    # saved before it existed, then derived from the GSTIN (see gst_utils).
+    gst_treatment = models.CharField(max_length=20, blank=True, default="", choices=GST_TREATMENT_CHOICES)
     pan_number = models.CharField(max_length=10, blank=True, default="")
 
     # Banking Details

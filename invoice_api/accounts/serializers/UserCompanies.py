@@ -29,11 +29,27 @@ class UserCompaniesSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = self._resolve_gst_and_state(attrs)
+        self._check_lut(attrs)
         upi_id = attrs.get('upi_id', getattr(self.instance, 'upi_id', None))
         if attrs.get('show_upi_qr') and not upi_id:
             raise serializers.ValidationError(
                 {'upi_id': "Add a UPI id before enabling the invoice QR code."})
         return attrs
+
+    def _check_lut(self, attrs):
+        """A LUT needs its number and the period it covers (one financial year)."""
+        cur = lambda k: attrs[k] if k in attrs else getattr(self.instance, k, None)
+        number = (cur('lut_number') or '').strip()
+        start, end = cur('lut_valid_from'), cur('lut_valid_to')
+        if 'lut_number' in attrs:
+            attrs['lut_number'] = number
+        if not (number or start or end):
+            return
+        if not (number and start and end):
+            raise serializers.ValidationError(
+                {'lut_number': 'Enter the LUT number and both dates it is valid for.'})
+        if end < start:
+            raise serializers.ValidationError({'lut_valid_to': "The end date can't be before the start date."})
 
     def _resolve_gst_and_state(self, attrs):
         """GST number is optional; the state is not.

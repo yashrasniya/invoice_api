@@ -9,7 +9,7 @@ import { Chip, Centered } from '@/components/ui/bits';
 import { LineItemModal } from '@/components/line-item-modal';
 import { PartyPicker } from '@/components/party-picker';
 import { StatePicker } from '@/components/state-picker';
-import { PLACE_OF_SUPPLY_STATES } from '@/constants/gst';
+import { PLACE_OF_SUPPLY_STATES, TaxCategory } from '@/constants/gst';
 import { Palette } from '@/constants/theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
@@ -86,6 +86,8 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
   const [removedIds, setRemovedIds] = useState<number[]>([]);
   // existing lines the user changed: productId -> new values by column id (applied on save)
   const [edited, setEdited] = useState<Record<number, Record<number, string>>>({});
+  const [editedCategory, setEditedCategory] = useState<Record<number, TaxCategory>>({});
+  const [reverseCharge, setReverseCharge] = useState<boolean>(invoice?.reverse_charge ?? copyFrom?.reverse_charge ?? false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [pickCustomer, setPickCustomer] = useState(false);
   const [showDate, setShowDate] = useState(false);
@@ -117,8 +119,10 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
       }
       return { total: a.total + Number(p.total_amount || 0), gst: a.gst + Number(p.gst_amount || 0) };
     }, { total: 0, gst: 0 });
-    return { total: fresh.total + kept.total, gst: fresh.gst + kept.gst };
-  }, [newLines, columns, keptExisting, edited]);
+    const gst = fresh.gst + kept.gst;
+    // reverse charge: the buyer pays the GST, so it isn't part of the amount due
+    return { total: fresh.total + kept.total - (reverseCharge ? gst : 0), gst };
+  }, [newLines, columns, keptExisting, edited, reverseCharge]);
 
   const lineCount = newLines.length + keptExisting.length;
 
@@ -131,6 +135,7 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
     ...(show('payment_method') ? { payment_method: method } : {}),
     ...(show('payment_terms') ? { due_date: due } : {}),
     ...(showPos ? { place_of_supply: pos } : {}),
+    reverse_charge: reverseCharge,
     ...(show('customer_notes') ? { customer_notes: notes } : {}),
     ...(show('terms') ? { terms } : {}),
   });
@@ -163,7 +168,7 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
         id = invoice.id;
         await updateInvoice(id, buildInput(customer.id), type);
         for (const pid of removedIds) await removeLineItem(pid);
-        for (const p of keptExisting) if (edited[p.id]) await updateLineItem(p, edited[p.id], columns);
+        for (const p of keptExisting) if (edited[p.id]) await updateLineItem(p, edited[p.id], columns, editedCategory[p.id]);
         for (const l of newLines) await addLineItem(id, l, columns);
         if (removedIds.length || newLines.length || Object.keys(edited).length) await syncTotals(id);
         warnings = await deductStock(id, newLines, columns);
@@ -287,6 +292,18 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
           </>
         )}
 
+        <Text style={styles.label}>Reverse charge</Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6 }}>
+          <Chip label="No" active={!reverseCharge} onPress={() => setReverseCharge(false)} />
+          <Chip label="Yes" active={reverseCharge} onPress={() => setReverseCharge(true)} />
+        </View>
+        <Text style={[styles.hint2, { marginBottom: 14 }]}>
+          {reverseCharge
+            ? (purchase ? 'You pay this GST to the government; you can claim it as input credit.'
+              : 'Your customer pays this GST to the government. The invoice total leaves it out.')
+            : 'Yes only for services notified under reverse charge (e.g. goods transport, legal).'}
+        </Text>
+
         {show('payment_status') && (
           <>
             <Text style={styles.label}>Payment status</Text>
@@ -365,7 +382,7 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
 
       <View style={styles.footer}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.footLabel}>GST {money(totals.gst)}</Text>
+          <Text style={styles.footLabel}>{reverseCharge ? `GST ${money(totals.gst)} · paid by buyer` : `GST ${money(totals.gst)}`}</Text>
           <Text style={styles.footTotal}>{money(totals.total)}</Text>
         </View>
         <Button title={editing ? 'Save changes' : purchase ? 'Save bill' : 'Create invoice'} onPress={save} loading={saving} style={{ width: 180 }} />
@@ -379,8 +396,13 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
           <LineItemModal
             visible columns={columns} title="Edit item" saveLabel="Save item"
             initialValues={edited[line.id] ?? lineValues(line)}
+            initialCategory={editedCategory[line.id] ?? line.tax_category}
             onClose={() => setEditingId(null)}
-            onSave={(l) => { setEdited((x) => ({ ...x, [line.id]: l.values })); setEditingId(null); }}
+            onSave={(l) => {
+              setEdited((x) => ({ ...x, [line.id]: l.values }));
+              setEditedCategory((x) => ({ ...x, [line.id]: l.taxCategory ?? 'taxable' }));
+              setEditingId(null);
+            }}
           />
         ) : null;
       })()}

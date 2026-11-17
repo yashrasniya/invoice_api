@@ -11,14 +11,16 @@ import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
 import { StatePicker } from '@/components/state-picker';
-import { GST_STATES, gstinError, stateFromGstin } from '@/constants/gst';
+import { GST_STATES, PLACE_OF_SUPPLY_STATES, gstinError, stateFromGstin, treatmentFor, TREATMENTS_WITH_GSTIN, TREATMENTS_WITHOUT_GSTIN } from '@/constants/gst';
+import { Chip } from '@/components/ui/bits';
 import { deleteParty, getParty, LABEL, Party, PartyInput, PartyKind, PERMISSION, saveParty } from '@/services/parties';
 
-const EMPTY: PartyInput = { name: '', address: '', gst_number: '', state: '', state_code: '', phone_number: '' };
+const EMPTY: PartyInput = { name: '', address: '', gst_number: '', state: '', state_code: '', phone_number: '', gst_treatment: '' };
 
 const toForm = (p: Party): PartyInput => ({
   name: p.name, address: p.address ?? '', gst_number: p.gst_number ?? '', state: p.state ?? '',
   state_code: p.state_code != null ? String(p.state_code) : '', phone_number: p.phone_number ?? '',
+  gst_treatment: p.gst_treatment ?? '',
 });
 
 const open = (url: string) => Linking.openURL(url).catch(() => Alert.alert('Could not open', 'No app is available to handle this.'));
@@ -68,7 +70,8 @@ export default function PartyScreen() {
   // A complete, valid GSTIN fixes the state: a business has one GST number per state.
   const setGst = (v: string) => setForm((f) => {
     const st = stateFromGstin(v);
-    return st && !gstinError(v) ? { ...f, gst_number: v, state: st.name, state_code: String(st.code) } : { ...f, gst_number: v };
+    const next = st && !gstinError(v) ? { ...f, gst_number: v, state: st.name, state_code: String(st.code) } : { ...f, gst_number: v };
+    return { ...next, gst_treatment: treatmentFor(f.gst_treatment, !!v.trim()) };
   });
   const gstComplete = form.gst_number.trim().length >= 15;
   const gstProblem = gstComplete ? gstinError(form.gst_number) : null;
@@ -163,8 +166,17 @@ export default function PartyScreen() {
               <Field label="GST number" value={form.gst_number} onChangeText={setGst} autoCapitalize="characters" autoCorrect={false}
                 maxLength={15} error={gstProblem ?? undefined} />
               <Field label="Address" value={form.address} onChangeText={set('address')} multiline />
+              <Text style={styles.treatLabel}>GST treatment</Text>
+              <View style={styles.treatChips}>
+                {(form.gst_number.trim() ? TREATMENTS_WITH_GSTIN : TREATMENTS_WITHOUT_GSTIN).map((t) => (
+                  <Chip key={t.value} label={t.label} active={treatmentFor(form.gst_treatment, !!form.gst_number.trim()) === t.value}
+                    onPress={() => setForm((f) => ({ ...f, gst_treatment: t.value,
+                      ...(t.value === 'overseas' ? { state_code: '96', state: 'Other Countries' } : {}) }))} />
+                ))}
+              </View>
               <StatePicker label="State" value={form.state_code ? Number(form.state_code) : null}
                 onChange={(code) => setForm((f) => ({ ...f, state_code: String(code), state: GST_STATES.find((s) => s.code === code)?.name ?? f.state }))}
+                states={PLACE_OF_SUPPLY_STATES}
                 locked={!!gstState} hint={gstState ? 'Taken from the GST number.' : 'Decides CGST + SGST or IGST on invoices.'} />
               {!isNew && <Button title={`Delete ${kind}`} variant="danger" onPress={remove} style={{ marginTop: 12 }} />}
             </>
@@ -205,6 +217,8 @@ export default function PartyScreen() {
 }
 
 const styles = StyleSheet.create({
+  treatLabel: { fontSize: 14, fontWeight: '700', color: Palette.label, marginBottom: 8, marginLeft: 4 },
+  treatChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 },
   scroll: { padding: 24 },
   row: { flexDirection: 'row', gap: 12 },
   headerBtn: { fontSize: 16, fontWeight: '700', color: Palette.primary },
