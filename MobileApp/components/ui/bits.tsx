@@ -1,69 +1,79 @@
 import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import type { PaymentStatus } from '@/services/invoices';
 import { STATUS_LABEL } from '@/services/invoices';
 
-const STATUS_COLOR: Record<PaymentStatus, { bg: string; fg: string }> = {
-  paid: { bg: '#dcfce7', fg: '#166534' },
-  unpaid: { bg: '#fef3c7', fg: '#92400e' },
-  partially_paid: { bg: '#dbeafe', fg: '#1e40af' },
-  overdue: { bg: '#fee2e2', fg: '#991b1b' },
-};
+const statusColor = (theme: Theme): Record<PaymentStatus, { bg: string; fg: string }> => ({
+  paid: { bg: theme.successSoft, fg: theme.successText },
+  unpaid: { bg: theme.warningSoft, fg: theme.warningText },
+  partially_paid: { bg: theme.infoSoft, fg: theme.infoText },
+  overdue: { bg: theme.dangerSoft, fg: theme.dangerText },
+});
 
 export function StatusBadge({ status }: { status: PaymentStatus }) {
-  const c = STATUS_COLOR[status] ?? STATUS_COLOR.unpaid;
+  const theme = useTheme();
+  const styles = useThemedStyles(makeBits);
+  const c = statusColor(theme)[status] ?? statusColor(theme).unpaid;
   return (
-    <View style={[bits.badge, { backgroundColor: c.bg }]} accessible accessibilityLabel={`Status: ${STATUS_LABEL[status] ?? status}`}>
-      <Text style={[bits.badgeText, { color: c.fg }]}>{STATUS_LABEL[status] ?? status}</Text>
+    <View style={[styles.badge, { backgroundColor: c.bg }]} accessible accessibilityLabel={`Status: ${STATUS_LABEL[status] ?? status}`}>
+      <Text style={[styles.badgeText, { color: c.fg }]}>{STATUS_LABEL[status] ?? status}</Text>
     </View>
   );
 }
 
 export function Chip({ label, active, onPress }: { label: string; active?: boolean; onPress: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeBits);
   return (
-    <TouchableOpacity onPress={onPress} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: !!active }} style={[bits.chip, active && bits.chipActive]}>
-      <Text style={[bits.chipText, active && { color: Palette.white }]}>{label}</Text>
+    <TouchableOpacity onPress={onPress} accessibilityRole="button" accessibilityLabel={label} accessibilityState={{ selected: !!active }} style={[styles.chip, active && styles.chipActive]}>
+      <Text style={[styles.chipText, active && { color: theme.onPrimary }]}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 export function EmptyState({ icon, title, hint }: { icon: keyof typeof Ionicons.glyphMap; title: string; hint?: string }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeBits);
   return (
-    <View style={bits.empty}>
-      <Ionicons name={icon} size={44} color={Palette.textFaint} />
-      <Text style={bits.emptyTitle}>{title}</Text>
-      {!!hint && <Text style={bits.emptyHint}>{hint}</Text>}
+    <View style={styles.empty}>
+      <Ionicons name={icon} size={44} color={theme.textFaint} />
+      <Text style={styles.emptyTitle}>{title}</Text>
+      {!!hint && <Text style={styles.emptyHint}>{hint}</Text>}
     </View>
   );
 }
 
 export function Centered({ children }: { children?: React.ReactNode }) {
-  return <View style={bits.center}>{children ?? <ActivityIndicator size="large" color={Palette.primary} />}</View>;
+  const theme = useTheme();
+  const styles = useThemedStyles(makeBits);
+  return <View style={styles.center}>{children ?? <ActivityIndicator size="large" color={theme.primary} />}</View>;
 }
 
 export function Fab({ onPress, icon = 'add', label = 'Add' }: { onPress: () => void; icon?: keyof typeof Ionicons.glyphMap; label?: string }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeBits);
   return (
-    <TouchableOpacity style={bits.fab} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
-      <Ionicons name={icon} size={28} color={Palette.white} />
+    <TouchableOpacity style={styles.fab} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
+      <Ionicons name={icon} size={28} color={theme.onPrimary} />
     </TouchableOpacity>
   );
 }
 
-export const bits = StyleSheet.create({
+const makeBits = (t: Theme) => StyleSheet.create({
   badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, alignSelf: 'flex-start' },
   badgeText: { fontSize: 12, fontWeight: '700' },
-  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: Palette.white, borderWidth: 1, borderColor: Palette.border },
-  chipActive: { backgroundColor: Palette.primary, borderColor: Palette.primary },
-  chipText: { fontSize: 14, fontWeight: '600', color: Palette.label },
+  chip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 999, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  chipActive: { backgroundColor: t.primary, borderColor: t.primary },
+  chipText: { fontSize: 14, fontWeight: '600', color: t.label },
   empty: { alignItems: 'center', padding: 40, gap: 8 },
-  emptyTitle: { fontSize: 17, fontWeight: '700', color: Palette.text },
-  emptyHint: { fontSize: 14, color: Palette.textMuted, textAlign: 'center' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: Palette.surface },
+  emptyTitle: { fontSize: 17, fontWeight: '700', color: t.text },
+  emptyHint: { fontSize: 14, color: t.textMuted, textAlign: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: t.background },
   fab: {
     position: 'absolute', right: 20, bottom: 24, width: 58, height: 58, borderRadius: 29,
-    backgroundColor: Palette.primary, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: t.primary, alignItems: 'center', justifyContent: 'center',
     shadowColor: '#000', shadowOpacity: 0.25, shadowRadius: 8, shadowOffset: { width: 0, height: 4 }, elevation: 6,
   },
 });

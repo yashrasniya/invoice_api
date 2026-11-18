@@ -68,15 +68,21 @@ class TemplateProps(dict):
     def __missing__(self, key):
         return ''
 
-def pdf_generator(qs, request, return_bytes=False,template_id=None):
-    yaml_obj = Yaml.objects.filter(company=request.user.user_company.id)
+def pick_template(company, template_id=None):
+    """The template to render with: the one asked for (if it belongs to the
+    company), else the company default, else its oldest template. None when
+    the company has none (or the requested id isn't one of its own)."""
+    templates = Yaml.objects.filter(company=company)
     if template_id:
-        yaml_obj = yaml_obj.filter(id = template_id)
-    if not yaml_obj:
+        return templates.filter(id=template_id).first()
+    return templates.order_by('-is_default', 'id').first()
+
+
+def pdf_generator(qs, request, return_bytes=False,template_id=None):
+    template_obj = pick_template(request.user.user_company, template_id)
+    if template_obj is None:
         return Response({"message": "configuration not found"}, 404)
-        
-    template_obj = yaml_obj.first()
-    
+
     if template_obj.is_html:
         import re
         from django.template import Context, Template, TemplateSyntaxError
@@ -397,7 +403,6 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             ser_obj = InvoiceSerializerForPDF(obj)
             loger.debug(f"start working on {obj}")
             ser_obj.Meta.depth = 1
-            template_obj = yaml_obj.first()
             template = YamalReader(template_obj.yaml_file.file,auto_scale=template_obj.auto_scale)
             fill_obj = FillValue(ser_obj.data, template)
             print(request.user.user_company.company_logo)
@@ -409,8 +414,8 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             pdf_name = "GST Invoice"
 
         bill_template = ''
-        if yaml_obj.first().pdf_template:
-            bill_template = str(yaml_obj.first().pdf_template.file)
+        if template_obj.pdf_template:
+            bill_template = str(template_obj.pdf_template.file)
         pdf_data = Submit(file_data, bill_image=bill_template,pdf_name=pdf_name).draw_header_data()
         loger.debug(f"{pdf_name} Done {len(pdf_data)}")
         pdf_file = io.BytesIO(pdf_data)

@@ -5,7 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Centered, Chip } from '@/components/ui/bits';
 import { Field } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { errorMessage } from '@/services/api';
 import { hsnError, ZERO_RATE_CATEGORIES } from '@/constants/gst';
 import {
@@ -18,6 +18,8 @@ const EMPTY: ProductInput = {
 };
 
 export default function InventoryProductScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { id: rawId, sku } = useLocalSearchParams<{ id: string; sku?: string }>();
   const isNew = rawId === 'new';
   const id = isNew ? undefined : Number(rawId);
@@ -83,13 +85,13 @@ export default function InventoryProductScreen() {
   return (
     <>
       <Stack.Screen options={{ title: isNew ? 'New product' : p?.name ?? 'Product' }} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: Palette.white }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.surface }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {p && (
-            <View style={[styles.stockCard, isLowStock(p) && { backgroundColor: '#fef2f2' }]}>
+            <View style={[styles.stockCard, isLowStock(p) && { backgroundColor: theme.dangerSoft }]}>
               <Text style={styles.stockLabel}>Current stock</Text>
-              <Text style={[styles.stockNum, isLowStock(p) && { color: Palette.danger }]}>{p.current_stock}</Text>
-              {isLowStock(p) && <Text style={{ color: Palette.danger, fontWeight: '600' }}>At or below reorder level ({p.reorder_level})</Text>}
+              <Text style={[styles.stockNum, isLowStock(p) && { color: theme.danger }]}>{p.current_stock}</Text>
+              {isLowStock(p) && <Text style={{ color: theme.danger, fontWeight: '600' }}>At or below reorder level ({p.reorder_level})</Text>}
               <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
                 <Button title="Stock in" variant="outline" onPress={() => setAdjust('IN')} style={{ flex: 1, height: 46 }} />
                 <Button title="Stock out" variant="outline" onPress={() => setAdjust('OUT')} style={{ flex: 1, height: 46 }} />
@@ -143,7 +145,7 @@ export default function InventoryProductScreen() {
               {(movements.data ?? []).length === 0 && <Text style={styles.empty}>No movements yet.</Text>}
               {(movements.data ?? []).slice(0, 30).map((m) => (
                 <View key={m.id} style={styles.move}>
-                  <Text style={[styles.moveQty, { color: m.movement_type === 'IN' ? Palette.success : Palette.danger }]}>
+                  <Text style={[styles.moveQty, { color: m.movement_type === 'IN' ? theme.success : theme.danger }]}>
                     {m.movement_type === 'IN' ? '+' : '−'}{m.quantity}
                   </Text>
                   <View style={{ flex: 1 }}>
@@ -176,6 +178,8 @@ export default function InventoryProductScreen() {
 function AdjustModal({ type, productName, onClose, onSubmit }: {
   type: 'IN' | 'OUT'; productName: string; onClose: () => void; onSubmit: (qty: number, notes: string) => Promise<void>;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [qty, setQty] = useState('');
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
@@ -197,7 +201,7 @@ function AdjustModal({ type, productName, onClose, onSubmit }: {
             <Field label="Note (optional)" value={notes} onChangeText={setNotes} />
             <Button title="Update stock" onPress={go} loading={busy} />
             <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', padding: 14 }}>
-              <Text style={{ color: Palette.textMuted, fontWeight: '600' }}>Cancel</Text>
+              <Text style={{ color: theme.textMuted, fontWeight: '600' }}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </KeyboardAvoidingView>
@@ -206,21 +210,21 @@ function AdjustModal({ type, productName, onClose, onSubmit }: {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   scroll: { padding: 20, paddingBottom: 48 },
-  stockCard: { backgroundColor: '#f0fdf4', borderRadius: 16, padding: 16, marginBottom: 20, alignItems: 'center' },
-  stockLabel: { fontSize: 13, color: Palette.textMuted, fontWeight: '600' },
-  stockNum: { fontSize: 40, fontWeight: '800', color: Palette.success },
-  label: { fontSize: 14, fontWeight: '700', color: Palette.label, marginBottom: 8, marginLeft: 4 },
+  stockCard: { backgroundColor: t.successSoft, borderRadius: 16, padding: 16, marginBottom: 20, alignItems: 'center' },
+  stockLabel: { fontSize: 13, color: t.textMuted, fontWeight: '600' },
+  stockNum: { fontSize: 40, fontWeight: '800', color: t.success },
+  label: { fontSize: 14, fontWeight: '700', color: t.label, marginBottom: 8, marginLeft: 4 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   row: { flexDirection: 'row', gap: 12 },
-  section: { fontSize: 18, fontWeight: '800', color: Palette.text, marginTop: 28, marginBottom: 8 },
-  empty: { color: Palette.textMuted },
-  move: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Palette.border },
+  section: { fontSize: 18, fontWeight: '800', color: t.text, marginTop: 28, marginBottom: 8 },
+  empty: { color: t.textMuted },
+  move: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border },
   moveQty: { fontSize: 18, fontWeight: '800', width: 56 },
-  moveNote: { fontSize: 14, color: Palette.text },
-  moveDate: { fontSize: 12, color: Palette.textMuted, marginTop: 2 },
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: { backgroundColor: Palette.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 32 },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: Palette.text, marginBottom: 18 },
+  moveNote: { fontSize: 14, color: t.text },
+  moveDate: { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: t.overlay },
+  sheet: { backgroundColor: t.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 32 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: t.text, marginBottom: 18 },
 });

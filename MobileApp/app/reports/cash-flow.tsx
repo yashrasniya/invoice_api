@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart, Legend } from '@/components/charts';
 import { Kpi, KpiGrid, PeriodBar, ReportGate, Section } from '@/components/report-ui';
 import { Centered, EmptyState } from '@/components/ui/bits';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
 import { fetchCashFlow, Interval, rangeFor, RANGE_LABEL, RangePreset } from '@/services/reports';
@@ -16,6 +16,8 @@ const INTERVALS: { value: Interval; label: string }[] = [
 ];
 
 export default function CashFlowScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [preset, setPreset] = useState<RangePreset>('last_30');
   const [interval, setInterval] = useState<Interval>('daily');
   const range = rangeFor(preset);
@@ -37,17 +39,17 @@ export default function CashFlowScreen() {
           ) : (
             <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => { void q.refetch(); }} />}>
               <KpiGrid>
-                <Kpi label="Money in" value={money(inflow)} tone={Palette.success} />
-                <Kpi label="Money out" value={money(outflow)} tone={Palette.danger} />
-                <Kpi wide label="Net" value={money(net)} tone={net < 0 ? Palette.danger : Palette.success} />
+                <Kpi label="Money in" value={money(inflow)} tone={theme.success} />
+                <Kpi label="Money out" value={money(outflow)} tone={theme.danger} />
+                <Kpi wide label="Net" value={money(net)} tone={net < 0 ? theme.danger : theme.success} />
               </KpiGrid>
               <Section title="In vs out">
                 <BarChart
-                  colors={[Palette.success, Palette.danger]}
+                  colors={[theme.success, theme.danger]}
                   barWidth={interval === 'daily' ? 6 : 14}
                   data={rows.map((r) => ({ label: r.date.slice(interval === 'monthly' ? 0 : 5, interval === 'monthly' ? 7 : 10), values: [r.inflow, r.outflow] }))}
                 />
-                <Legend items={[{ label: 'In (sales)', color: Palette.success }, { label: 'Out (purchases)', color: Palette.danger }]} />
+                <Legend items={[{ label: 'In (sales)', color: theme.success }, { label: 'Out (purchases)', color: theme.danger }]} />
               </Section>
               <Text style={styles.note}>Based on invoice dates and totals, not on payments received.</Text>
             </ScrollView>
@@ -58,7 +60,7 @@ export default function CashFlowScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  note: { fontSize: 12, color: Palette.textMuted, textAlign: 'center' },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  note: { fontSize: 12, color: t.textMuted, textAlign: 'center' },
 });

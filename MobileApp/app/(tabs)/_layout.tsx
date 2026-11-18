@@ -3,13 +3,16 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 
 import { HapticTab } from '@/components/haptic-tab';
-import { Palette } from '@/constants/theme';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function TabLayout() {
+  const theme = useTheme();
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Palette.primary,
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.textMuted,
+        tabBarStyle: { backgroundColor: theme.surface, borderTopColor: theme.border },
         headerShown: false,
         // cast: expo-router's tab-button type differs slightly from react-navigation's that HapticTab is written against
         tabBarButton: HapticTab as never,

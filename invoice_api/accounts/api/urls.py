@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views_phone import PhoneLogin
 from . import views_authz, views_invites, views_dashboard, views_devices, views_account, views_onboarding
+from .views_gst_settings import CompanyGstSettingsView
 
 authz_router = DefaultRouter()
 authz_router.register(r'roles', views_authz.RoleViewSet, basename='authz-roles')
@@ -44,5 +45,6 @@ urlpatterns = [
     path('dashboard/', views_dashboard.Dashboard.as_view()),
     path('onboarding/', views_onboarding.Onboarding.as_view()),
     path('user-companies/', UserCompaniesViewSet.as_view()),
+    path('company/gst-settings/', CompanyGstSettingsView.as_view()),
     path('check-mobile/', CheckMobileNumber.as_view()),
 ]

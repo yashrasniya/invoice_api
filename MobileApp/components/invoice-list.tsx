@@ -4,7 +4,7 @@ import { router } from 'expo-router';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import { Centered, Chip, EmptyState, Fab, StatusBadge } from '@/components/ui/bits';
 import { GST_STATES } from '@/constants/gst';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan } from '@/hooks/use-access';
 import { isVisible } from '@/lib/header-config';
 import { money } from '@/lib/invoice-calc';
@@ -24,6 +24,8 @@ type Props = {
 };
 
 export function InvoiceList({ type, title, topInset = 0, header }: Props) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const purchase = type === 'purchase';
   const canCreate = useCan('invoice.create');
   const canView = useCan('invoice.view');
@@ -59,7 +61,7 @@ export function InvoiceList({ type, title, topInset = 0, header }: Props) {
         ? <EmptyState icon="alert-circle-outline" title="Couldn't load invoices" hint={errorMessage(q.error)} />
         : <EmptyState icon="document-text-outline" title={purchase ? 'No purchase bills' : 'No invoices'}
             hint={search || status ? 'Try a different filter.' : purchase ? 'Scan a bill or tap + to add one.' : 'Tap + to create your first invoice.'} />}
-      ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} color={Palette.primary} /> : undefined}
+      ListFooterComponent={q.isFetchingNextPage ? <ActivityIndicator style={{ margin: 16 }} color={theme.primary} /> : undefined}
       renderItem={({ item }) => {
         const note = showDue ? dueNote(item.due_date, item.payment_status !== 'paid' && Number(item.balance_due) > 0) : null;
         const state = showPlace && item.place_of_supply != null ? GST_STATES.find((s) => s.code === item.place_of_supply) : undefined;
@@ -94,7 +96,7 @@ export function InvoiceList({ type, title, topInset = 0, header }: Props) {
       <View style={[styles.header, { paddingTop: topInset + 12 }]}>
         {!!title && <Text style={styles.title}>{title}</Text>}
         <TextInput style={styles.search} placeholder={purchase ? 'Search bill number or vendor' : 'Search number or customer'}
-          placeholderTextColor={Palette.textFaint} value={search} onChangeText={setSearch} autoCapitalize="none" />
+          placeholderTextColor={theme.textFaint} value={search} onChangeText={setSearch} autoCapitalize="none" />
         <FlatList
           horizontal showsHorizontalScrollIndicator={false} data={FILTERS} keyExtractor={(f) => f || 'all'}
           contentContainerStyle={{ gap: 8, paddingTop: 12 }}
@@ -109,14 +111,14 @@ export function InvoiceList({ type, title, topInset = 0, header }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  header: { paddingHorizontal: 16, paddingBottom: 12, backgroundColor: Palette.white, borderBottomWidth: 1, borderBottomColor: Palette.border },
-  title: { fontSize: 26, fontWeight: '800', color: Palette.text, marginBottom: 12 },
-  search: { height: 44, borderRadius: 12, backgroundColor: Palette.surface, borderWidth: 1, borderColor: Palette.border, paddingHorizontal: 14, fontSize: 16, color: Palette.text },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Palette.white, borderRadius: 16, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: Palette.border },
-  name: { fontSize: 16, fontWeight: '700', color: Palette.text },
-  sub: { fontSize: 13, color: Palette.textMuted },
-  late: { color: Palette.danger, fontWeight: '700' },
-  amount: { fontSize: 16, fontWeight: '800', color: Palette.text },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  header: { paddingHorizontal: 16, paddingBottom: 12, backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border },
+  title: { fontSize: 26, fontWeight: '800', color: t.text, marginBottom: 12 },
+  search: { height: 44, borderRadius: 12, backgroundColor: t.isDark ? t.surfaceRaised : t.background, borderWidth: 1, borderColor: t.border, paddingHorizontal: 14, fontSize: 16, color: t.text },
+  card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: t.surface, borderRadius: 16, padding: 16, marginBottom: 10, borderWidth: 1, borderColor: t.border },
+  name: { fontSize: 16, fontWeight: '700', color: t.text },
+  sub: { fontSize: 13, color: t.textMuted },
+  late: { color: t.danger, fontWeight: '700' },
+  amount: { fontSize: 16, fontWeight: '800', color: t.text },
 });

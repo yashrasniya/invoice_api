@@ -3,7 +3,7 @@ import { Alert, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } f
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { registerForPush, unregisterPush } from '@/lib/push';
 import { useMyDrafts } from '@/store/drafts';
@@ -13,14 +13,16 @@ import { useSession } from '@/store/session';
 type RowProps = { icon: keyof typeof Ionicons.glyphMap; label: string; hint?: string; onPress: () => void };
 
 function Row({ icon, label, hint, onPress }: RowProps) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity style={styles.row} onPress={onPress} accessibilityRole="button" accessibilityLabel={hint ? `${label}, ${hint}` : label}>
-      <Ionicons name={icon} size={22} color={Palette.primary} />
+      <Ionicons name={icon} size={22} color={theme.primary} />
       <View style={{ flex: 1 }}>
         <Text style={styles.rowLabel}>{label}</Text>
         {!!hint && <Text style={styles.rowHint}>{hint}</Text>}
       </View>
-      <Ionicons name="chevron-forward" size={18} color={Palette.textFaint} />
+      <Ionicons name="chevron-forward" size={18} color={theme.textFaint} />
     </TouchableOpacity>
   );
 }
@@ -28,19 +30,22 @@ function Row({ icon, label, hint, onPress }: RowProps) {
 function SwitchRow({ icon, label, hint, value, onChange }: {
   icon: keyof typeof Ionicons.glyphMap; label: string; hint?: string; value: boolean; onChange: (v: boolean) => void;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.row} accessible accessibilityRole="switch" accessibilityLabel={label} accessibilityState={{ checked: value }}>
-      <Ionicons name={icon} size={22} color={Palette.primary} />
+      <Ionicons name={icon} size={22} color={theme.primary} />
       <View style={{ flex: 1 }}>
         <Text style={styles.rowLabel}>{label}</Text>
         {!!hint && <Text style={styles.rowHint}>{hint}</Text>}
       </View>
-      <Switch value={value} onValueChange={onChange} trackColor={{ true: Palette.primary }} />
+      <Switch value={value} onValueChange={onChange} trackColor={{ true: theme.primary }} />
     </View>
   );
 }
 
 export default function MoreScreen() {
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const user = useSession((s) => s.user);
   const access = useSession((s) => s.access);
@@ -107,6 +112,7 @@ export default function MoreScreen() {
         <Row icon="logo-whatsapp" label="WhatsApp" hint="Sending number & templates" onPress={() => router.push('/whatsapp')} />
         <Row icon="document-text-outline" label="Invoice templates" hint="Choose your invoice design" onPress={() => router.push('/templates')} />
         <Row icon="list-outline" label="Invoice numbering" onPress={() => router.push('/numbering')} />
+        <Row icon="receipt-outline" label="GST settings" hint="Filing frequency & LUT" onPress={() => router.push('/gst-settings')} />
         <Row icon="people-outline" label="Team & access" hint="Members, invites, roles" onPress={() => router.push('/team')} />
         <Row icon="card-outline" label="Plan & billing" onPress={() => router.push('/billing')} />
       </View>
@@ -122,16 +128,16 @@ export default function MoreScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
   header: { alignItems: 'center', paddingHorizontal: 20, marginBottom: 24 },
-  avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: Palette.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
-  avatarText: { color: Palette.white, fontSize: 28, fontWeight: '800' },
-  name: { fontSize: 20, fontWeight: '800', color: Palette.text },
-  sub: { fontSize: 14, color: Palette.textMuted, marginTop: 2 },
-  groupTitle: { fontSize: 13, fontWeight: '700', color: Palette.textMuted, textTransform: 'uppercase', marginHorizontal: 24, marginBottom: 8 },
-  group: { backgroundColor: Palette.white, marginHorizontal: 20, borderRadius: 16, borderWidth: 1, borderColor: Palette.border, marginBottom: 16, overflow: 'hidden' },
+  avatar: { width: 72, height: 72, borderRadius: 36, backgroundColor: t.primary, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  avatarText: { color: t.onPrimary, fontSize: 28, fontWeight: '800' },
+  name: { fontSize: 20, fontWeight: '800', color: t.text },
+  sub: { fontSize: 14, color: t.textMuted, marginTop: 2 },
+  groupTitle: { fontSize: 13, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', marginHorizontal: 24, marginBottom: 8 },
+  group: { backgroundColor: t.surface, marginHorizontal: 20, borderRadius: 16, borderWidth: 1, borderColor: t.border, marginBottom: 16, overflow: 'hidden' },
   row: { flexDirection: 'row', alignItems: 'center', gap: 14, padding: 16 },
-  rowLabel: { fontSize: 16, fontWeight: '600', color: Palette.text },
-  rowHint: { fontSize: 12, color: Palette.textMuted, marginTop: 2 },
+  rowLabel: { fontSize: 16, fontWeight: '600', color: t.text },
+  rowHint: { fontSize: 12, color: t.textMuted, marginTop: 2 },
 });

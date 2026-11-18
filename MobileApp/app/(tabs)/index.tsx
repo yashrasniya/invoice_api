@@ -11,7 +11,7 @@ import { PeriodBar, Section } from '@/components/report-ui';
 import { ProUpsell } from '@/components/pro-upsell';
 import { StatusBadge } from '@/components/ui/bits';
 import { Button } from '@/components/ui/button';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan } from '@/hooks/use-access';
 import { compactInr, money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
@@ -23,6 +23,7 @@ import { useSession } from '@/store/session';
 const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.card}>
       <Text style={styles.cardLabel}>{label}</Text>
@@ -33,6 +34,8 @@ function Stat({ label, value, sub, tone }: { label: string; value: string; sub?:
 }
 
 export default function HomeScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const insets = useSafeAreaInsets();
   const company = useSession((s) => s.access?.company_name);
   const canCreate = useCan('invoice.create');
@@ -77,12 +80,12 @@ export default function HomeScreen() {
               <Stat
                 label="Sales" value={money(k.month_total_final_amount).replace('.00', '')}
                 sub={growth == null ? `${k.invoices_this_month_count} invoices` : `${growth >= 0 ? '▲' : '▼'} ${Math.abs(growth)}% vs previous · ${k.invoices_this_month_count} inv.`}
-                tone={growth != null && growth < 0 ? Palette.danger : growth != null ? Palette.success : undefined}
+                tone={growth != null && growth < 0 ? theme.danger : growth != null ? theme.success : undefined}
               />
               <Stat label="GST collected" value={money(k.month_gst_final_amount).replace('.00', '')} />
               <Stat label="Receivable" value={money(k.receivable_amount).replace('.00', '')} sub={`${k.receivable_count} unpaid`} />
               <Stat label="Overdue" value={money(k.overdue_amount).replace('.00', '')} sub={`${k.overdue_count} overdue`}
-                tone={k.overdue_count > 0 ? Palette.danger : undefined} />
+                tone={k.overdue_count > 0 ? theme.danger : undefined} />
             </View>
 
             {!k.has_any_invoice ? (
@@ -123,7 +126,7 @@ export default function HomeScreen() {
 
             {w.payment_methods.length > 0 && (
               <Section title={`Payments received · ${k?.range_label ?? ''}`}>
-                <HBarList color={Palette.success} items={w.payment_methods.map((p) => ({ label: titleCase(p.method), value: p.total }))} />
+                <HBarList color={theme.success} items={w.payment_methods.map((p) => ({ label: titleCase(p.method), value: p.total }))} />
               </Section>
             )}
           </>
@@ -137,7 +140,7 @@ export default function HomeScreen() {
                   <Text style={styles.rowTitle}>{p.name}</Text>
                   <Text style={styles.muted}>{p.sku} · reorder at {p.reorder_level}</Text>
                 </View>
-                <Text style={[styles.badge, { color: Palette.danger, backgroundColor: '#fee2e2' }]}>{p.current_stock} left</Text>
+                <Text style={[styles.badge, { color: theme.danger, backgroundColor: theme.dangerSoft }]}>{p.current_stock} left</Text>
               </TouchableOpacity>
             ))}
           </Section>
@@ -152,8 +155,8 @@ export default function HomeScreen() {
                   <Text style={styles.muted}>Due {new Date(g.due_date).toLocaleDateString()}</Text>
                 </View>
                 <Text style={[styles.badge, g.days_left < 0
-                  ? { color: Palette.danger, backgroundColor: '#fee2e2' }
-                  : g.days_left <= 5 ? { color: '#92400e', backgroundColor: '#fef3c7' } : { color: Palette.success, backgroundColor: '#dcfce7' }]}>
+                  ? { color: theme.danger, backgroundColor: theme.dangerSoft }
+                  : g.days_left <= 5 ? { color: theme.warningText, backgroundColor: theme.warningSoft } : { color: theme.success, backgroundColor: theme.successSoft }]}>
                   {g.days_left < 0 ? `${-g.days_left}d overdue` : g.days_left === 0 ? 'Today' : `${g.days_left}d left`}
                 </Text>
               </View>
@@ -185,27 +188,27 @@ export default function HomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
   pad: { paddingHorizontal: 16 },
-  greeting: { fontSize: 26, fontWeight: '800', color: Palette.text },
-  company: { fontSize: 15, color: Palette.textMuted, marginTop: 2, marginBottom: 12 },
+  greeting: { fontSize: 26, fontWeight: '800', color: t.text },
+  company: { fontSize: 15, color: t.textMuted, marginTop: 2, marginBottom: 12 },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 14, marginBottom: 16 },
-  card: { width: '48%', flexGrow: 1, backgroundColor: Palette.white, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: Palette.border },
-  cardLabel: { fontSize: 13, color: Palette.textMuted, fontWeight: '600' },
-  cardValue: { fontSize: 22, fontWeight: '800', color: Palette.text, marginTop: 6 },
-  cardSub: { fontSize: 12, color: Palette.textMuted, marginTop: 4 },
-  error: { color: Palette.danger, marginTop: 24 },
-  empty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: Palette.border, borderRadius: 16, padding: 20, marginBottom: 16, alignItems: 'stretch' },
-  emptyTitle: { fontSize: 17, fontWeight: '800', color: Palette.text, textAlign: 'center' },
-  emptyBody: { fontSize: 14, color: Palette.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 16, lineHeight: 20 },
-  muted: { fontSize: 13, color: Palette.textMuted },
+  card: { width: '48%', flexGrow: 1, backgroundColor: t.surface, borderRadius: 16, padding: 16, borderWidth: 1, borderColor: t.border },
+  cardLabel: { fontSize: 13, color: t.textMuted, fontWeight: '600' },
+  cardValue: { fontSize: 22, fontWeight: '800', color: t.text, marginTop: 6 },
+  cardSub: { fontSize: 12, color: t.textMuted, marginTop: 4 },
+  error: { color: t.danger, marginTop: 24 },
+  empty: { borderWidth: 1.5, borderStyle: 'dashed', borderColor: t.border, borderRadius: 16, padding: 20, marginBottom: 16, alignItems: 'stretch' },
+  emptyTitle: { fontSize: 17, fontWeight: '800', color: t.text, textAlign: 'center' },
+  emptyBody: { fontSize: 14, color: t.textMuted, textAlign: 'center', marginTop: 4, marginBottom: 16, lineHeight: 20 },
+  muted: { fontSize: 13, color: t.textMuted },
   trendRow: { flexDirection: 'row', marginTop: 10 },
   trendCell: { flex: 1, alignItems: 'center' },
-  trendValue: { fontSize: 11, fontWeight: '700', color: Palette.text },
-  trendCount: { fontSize: 10, color: Palette.textMuted },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Palette.border },
-  rowTitle: { fontSize: 15, fontWeight: '700', color: Palette.text },
+  trendValue: { fontSize: 11, fontWeight: '700', color: t.text },
+  trendCount: { fontSize: 10, color: t.textMuted },
+  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
+  rowTitle: { fontSize: 15, fontWeight: '700', color: t.text },
   badge: { fontSize: 12, fontWeight: '700', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999, overflow: 'hidden' },
-  link: { color: Palette.primary, fontWeight: '700', fontSize: 14 },
+  link: { color: t.primary, fontWeight: '700', fontSize: 14 },
 });

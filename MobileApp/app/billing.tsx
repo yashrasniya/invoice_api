@@ -6,7 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Section } from '@/components/report-ui';
 import { Button } from '@/components/ui/button';
 import { Centered, EmptyState } from '@/components/ui/bits';
-import { Palette } from '@/constants/theme';
+import { useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan } from '@/hooks/use-access';
 import { useIsFreePlan } from '@/hooks/use-plan';
 import { money } from '@/lib/invoice-calc';
@@ -21,6 +21,7 @@ const limitText = (limits: Record<string, number>) =>
   Object.entries(limits).map(([k, v]) => `${v} ${k.replace(/_/g, ' ')}`).join(', ');
 
 export default function BillingScreen() {
+  const styles = useThemedStyles(makeStyles);
   const canView = useCan('subscription.view');
   const canManage = useCan('subscription.manage');
   const isFree = useIsFreePlan();
@@ -95,22 +96,22 @@ export default function BillingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  current: { backgroundColor: Palette.primary, borderRadius: 18, padding: 20, marginBottom: 16, gap: 4 },
-  currentLabel: { color: '#c7d2fe', fontSize: 13, fontWeight: '600' },
-  currentName: { color: Palette.white, fontSize: 28, fontWeight: '800' },
-  currentMeta: { color: '#e0e7ff', fontSize: 14 },
-  warn: { color: '#fde68a', fontSize: 13, fontWeight: '600', marginTop: 4 },
-  note: { fontSize: 12, color: Palette.textMuted, textAlign: 'center', marginBottom: 12 },
-  plan: { borderWidth: 1, borderColor: Palette.border, borderRadius: 14, padding: 14, marginBottom: 10, gap: 3 },
-  planCurrent: { borderColor: Palette.primary, backgroundColor: '#eef2ff' },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  current: { backgroundColor: t.hero, borderRadius: 18, padding: 20, marginBottom: 16, gap: 4 },
+  currentLabel: { color: t.onHeroMuted, fontSize: 13, fontWeight: '600' },
+  currentName: { color: t.onHero, fontSize: 28, fontWeight: '800' },
+  currentMeta: { color: t.onHeroMuted, fontSize: 14 },
+  warn: { color: t.isDark ? t.warningText : t.warningBorder, fontSize: 13, fontWeight: '600', marginTop: 4 },
+  note: { fontSize: 12, color: t.textMuted, textAlign: 'center', marginBottom: 12 },
+  plan: { borderWidth: 1, borderColor: t.border, borderRadius: 14, padding: 14, marginBottom: 10, gap: 3 },
+  planCurrent: { borderColor: t.primary, backgroundColor: t.primarySoft },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  planName: { fontSize: 17, fontWeight: '800', color: Palette.text },
-  planPrice: { fontSize: 16, fontWeight: '700', color: Palette.primary },
-  planMeta: { fontSize: 13, color: Palette.textMuted },
-  feature: { fontSize: 13, color: Palette.text },
+  planName: { fontSize: 17, fontWeight: '800', color: t.text },
+  planPrice: { fontSize: 16, fontWeight: '700', color: t.primary },
+  planMeta: { fontSize: 13, color: t.textMuted },
+  feature: { fontSize: 13, color: t.text },
   pay: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  payTitle: { fontSize: 14, fontWeight: '600', color: Palette.text },
-  payAmt: { fontSize: 14, fontWeight: '800', color: Palette.text },
+  payTitle: { fontSize: 14, fontWeight: '600', color: t.text },
+  payAmt: { fontSize: 14, fontWeight: '800', color: t.text },
 });

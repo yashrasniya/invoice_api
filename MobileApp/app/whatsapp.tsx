@@ -7,7 +7,7 @@ import { Section } from '@/components/report-ui';
 import { Button } from '@/components/ui/button';
 import { Centered, Chip, EmptyState } from '@/components/ui/bits';
 import { Field } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { errorMessage, WEB_URL } from '@/services/api';
 import { fetchMyTemplates } from '@/services/templates';
@@ -18,6 +18,7 @@ import {
 const MODE_LABEL: Record<WaMode, string> = { platform: 'Shared number', own: 'My own number' };
 
 export default function WhatsAppScreen() {
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const canManage = useCan('whatsapp.manage');
   const canSend = useCan('whatsapp.send');
@@ -137,18 +138,18 @@ export default function WhatsAppScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: Palette.border, marginBottom: 8 },
-  optionActive: { borderColor: Palette.primary, backgroundColor: '#eef2ff' },
-  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: Palette.textFaint },
-  radioActive: { borderColor: Palette.primary, backgroundColor: Palette.primary },
-  optionTitle: { fontSize: 15, fontWeight: '700', color: Palette.text },
-  optionNote: { fontSize: 12, color: Palette.textMuted, marginTop: 2 },
-  note: { fontSize: 13, color: Palette.textMuted, marginBottom: 8, lineHeight: 18 },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  option: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: 12, borderWidth: 1.5, borderColor: t.border, marginBottom: 8 },
+  optionActive: { borderColor: t.primary, backgroundColor: t.primarySoft },
+  radio: { width: 20, height: 20, borderRadius: 10, borderWidth: 2, borderColor: t.textFaint },
+  radioActive: { borderColor: t.primary, backgroundColor: t.primary },
+  optionTitle: { fontSize: 15, fontWeight: '700', color: t.text },
+  optionNote: { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  note: { fontSize: 13, color: t.textMuted, marginBottom: 8, lineHeight: 18 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  status: { fontSize: 16, fontWeight: '700', color: Palette.text, marginBottom: 6 },
-  tpl: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Palette.border },
-  tplName: { fontSize: 14, fontWeight: '600', color: Palette.text },
-  tplMeta: { fontSize: 12, color: Palette.textMuted, marginTop: 2 },
+  status: { fontSize: 16, fontWeight: '700', color: t.text, marginBottom: 6 },
+  tpl: { paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border },
+  tplName: { fontSize: 14, fontWeight: '600', color: t.text },
+  tplMeta: { fontSize: 12, color: t.textMuted, marginTop: 2 },
 });

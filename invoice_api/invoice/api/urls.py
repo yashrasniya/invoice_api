@@ -12,8 +12,9 @@ router.register(r'product-images', ProductImageViewSet, basename='product-image'
 
 from .views_numbering import InvoiceNumberingAPIView
 from .views_header_config import InvoiceHeaderConfigAPIView
-from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView, GSTR1APIView
+from .report_views import CashFlowReportAPIView, PurchaseInvoiceSummaryAPIView, GSTSummaryAPIView, GSTR1APIView, GSTR3BAPIView, GSTR9APIView
 from .sales_report_views import SalesReportAPIView
+from .views_eway import EwayBillDetailView, EwayBillJsonView, EwayBillPendingView
 
 urlpatterns = [
     path('invoice/', InvoiceView.as_view()),
@@ -41,6 +42,11 @@ urlpatterns = [
     path('cash-flow/', CashFlowReportAPIView.as_view()),
     path('gst-summary/', GSTSummaryAPIView.as_view()),
     path('gstr1/', GSTR1APIView.as_view()),
+    path('gstr3b/', GSTR3BAPIView.as_view()),
+    path('gstr9/', GSTR9APIView.as_view()),
+    path('eway/json/', EwayBillJsonView.as_view()),
+    path('eway/pending/', EwayBillPendingView.as_view()),
+    path('eway/<int:invoice_id>/', EwayBillDetailView.as_view()),
     path('ledger/<str:entity_type>/<int:entity_id>/', LedgerAPIView.as_view()),
     path('purchase-summary/', PurchaseInvoiceSummaryAPIView.as_view()),
     path('purchase/upload/', InvoiceExtractAPIView.as_view()),

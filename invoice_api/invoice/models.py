@@ -12,6 +12,17 @@ from invoice_api.softdelete import SoftDeleteModel
 from invoice import numbering
 
 
+#: Input tax credit on a purchase (GSTR-3B Table 4). `blocked`: never
+#: claimable (s.17(5): motor vehicles, food, personal use, ...), reported in
+#: 4A and reversed in 4B(1). `reversal`: claimable later (e.g. the supplier
+#: hasn't paid the tax yet), reversed in 4B(2).
+ITC_CHOICES = [
+    ('eligible', 'Eligible'),
+    ('blocked', 'Blocked (s.17(5))'),
+    ('reversal', 'Reversed for now'),
+]
+
+
 class Invoice(SoftDeleteModel):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     invoice_number = models.CharField(max_length=30,blank=True,null=True)
@@ -31,6 +42,9 @@ class Invoice(SoftDeleteModel):
     # Reverse charge: the recipient pays the GST. gst_final_amount is that
     # tax; total_final_amount is what is payable to the supplier, without it.
     reverse_charge = models.BooleanField(default=False)
+    # purchases only: whether the GST on this bill can be claimed as input
+    # credit; a line can override it (Product.itc_eligibility)
+    itc_eligibility = models.CharField(max_length=10, default='eligible', choices=ITC_CHOICES)
     customer_notes = models.TextField(blank=True, default='')
     terms = models.TextField(blank=True, default='')
 
@@ -97,6 +111,8 @@ class Product(models.Model):
     # For a 0% line: nil-rated, exempt or non-GST (GSTR-1 Table 8 columns).
     # A 0% "taxable" line is nil-rated, which is what a 0% rate means.
     tax_category = models.CharField(max_length=10, default='taxable', choices=TAX_CATEGORY_CHOICES)
+    # purchase lines: overrides the invoice's ITC eligibility; blank = follow it
+    itc_eligibility = models.CharField(max_length=10, blank=True, default='', choices=ITC_CHOICES)
     image = models.ForeignKey('ProductImage', on_delete=models.SET_NULL, null=True, blank=True,
                               related_name='line_items')
 
@@ -342,3 +358,66 @@ class CompanyInvoiceNumbering(models.Model):
 
     def __str__(self):
         return '%s -> %s (next %s)' % (self.company, self.template, self.next_number)
+
+
+class EwayBill(models.Model):
+    """The e-way bill for moving the goods on one invoice (rule 138, CGST Rules).
+
+    Holds what the e-way bill portal asks for that an invoice doesn't carry:
+    Part A extras (sub-type, document type, a ship-to address when the goods
+    go somewhere other than the billing address, distance) and Part B
+    (transport). Phase A has no API access: the details go into a bulk-upload
+    JSON (invoice.eway), the user uploads it on the portal and types the EWB
+    number back here. Rules and the file format live in invoice/eway.py.
+    """
+    SUPPLY_TYPE_CHOICES = [('O', 'Outward'), ('I', 'Inward')]
+    # portal codes; only the ones an invoice can back are offered
+    SUB_SUPPLY_CHOICES = [(1, 'Supply'), (3, 'Export'), (9, 'SKD/CKD/Lots')]
+    DOC_TYPE_CHOICES = [('INV', 'Tax invoice'), ('BIL', 'Bill of supply')]
+    MODE_CHOICES = [(1, 'Road'), (2, 'Rail'), (3, 'Air'), (4, 'Ship')]
+    VEHICLE_TYPE_CHOICES = [('R', 'Regular'), ('O', 'Over-dimensional cargo')]
+    STATUS_CHOICES = [('draft', 'Draft'), ('generated', 'Generated'), ('cancelled', 'Cancelled')]
+    SOURCE_CHOICES = [('manual', 'Entered by hand'), ('api', 'E-way bill API')]
+
+    invoice = models.OneToOneField(Invoice, on_delete=models.CASCADE, related_name='eway_bill')
+
+    # Part A extras
+    supply_type = models.CharField(max_length=1, default='O', choices=SUPPLY_TYPE_CHOICES)
+    sub_supply_type = models.PositiveSmallIntegerField(default=1, choices=SUB_SUPPLY_CHOICES)
+    doc_type = models.CharField(max_length=3, default='INV', choices=DOC_TYPE_CHOICES)
+    # Ship-to: blank means the goods go to the customer's own address. Filled,
+    # the e-way bill is "bill to - ship to" (transaction type 2). For an export
+    # it is the port / airport the goods leave from.
+    ship_to_name = models.CharField(max_length=100, blank=True, default='')
+    ship_to_address = models.CharField(max_length=240, blank=True, default='')
+    ship_to_place = models.CharField(max_length=50, blank=True, default='')
+    ship_to_state_code = models.PositiveSmallIntegerField(null=True, blank=True)
+    ship_to_pincode = models.CharField(max_length=6, blank=True, default='')
+    # 0 = let the portal work out the PIN-to-PIN distance
+    distance_km = models.PositiveIntegerField(default=0)
+
+    # Part B
+    transport_mode = models.PositiveSmallIntegerField(default=1, choices=MODE_CHOICES)
+    vehicle_number = models.CharField(max_length=20, blank=True, default='')
+    vehicle_type = models.CharField(max_length=1, default='R', choices=VEHICLE_TYPE_CHOICES)
+    transporter_id = models.CharField(max_length=15, blank=True, default='',
+                                      help_text='Transporter GSTIN or TRANSIN')
+    transporter_name = models.CharField(max_length=100, blank=True, default='')
+    transport_doc_number = models.CharField(max_length=15, blank=True, default='')
+    transport_doc_date = models.DateField(null=True, blank=True)
+
+    # result from the portal
+    ewb_number = models.CharField(max_length=12, blank=True, default='')
+    ewb_date = models.DateTimeField(null=True, blank=True)
+    valid_until = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=10, default='draft', choices=STATUS_CHOICES)
+    source = models.CharField(max_length=10, default='manual', choices=SOURCE_CHOICES)
+    raw = models.JSONField(null=True, blank=True)
+
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                   related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'EWB {self.ewb_number or "draft"} for invoice {self.invoice_id}'

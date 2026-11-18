@@ -1,4 +1,4 @@
-import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister';
 import { QueryClient } from '@tanstack/react-query';
@@ -8,13 +8,14 @@ import { useRef } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { AppState } from 'react-native';
+import { Appearance, AppState } from 'react-native';
 import 'react-native-reanimated';
 
 import { LockGate } from '@/components/lock-gate';
 import { OfflineBanner } from '@/components/offline-banner';
 import { AccountError } from '@/components/account-error';
 import { ErrorScreen } from '@/components/error-screen';
+import { useTheme, useThemeReady } from '@/hooks/use-theme';
 import { configureNotifications, listenForNotificationTaps, registerForPush } from '@/lib/push';
 import { usePrefs } from '@/store/prefs';
 import { useSession } from '@/store/session';
@@ -46,14 +47,36 @@ configureNotifications();
 export default function RootLayout() {
   const status = useSession((s) => s.status);
   const needsCompany = useSession((s) => s.user && !s.user.is_company_varified);
+  const theme = useTheme();
+  const themeReady = useThemeReady();
+
+  // Make native pieces (keyboard, alerts, pickers) follow the chosen theme, not just the phone's.
+  useEffect(() => {
+    Appearance.setColorScheme(theme.mode === 'system' ? 'unspecified' : theme.mode);
+  }, [theme.mode]);
+
+  // Light keeps React Navigation's stock look until the screens are migrated; only dark is restyled.
+  const navTheme = theme.isDark
+    ? {
+        ...DarkTheme,
+        colors: {
+          ...DarkTheme.colors,
+          primary: theme.primary,
+          background: theme.background,
+          card: theme.background,
+          text: theme.text,
+          border: theme.border,
+        },
+      }
+    : DefaultTheme;
 
   useEffect(() => {
     useSession.getState().bootstrap();
   }, []);
 
   useEffect(() => {
-    if (status !== 'loading') SplashScreen.hideAsync();
-  }, [status]);
+    if (status !== 'loading' && themeReady) SplashScreen.hideAsync();
+  }, [status, themeReady]);
 
   // Drop everything account-specific when signed out so the next user never sees it.
   const router = useRouter();
@@ -92,7 +115,7 @@ export default function RootLayout() {
     return listenForNotificationTaps();
   }, [status]);
 
-  if (status === 'loading') return null;
+  if (status === 'loading' || !themeReady) return null;
   if (status === 'error') return <AccountError />;
 
   const signedIn = status === 'signedIn';
@@ -108,7 +131,7 @@ export default function RootLayout() {
           shouldDehydrateQuery: (q) => q.state.status === 'success' && OFFLINE_KEYS.has(String(q.queryKey[0])),
         },
       }}>
-      <ThemeProvider value={DefaultTheme}>
+      <ThemeProvider value={navTheme}>
         <LockGate>
         <OfflineBanner />
         <Stack screenOptions={{ headerShown: false }}>
@@ -143,11 +166,12 @@ export default function RootLayout() {
             <Stack.Screen name="invoice/new" options={{ headerShown: true }} />
             <Stack.Screen name="invoice/[id]" options={{ headerShown: true }} />
             <Stack.Screen name="invoice/edit/[id]" options={{ headerShown: true }} />
+            <Stack.Screen name="invoice/eway/[id]" options={{ headerShown: true }} />
             <Stack.Screen name="party/[kind]/[id]" options={{ headerShown: true }} />
           </Stack.Protected>
         </Stack>
         </LockGate>
-        <StatusBar style="dark" />
+        <StatusBar style={theme.isDark ? 'light' : 'dark'} />
       </ThemeProvider>
     </PersistQueryClientProvider>
   );

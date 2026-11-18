@@ -6,12 +6,13 @@ import * as Sharing from 'expo-sharing';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PeriodBar } from '@/components/report-ui';
 import { Centered, Chip, EmptyState } from '@/components/ui/bits';
-import { Palette } from '@/constants/theme';
+import { useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { errorMessage } from '@/services/api';
 import { cloneTemplate, downloadPreview, fetchGallery, fetchMyTemplates, GalleryTemplate, setDefaultTemplate } from '@/services/templates';
 
 export default function TemplatesScreen() {
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const hasDesigner = useFeature('template_designer');
   const canManage = useCan('template.manage');
@@ -106,16 +107,16 @@ export default function TemplatesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
   cats: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, paddingHorizontal: 16, paddingTop: 12 },
-  card: { flexDirection: 'row', gap: 14, backgroundColor: Palette.white, borderRadius: 14, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: Palette.border },
-  thumb: { width: 84, height: 112, borderRadius: 8, backgroundColor: Palette.surface },
-  noThumb: { borderWidth: 1, borderColor: Palette.border },
-  name: { fontSize: 15, fontWeight: '700', color: Palette.text },
-  meta: { fontSize: 12, color: Palette.textMuted },
-  badge: { alignSelf: 'flex-start', backgroundColor: '#dcfce7', color: '#166534', fontSize: 12, fontWeight: '700', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
+  card: { flexDirection: 'row', gap: 14, backgroundColor: t.surface, borderRadius: 14, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: t.border },
+  thumb: { width: 84, height: 112, borderRadius: 8, backgroundColor: t.background },
+  noThumb: { borderWidth: 1, borderColor: t.border },
+  name: { fontSize: 15, fontWeight: '700', color: t.text },
+  meta: { fontSize: 12, color: t.textMuted },
+  badge: { alignSelf: 'flex-start', backgroundColor: t.successSoft, color: t.successText, fontSize: 12, fontWeight: '700', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
   actions: { flexDirection: 'row', gap: 18, marginTop: 6 },
-  link: { color: Palette.primary, fontWeight: '700', fontSize: 14 },
-  foot: { fontSize: 12, color: Palette.textMuted, textAlign: 'center', marginVertical: 12 },
+  link: { color: t.primary, fontWeight: '700', fontSize: 14 },
+  foot: { fontSize: 12, color: t.textMuted, textAlign: 'center', marginVertical: 12 },
 });

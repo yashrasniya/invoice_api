@@ -88,16 +88,52 @@ export type Gstr1Summary = {
   b2b_customers: number; hsn_rows: number; total_taxable: number; total_tax: number;
   documents: { num: number; from: string; to: string; totnum: number; cancel: number; net_issue: number }[];
   issues: Gstr1Issue[]; error_count: number; warning_count: number; ready_to_file: boolean;
+  /** 'IFF' for a quarterly filer's first or second month */
+  return_type: 'GSTR-1' | 'IFF'; filing_frequency: 'monthly' | 'quarterly';
+  /** quarterly filer's quarter: B2B of the first two months left out (already sent in the IFF) */
+  iff_months_left_out: boolean;
 };
-export const fetchGstr1 = async (period: Gstr1Period) =>
-  (await api.get<Gstr1Summary>('gstr1/', { params: { period } })).data;
+export const fetchGstr1 = async (period: Gstr1Period, includeIff = false) =>
+  (await api.get<Gstr1Summary>('gstr1/', { params: { period, ...(includeIff ? { include_iff: 1 } : {}) } })).data;
+
+// ── GSTR-3B / GSTR-9 ────────────────────────────────────────────────────────
+export type TaxRow = { key?: string; label?: string; taxable: number; igst: number; cgst: number; sgst: number };
+export type Gstr3b = {
+  period_label: string; gstin: string; filing_frequency: 'monthly' | 'quarterly';
+  outward: (TaxRow & { key: string; label: string })[];
+  buyer_pays_reverse_charge: TaxRow;
+  inter_state_unregistered: { buyer: 'unregistered' | 'composition'; pos: string; state: string; taxable: number; igst: number }[];
+  itc: (TaxRow & { key: string; label: string })[];
+  inward_exempt: { label: string; inter: number; intra: number }[];
+  payment: {
+    rows: { head: 'IGST' | 'CGST' | 'SGST'; liability: number; paid_igst_credit: number; paid_cgst_credit: number;
+      paid_sgst_credit: number; cash: number; reverse_charge_cash: number }[];
+    cash_total: number; credit_carried_forward: { igst: number; cgst: number; sgst: number };
+  };
+  sales_counted: number; sales_left_out: number; sales_with_errors: number;
+  purchases_counted: number; purchases_left_out: number;
+  issues: Gstr1Issue[]; error_count: number; warning_count: number;
+};
+export const fetchGstr3b = async (period: Gstr1Period) =>
+  (await api.get<Gstr3b>('gstr3b/', { params: { period } })).data;
+
+export type Gstr9 = {
+  fy: number; fy_label: string; gstin: string;
+  table4: (TaxRow & { key: string; label: string })[]; table5: (TaxRow & { key: string; label: string })[];
+  table6: (TaxRow & { key: string; label: string })[]; table7: (TaxRow & { key: string; label: string })[];
+  net_itc: TaxRow & { key: string; label: string };
+  table17: { hsn: string; desc: string; uqc: string; qty: number; rate: number; taxable: number; igst: number; cgst: number; sgst: number }[];
+  sales_counted: number; sales_left_out: number; sales_with_errors: number;
+  issues: Gstr1Issue[]; error_count: number; warning_count: number;
+};
+export const fetchGstr9 = async (fy: number) => (await api.get<Gstr9>('gstr9/', { params: { fy } })).data;
 
 /** The portal / offline-tool JSON, saved to the cache dir. The server refuses (409) while errors remain. */
-export async function downloadGstr1(period: Gstr1Period, gstin: string, fp: string) {
+export async function downloadGstr1(period: Gstr1Period, gstin: string, fp: string, includeIff = false, returnType = 'GSTR-1') {
   const { data } = await api.get<string>('gstr1/', {
-    params: { period, download: 1 }, responseType: 'text', transformResponse: (d) => d,
+    params: { period, download: 1, ...(includeIff ? { include_iff: 1 } : {}) }, responseType: 'text', transformResponse: (d) => d,
   });
-  const uri = `${FileSystem.cacheDirectory}GSTR1_${gstin || 'NA'}_${fp}.json`;
+  const uri = `${FileSystem.cacheDirectory}${returnType.replace('-', '')}_${gstin || 'NA'}_${fp}.json`;
   await FileSystem.writeAsStringAsync(uri, data);
   return uri;
 }

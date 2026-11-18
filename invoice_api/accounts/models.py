@@ -104,8 +104,15 @@ class UserCompanies(models.Model):
                                   help_text='LUT ARN / reference number')
     lut_valid_from = models.DateField(null=True, blank=True)
     lut_valid_to = models.DateField(null=True, blank=True)
+    # GSTR-1 / 3B filing frequency. Quarterly (QRMP) filers upload B2B
+    # invoices monthly through the IFF and file GSTR-1 per quarter.
+    gst_filing_frequency = models.CharField(
+        max_length=10, default='monthly', choices=[('monthly', 'Monthly'), ('quarterly', 'Quarterly (QRMP)')])
     state = models.CharField(max_length=50, blank=True, null=True)
     state_code = models.IntegerField(null=True, blank=True)
+    # dispatch-from place on e-way bills (fromPlace / fromPincode)
+    city = models.CharField(max_length=50, blank=True, default='')
+    pincode = models.CharField(max_length=6, blank=True, default='')
     company_email_id = models.EmailField(max_length=254, blank=True, null=True)
     company_phone = models.CharField(max_length=20, blank=True, null=True)
     company_logo = models.ImageField(upload_to='accounts',null=True,blank=True)

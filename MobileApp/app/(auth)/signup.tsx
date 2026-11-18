@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button } from '@/components/ui/button';
 import { Field, type FieldRef } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { apiErrorCode, errorMessage, fieldErrors } from '@/services/api';
 import { mobileDigits } from '@/lib/mobile';
 import { passwordFeedback } from '@/lib/password';
@@ -22,6 +22,8 @@ const RESEND_SECONDS = 30;
 const FORM_FIELD: Record<string, string> = { first_name: 'full_name', last_name: 'full_name' };
 
 export default function SignupScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [form, setForm] = useState({ full_name: '', email: '', mobile_number: '', password: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -137,7 +139,7 @@ export default function SignupScreen() {
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         <TouchableOpacity style={styles.back} onPress={() => router.back()} accessibilityRole="button" accessibilityLabel="Go back">
-          <Ionicons name="arrow-back" size={24} color={Palette.text} />
+          <Ionicons name="arrow-back" size={24} color={theme.text} />
         </TouchableOpacity>
         <AuthHeader heading="Create your account" />
 
@@ -166,7 +168,7 @@ export default function SignupScreen() {
             <TouchableOpacity
               onPress={() => setShowPassword((v) => !v)} hitSlop={12}
               accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
-              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={Palette.textMuted} />
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.textMuted} />
             </TouchableOpacity>
           } />
 
@@ -223,19 +225,19 @@ export default function SignupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Palette.white },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.surface },
   scroll: { flexGrow: 1, paddingHorizontal: 24, paddingTop: 48, paddingBottom: 40 },
-  back: { width: 44, height: 44, borderRadius: 12, backgroundColor: Palette.surface, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  back: { width: 44, height: 44, borderRadius: 12, backgroundColor: t.background, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
   signInHint: { alignSelf: 'flex-start', marginTop: -10, marginBottom: 14, marginLeft: 4 },
-  codeTitle: { fontSize: 20, fontWeight: '800', color: Palette.text, marginBottom: 6 },
-  codeSub: { fontSize: 15, color: Palette.textMuted, marginBottom: 20, lineHeight: 21 },
+  codeTitle: { fontSize: 20, fontWeight: '800', color: t.text, marginBottom: 6 },
+  codeSub: { fontSize: 15, color: t.textMuted, marginBottom: 20, lineHeight: 21 },
   codeRow: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
   later: { alignItems: 'center', marginTop: 20 },
-  laterText: { color: Palette.textMuted, fontSize: 14, fontWeight: '600' },
+  laterText: { color: t.textMuted, fontSize: 14, fontWeight: '600' },
   socialRow: { flexDirection: 'row', gap: 12 },
   socialCell: { flex: 1 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 28 },
-  footerText: { color: Palette.textMuted, fontSize: 15 },
-  link: { color: Palette.primary, fontSize: 15, fontWeight: '700' },
+  footerText: { color: t.textMuted, fontSize: 15 },
+  link: { color: t.primary, fontSize: 15, fontWeight: '700' },
 });

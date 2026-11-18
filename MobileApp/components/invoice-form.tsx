@@ -9,8 +9,8 @@ import { Chip, Centered } from '@/components/ui/bits';
 import { LineItemModal } from '@/components/line-item-modal';
 import { PartyPicker } from '@/components/party-picker';
 import { StatePicker } from '@/components/state-picker';
-import { PLACE_OF_SUPPLY_STATES, TaxCategory } from '@/constants/gst';
-import { Palette } from '@/constants/theme';
+import { ITC_OPTIONS, ItcEligibility, PLACE_OF_SUPPLY_STATES, TaxCategory } from '@/constants/gst';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { defaultOf, HeaderConfig, HeaderKey, isVisible, resolveHeader } from '@/lib/header-config';
@@ -43,6 +43,8 @@ export function InvoiceForm(props: Props) {
 }
 
 function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & { header: HeaderConfig }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const editing = !!invoice;
   const type: InvoiceType = invoice?.invoice_type ?? copyFrom?.invoice_type ?? typeProp ?? 'sales';
@@ -88,6 +90,8 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
   const [edited, setEdited] = useState<Record<number, Record<number, string>>>({});
   const [editedCategory, setEditedCategory] = useState<Record<number, TaxCategory>>({});
   const [reverseCharge, setReverseCharge] = useState<boolean>(invoice?.reverse_charge ?? copyFrom?.reverse_charge ?? false);
+  const [itc, setItc] = useState<ItcEligibility>(invoice?.itc_eligibility ?? copyFrom?.itc_eligibility ?? 'eligible');
+  const [editedItc, setEditedItc] = useState<Record<number, ItcEligibility | ''>>({});
   const [editingId, setEditingId] = useState<number | null>(null);
   const [pickCustomer, setPickCustomer] = useState(false);
   const [showDate, setShowDate] = useState(false);
@@ -136,6 +140,7 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
     ...(show('payment_terms') ? { due_date: due } : {}),
     ...(showPos ? { place_of_supply: pos } : {}),
     reverse_charge: reverseCharge,
+    ...(purchase ? { itc_eligibility: itc } : {}),
     ...(show('customer_notes') ? { customer_notes: notes } : {}),
     ...(show('terms') ? { terms } : {}),
   });
@@ -168,7 +173,7 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
         id = invoice.id;
         await updateInvoice(id, buildInput(customer.id), type);
         for (const pid of removedIds) await removeLineItem(pid);
-        for (const p of keptExisting) if (edited[p.id]) await updateLineItem(p, edited[p.id], columns, editedCategory[p.id]);
+        for (const p of keptExisting) if (edited[p.id]) await updateLineItem(p, edited[p.id], columns, editedCategory[p.id], editedItc[p.id]);
         for (const l of newLines) await addLineItem(id, l, columns);
         if (removedIds.length || newLines.length || Object.keys(edited).length) await syncTotals(id);
         warnings = await deductStock(id, newLines, columns);
@@ -222,8 +227,8 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>{partyLabel}</Text>
         <TouchableOpacity style={styles.select} onPress={() => setPickCustomer(true)}>
-          <Text style={[styles.selectText, !customer && { color: Palette.textFaint }]}>{customer?.name ?? `Select ${partyKind}`}</Text>
-          <Ionicons name="chevron-down" size={18} color={Palette.textMuted} />
+          <Text style={[styles.selectText, !customer && { color: theme.textFaint }]}>{customer?.name ?? `Select ${partyKind}`}</Text>
+          <Ionicons name="chevron-down" size={18} color={theme.textMuted} />
         </TouchableOpacity>
 
         <View style={styles.row}>
@@ -231,18 +236,18 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
             <Text style={styles.label}>Date</Text>
             <TouchableOpacity style={styles.select} onPress={() => setShowDate(true)}>
               <Text style={styles.selectText}>{date}</Text>
-              <Ionicons name="calendar-outline" size={18} color={Palette.textMuted} />
+              <Ionicons name="calendar-outline" size={18} color={theme.textMuted} />
             </TouchableOpacity>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={styles.label}>{purchase ? 'Bill no.' : 'Invoice no.'}</Text>
             <TextInput style={styles.input} value={number} onChangeText={setNumber}
-              placeholder={editing || purchase ? '' : 'Auto'} placeholderTextColor={Palette.textFaint} maxLength={30} />
+              placeholder={editing || purchase ? '' : 'Auto'} placeholderTextColor={theme.textFaint} maxLength={30} />
           </View>
         </View>
         {showDate && (
           <DateTimePicker
-            value={parseYmd(date)} mode="date" display={Platform.OS === 'ios' ? 'inline' : 'default'}
+            value={parseYmd(date)} mode="date" themeVariant={theme.scheme} display={Platform.OS === 'ios' ? 'inline' : 'default'}
             onChange={(_, d) => { if (Platform.OS !== 'ios') setShowDate(false); if (d) changeDate(ymd(d)); }}
           />
         )}
@@ -264,13 +269,13 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
                 <Text style={styles.label}>Due date</Text>
                 <TouchableOpacity style={styles.select} onPress={() => setShowDue(true)} accessibilityRole="button" accessibilityLabel="Due date">
                   <Text style={styles.selectText}>{due}</Text>
-                  <Ionicons name="calendar-outline" size={18} color={Palette.textMuted} />
+                  <Ionicons name="calendar-outline" size={18} color={theme.textMuted} />
                 </TouchableOpacity>
               </>
             )}
             {showDue && due !== null && (
               <DateTimePicker
-                value={parseYmd(due)} mode="date" minimumDate={parseYmd(date)} display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                value={parseYmd(due)} mode="date" themeVariant={theme.scheme} minimumDate={parseYmd(date)} display={Platform.OS === 'ios' ? 'inline' : 'default'}
                 onChange={(_, d) => { if (Platform.OS !== 'ios') setShowDue(false); if (d) setDue(ymd(d)); }}
               />
             )}
@@ -304,6 +309,16 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
             : 'Yes only for services notified under reverse charge (e.g. goods transport, legal).'}
         </Text>
 
+        {purchase && (
+          <>
+            <Text style={styles.label}>Input tax credit</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 6 }}>
+              {ITC_OPTIONS.map((o) => <Chip key={o.value} label={o.label} active={itc === o.value} onPress={() => setItc(o.value)} />)}
+            </View>
+            <Text style={[styles.hint2, { marginBottom: 14 }]}>{ITC_OPTIONS.find((o) => o.value === itc)?.hint}</Text>
+          </>
+        )}
+
         {show('payment_status') && (
           <>
             <Text style={styles.label}>Payment status</Text>
@@ -335,10 +350,10 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
               </TouchableOpacity>
               <Text style={styles.lineAmt}>{money(amount)}</Text>
               <TouchableOpacity hitSlop={10} onPress={() => setEditingId(p.id)} accessibilityLabel="Edit item">
-                <Ionicons name="create-outline" size={20} color={Palette.primary} />
+                <Ionicons name="create-outline" size={20} color={theme.primary} />
               </TouchableOpacity>
               <TouchableOpacity hitSlop={10} onPress={() => setRemovedIds((r) => [...r, p.id])} accessibilityLabel="Remove item">
-                <Ionicons name="trash-outline" size={20} color={Palette.danger} />
+                <Ionicons name="trash-outline" size={20} color={theme.danger} />
               </TouchableOpacity>
             </View>
           );
@@ -354,13 +369,13 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
               </View>
               <Text style={styles.lineAmt}>{money(t)}</Text>
               <TouchableOpacity hitSlop={10} onPress={() => setNewLines((x) => x.filter((_, j) => j !== i))}>
-                <Ionicons name="trash-outline" size={20} color={Palette.danger} />
+                <Ionicons name="trash-outline" size={20} color={theme.danger} />
               </TouchableOpacity>
             </View>
           );
         })}
         <TouchableOpacity style={styles.addLine} onPress={() => setAddingLine(true)}>
-          <Ionicons name="add-circle-outline" size={22} color={Palette.primary} />
+          <Ionicons name="add-circle-outline" size={22} color={theme.primary} />
           <Text style={styles.addLineText}>Add item</Text>
         </TouchableOpacity>
 
@@ -368,14 +383,14 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
           <>
             <Text style={styles.label}>Notes</Text>
             <TextInput style={[styles.input, styles.textarea]} value={notes} onChangeText={setNotes} multiline maxLength={2000}
-              placeholder="Thanks for your business" placeholderTextColor={Palette.textFaint} accessibilityLabel="Notes" />
+              placeholder="Thanks for your business" placeholderTextColor={theme.textFaint} accessibilityLabel="Notes" />
           </>
         )}
         {show('terms') && (
           <>
             <Text style={styles.label}>Terms and conditions</Text>
             <TextInput style={[styles.input, styles.textarea]} value={terms} onChangeText={setTerms} multiline maxLength={2000}
-              placeholder="Payment due within the terms above" placeholderTextColor={Palette.textFaint} accessibilityLabel="Terms and conditions" />
+              placeholder="Payment due within the terms above" placeholderTextColor={theme.textFaint} accessibilityLabel="Terms and conditions" />
           </>
         )}
       </ScrollView>
@@ -397,42 +412,44 @@ function InvoiceFormBody({ invoice, copyFrom, type: typeProp, header }: Props & 
             visible columns={columns} title="Edit item" saveLabel="Save item"
             initialValues={edited[line.id] ?? lineValues(line)}
             initialCategory={editedCategory[line.id] ?? line.tax_category}
+            purchase={purchase} initialItc={editedItc[line.id] ?? line.itc_eligibility ?? ''}
             onClose={() => setEditingId(null)}
             onSave={(l) => {
               setEdited((x) => ({ ...x, [line.id]: l.values }));
               setEditedCategory((x) => ({ ...x, [line.id]: l.taxCategory ?? 'taxable' }));
+              if (purchase) setEditedItc((x) => ({ ...x, [line.id]: l.itc ?? '' }));
               setEditingId(null);
             }}
           />
         ) : null;
       })()}
-      <LineItemModal visible={addingLine} columns={columns} useInventory={canUseInventory} onClose={() => setAddingLine(false)}
+      <LineItemModal visible={addingLine} columns={columns} useInventory={canUseInventory} purchase={purchase} onClose={() => setAddingLine(false)}
         onSave={(l) => { setNewLines((x) => [...x, l]); setAddingLine(false); }} />
     </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: Palette.white },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  flex: { flex: 1, backgroundColor: t.surface },
   scroll: { padding: 20, paddingBottom: 40 },
-  label: { fontSize: 14, fontWeight: '700', color: Palette.label, marginBottom: 6, marginTop: 14 },
+  label: { fontSize: 14, fontWeight: '700', color: t.label, marginBottom: 6, marginTop: 14 },
   row: { flexDirection: 'row', gap: 12 },
-  select: { height: 50, borderRadius: 12, backgroundColor: Palette.surface, borderWidth: 1.5, borderColor: Palette.border, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  selectText: { fontSize: 16, color: Palette.text, flexShrink: 1 },
-  input: { height: 50, borderRadius: 12, backgroundColor: Palette.surface, borderWidth: 1.5, borderColor: Palette.border, paddingHorizontal: 14, fontSize: 16, color: Palette.text },
+  select: { height: 50, borderRadius: 12, backgroundColor: t.background, borderWidth: 1.5, borderColor: t.border, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  selectText: { fontSize: 16, color: t.text, flexShrink: 1 },
+  input: { height: 50, borderRadius: 12, backgroundColor: t.isDark ? t.surfaceRaised : t.background, borderWidth: 1.5, borderColor: t.border, paddingHorizontal: 14, fontSize: 16, color: t.text },
   textarea: { height: undefined, minHeight: 84, paddingTop: 12, textAlignVertical: 'top' },
-  hint2: { fontSize: 12, color: Palette.textMuted, marginTop: 6 },
-  link: { fontSize: 13, fontWeight: '700', color: Palette.primary, marginTop: 6 },
+  hint2: { fontSize: 12, color: t.textMuted, marginTop: 6 },
+  link: { fontSize: 13, fontWeight: '700', color: t.primary, marginTop: 6 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  sectionTitle: { fontSize: 18, fontWeight: '800', color: Palette.text },
-  hint: { color: Palette.textMuted, textAlign: 'center', marginTop: 8, lineHeight: 20 },
-  line: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Palette.border },
-  lineName: { fontSize: 16, fontWeight: '600', color: Palette.text },
-  lineSub: { fontSize: 12, color: Palette.textMuted, marginTop: 2 },
-  lineAmt: { fontSize: 15, fontWeight: '700', color: Palette.text },
+  sectionTitle: { fontSize: 18, fontWeight: '800', color: t.text },
+  hint: { color: t.textMuted, textAlign: 'center', marginTop: 8, lineHeight: 20 },
+  line: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border },
+  lineName: { fontSize: 16, fontWeight: '600', color: t.text },
+  lineSub: { fontSize: 12, color: t.textMuted, marginTop: 2 },
+  lineAmt: { fontSize: 15, fontWeight: '700', color: t.text },
   addLine: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 16 },
-  addLineText: { color: Palette.primary, fontWeight: '700', fontSize: 16 },
-  footer: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingBottom: 28, borderTopWidth: 1, borderTopColor: Palette.border, backgroundColor: Palette.white },
-  footLabel: { fontSize: 12, color: Palette.textMuted },
-  footTotal: { fontSize: 22, fontWeight: '800', color: Palette.text },
+  addLineText: { color: t.primary, fontWeight: '700', fontSize: 16 },
+  footer: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16, paddingBottom: 28, borderTopWidth: 1, borderTopColor: t.border, backgroundColor: t.surface },
+  footLabel: { fontSize: 12, color: t.textMuted },
+  footTotal: { fontSize: 22, fontWeight: '800', color: t.text },
 });

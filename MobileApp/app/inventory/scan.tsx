@@ -3,11 +3,13 @@ import { ActivityIndicator, Alert, StyleSheet, Text, View } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Stack, router } from 'expo-router';
 import { Button } from '@/components/ui/button';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { errorMessage } from '@/services/api';
 import { findBySku } from '@/services/inventory';
 
 export default function ScanScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [permission, requestPermission] = useCameraPermissions();
   const [looking, setLooking] = useState(false);
   const busy = useRef(false); // the scanner fires many events per code; handle one at a time
@@ -32,7 +34,7 @@ export default function ScanScreen() {
     }
   };
 
-  if (!permission) return <View style={styles.center}><ActivityIndicator color={Palette.primary} /></View>;
+  if (!permission) return <View style={styles.center}><ActivityIndicator color={theme.primary} /></View>;
 
   if (!permission.granted) {
     return (
@@ -61,10 +63,10 @@ export default function ScanScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   flex: { flex: 1, backgroundColor: 'black' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: Palette.white, gap: 16 },
-  msg: { fontSize: 16, color: Palette.text, textAlign: 'center' },
+  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: t.surface, gap: 16 },
+  msg: { fontSize: 16, color: t.text, textAlign: 'center' },
   frame: { position: 'absolute', top: '30%', left: '12%', right: '12%', height: 180, borderWidth: 3, borderColor: 'white', borderRadius: 16 },
   hint: { position: 'absolute', bottom: 60, left: 0, right: 0, alignItems: 'center' },
   hintText: { color: 'white', fontSize: 16, fontWeight: '600', backgroundColor: 'rgba(0,0,0,0.55)', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, overflow: 'hidden' },

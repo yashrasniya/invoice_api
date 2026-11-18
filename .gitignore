@@ -202,3 +202,6 @@ mobile_app_bubblewrap/*.aab
 mobile_app_bubblewrap/*.idsig
 # Firebase service-account keys (secret: upload to EAS, never commit)
 *firebase-adminsdk*.json
+
+# seed_sample_business manifests (ids of seeded rows in the local DB)
+invoice_api/logs/seed_runs/

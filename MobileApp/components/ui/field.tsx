@@ -1,7 +1,7 @@
 import React, { forwardRef, useState } from 'react';
 import { StyleSheet, Text, TextInput, TextInputProps, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 
 type Props = TextInputProps & {
   label: string;
@@ -16,16 +16,18 @@ type Props = TextInputProps & {
 export type FieldRef = React.ComponentRef<typeof TextInput>;
 
 export const Field = forwardRef<FieldRef, Props>(function Field({ label, icon, error, hint, hintTone, right, style, onFocus, onBlur, ...input }, ref) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [focused, setFocused] = useState(false);
   return (
     <View style={styles.group}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.wrapper, focused && styles.focused, !!error && { borderColor: Palette.danger }]}>
-        {icon && <Ionicons name={icon} size={20} color={Palette.textMuted} style={styles.icon} />}
+      <View style={[styles.wrapper, focused && styles.focused, !!error && { borderColor: theme.danger }]}>
+        {icon && <Ionicons name={icon} size={20} color={theme.textMuted} style={styles.icon} />}
         <TextInput
           ref={ref}
           accessibilityLabel={label}
-          placeholderTextColor={Palette.textMuted}
+          placeholderTextColor={theme.textMuted}
           style={[styles.input, style]}
           onFocus={(e) => { setFocused(true); onFocus?.(e); }}
           onBlur={(e) => { setFocused(false); onBlur?.(e); }}
@@ -35,22 +37,22 @@ export const Field = forwardRef<FieldRef, Props>(function Field({ label, icon, e
       </View>
       {!!error && <Text style={styles.error} accessibilityLiveRegion="polite">{error}</Text>}
       {!error && !!hint && (
-        <Text style={[styles.hint, hintTone === 'good' && { color: Palette.success }]} accessibilityLiveRegion="polite">{hint}</Text>
+        <Text style={[styles.hint, hintTone === 'good' && { color: theme.success }]} accessibilityLiveRegion="polite">{hint}</Text>
       )}
     </View>
   );
 });
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   group: { marginBottom: 18 },
-  label: { fontSize: 14, fontWeight: '700', color: Palette.label, marginBottom: 8, marginLeft: 4 },
+  label: { fontSize: 14, fontWeight: '700', color: t.label, marginBottom: 8, marginLeft: 4 },
   wrapper: {
-    flexDirection: 'row', alignItems: 'center', backgroundColor: Palette.surface,
-    borderWidth: 1.5, borderColor: Palette.border, borderRadius: 16, paddingHorizontal: 16, height: 56,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: t.isDark ? t.surfaceRaised : t.background,
+    borderWidth: 1.5, borderColor: t.border, borderRadius: 16, paddingHorizontal: 16, height: 56,
   },
-  focused: { borderColor: Palette.primary, backgroundColor: Palette.white },
+  focused: { borderColor: t.primary, backgroundColor: t.surface },
   icon: { marginRight: 12 },
-  input: { flex: 1, fontSize: 16, color: Palette.text, fontWeight: '500' },
-  error: { color: Palette.danger, fontSize: 12, marginTop: 6, marginLeft: 4 },
-  hint: { color: Palette.textMuted, fontSize: 12, marginTop: 6, marginLeft: 4 },
+  input: { flex: 1, fontSize: 16, color: t.text, fontWeight: '500' },
+  error: { color: t.danger, fontSize: 12, marginTop: 6, marginLeft: 4 },
+  hint: { color: t.textMuted, fontSize: 12, marginTop: 6, marginLeft: 4 },
 });

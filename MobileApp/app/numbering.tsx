@@ -6,12 +6,14 @@ import { Section } from '@/components/report-ui';
 import { Button } from '@/components/ui/button';
 import { Centered, Chip, EmptyState } from '@/components/ui/bits';
 import { Field } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan } from '@/hooks/use-access';
 import { errorMessage } from '@/services/api';
 import { fetchNumbering, NumberingPreview, previewNumbering, saveNumbering } from '@/services/templates';
 
 export default function NumberingScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const canEdit = useCan('template.manage');
   const q = useQuery({ queryKey: ['numbering'], queryFn: fetchNumbering });
@@ -65,7 +67,7 @@ export default function NumberingScreen() {
           <Section title="Automatic numbering">
             <View style={styles.rowBetween}>
               <Text style={styles.label}>Number new invoices automatically</Text>
-              <Switch value={enabled} onValueChange={setEnabled} disabled={!canEdit} trackColor={{ true: Palette.primary }} />
+              <Switch value={enabled} onValueChange={setEnabled} disabled={!canEdit} trackColor={{ true: theme.primary }} />
             </View>
           </Section>
 
@@ -103,14 +105,14 @@ export default function NumberingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
   rowBetween: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-  label: { fontSize: 14, fontWeight: '600', color: Palette.text, flex: 1 },
+  label: { fontSize: 14, fontWeight: '600', color: t.text, flex: 1 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  previewBox: { marginTop: 14, padding: 14, borderRadius: 12, backgroundColor: Palette.surface },
-  previewLabel: { fontSize: 12, color: Palette.textMuted, fontWeight: '600' },
-  previewValue: { fontSize: 22, fontWeight: '800', color: Palette.primary, marginTop: 2 },
-  warn: { fontSize: 13, color: Palette.danger, marginTop: 4 },
-  note: { fontSize: 12, color: Palette.textMuted, textAlign: 'center', marginTop: 14 },
+  previewBox: { marginTop: 14, padding: 14, borderRadius: 12, backgroundColor: t.background },
+  previewLabel: { fontSize: 12, color: t.textMuted, fontWeight: '600' },
+  previewValue: { fontSize: 22, fontWeight: '800', color: t.primary, marginTop: 2 },
+  warn: { fontSize: 13, color: t.danger, marginTop: 4 },
+  note: { fontSize: 12, color: t.textMuted, textAlign: 'center', marginTop: 14 },
 });

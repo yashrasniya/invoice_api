@@ -19,6 +19,14 @@ split B2B / B2C) and 13 (documents issued). A customer's GST treatment
 decides the table. Not produced: e-commerce (14/15), advances (11A/11B),
 amendments (9A/9C/10/11). Cess ended on 1 Feb 2026, so `csamt` is always 0.
 
+Every amount that is classified is also booked in `ledger` (kind, taxable
+value, IGST/CGST/SGST, place of supply). GSTR-3B and GSTR-9 add that ledger
+up (see invoice_api.gstr3b), so the returns are built from one classification.
+
+`mode='iff'` builds the Invoice Furnishing Facility upload of a quarterly
+(QRMP) filer: registered-buyer invoices and their notes only. `skip_b2b_until`
+leaves those out up to a date, for the quarterly GSTR-1 after IFF uploads.
+
 GSTN publishes no formal JSON schema; field names follow the offline tool's
 import format. Do one test upload on the portal before relying on it.
 """
@@ -29,7 +37,8 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from accounts.gst_utils import GSTIN_TREATMENTS, gstin_error
 from invoice_api.gst import (FOREIGN_STATE_CODE, HSN_RE, VALID_GST_SLABS, has_valid_lut,
-                             is_gst_column, is_hsn_column, is_valid_state_code, supply_type)
+                             is_gst_column, is_hsn_column, is_valid_state_code, supply_type,
+                             taxable_value)
 
 ZERO = Decimal('0')
 CENT = Decimal('0.01')
@@ -127,12 +136,14 @@ def snap_rate(taxable, tax):
 # ── lines ──────────────────────────────────────────────────────────────
 
 class Line:
-    __slots__ = ('rate', 'txval', 'tax', 'hsn', 'desc', 'qty', 'uqc', 'hsn_column', 'category')
+    __slots__ = ('rate', 'txval', 'tax', 'hsn', 'desc', 'qty', 'uqc', 'hsn_column', 'category', 'itc')
 
     def __init__(self, rate, txval, tax, hsn='', desc='', qty=ZERO, uqc='', hsn_column=False,
-                 category='taxable'):
+                 category='taxable', itc=''):
         self.rate, self.txval, self.tax = rate, txval, tax
         self.category = category or 'taxable'
+        # purchase lines: the line's own ITC eligibility ('' = the invoice's)
+        self.itc = itc or ''
         self.hsn, self.desc, self.qty, self.uqc = hsn, desc, qty, uqc
         # whether the line's columns include an HSN/SAC column at all
         self.hsn_column = hsn_column
@@ -151,7 +162,8 @@ def invoice_lines(invoice):
     lines = []
     products = list(invoice.products.all())
     if not products:
-        txval = _d(invoice.total_final_amount) - _d(invoice.gst_final_amount)
+        txval = _d(taxable_value(invoice.total_final_amount, invoice.gst_final_amount,
+                                 getattr(invoice, 'reverse_charge', False)))
         tax = _d(invoice.gst_final_amount)
         rate = snap_rate(txval, tax)
         if rate is None:
@@ -208,7 +220,7 @@ def invoice_lines(invoice):
             uqc = 'NA' if hsn.startswith('99') else 'OTH'
         lines.append(Line(rate, txval, tax, hsn, desc[:30], qty, uqc,
                           hsn_column=any(is_hsn_column(c.input_title) for c, _ in props),
-                          category=category))
+                          category=category, itc=getattr(product, 'itc_eligibility', '') or ''))
     return lines, problems
 
 
@@ -244,8 +256,13 @@ class Gstr1:
     """Build once, read `summary()` / `portal_json()` / `issues`."""
 
     def __init__(self, company, sales_qs, notes_qs, start, end, deleted_sales_qs=None,
-                 fy_numbers=None):
+                 fy_numbers=None, mode='gstr1', skip_b2b_until=None):
         self.company, self.start, self.end = company, start, end
+        self.mode, self.skip_b2b_until = mode, skip_b2b_until
+        # one entry per classified amount; see `_book`
+        self.ledger = []
+        # invoices classified; left out because of an error; with any error
+        self.counted, self.skipped, self.flagged = 0, 0, 0
         self.home = getattr(company, 'state_code', None)
         self.gstin = (getattr(company, 'company_gst_number', '') or '').strip().upper()
         self.issues = []
@@ -263,14 +280,45 @@ class Gstr1:
         sales = list(sales_qs.select_related('receiver')
                      .prefetch_related('products__product_properties__new_product_in_frontend')
                      .order_by('date', 'id'))
+        sales = [inv for inv in sales if self._included(inv.receiver, inv.place_of_supply, inv.date)]
         self._check_numbers(sales, fy_numbers or [])
         self._saw_hsn_column = False
         for inv in sales:
             self._add_invoice(inv)
         self._collapse_missing_hsn_column()
         for note in notes_qs.select_related('customer', 'invoice').order_by('date', 'id'):
-            self._add_note(note)
-        self.doc_issue = self._documents(sales, deleted_sales_qs)
+            customer = note.customer or (note.invoice.receiver if note.invoice_id else None)
+            pos = note.invoice.place_of_supply if note.invoice_id else None
+            if self._included(customer, pos, note.date):
+                self._add_note(note)
+        self.doc_issue = [] if mode == 'iff' else self._documents(sales, deleted_sales_qs)
+
+    @staticmethod
+    def is_b2b(customer, pos):
+        """A supply to a registered buyer (B2B, SEZ, deemed export): what the IFF carries."""
+        ctin = (getattr(customer, 'gst_number', '') or '').strip()
+        treatment = getattr(customer, 'gst_treatment', '') or ('registered' if ctin else 'unregistered')
+        exporting = treatment == 'overseas' or (pos is not None and int(pos) == FOREIGN_STATE_CODE)
+        return not exporting and (treatment in GSTIN_TREATMENTS or bool(ctin))
+
+    def _included(self, customer, pos, day):
+        b2b = self.is_b2b(customer, pos)
+        if self.mode == 'iff':
+            return b2b
+        if self.skip_b2b_until and b2b and day and day <= self.skip_b2b_until:
+            return False                         # already uploaded in an IFF
+        return True
+
+    def _book(self, kind, txval, tax, supply, pos=None, buyer=None, note=None):
+        """Record a classified amount for GSTR-3B / GSTR-9.
+
+        `buyer` is 'unreg' / 'comp' for inter-state supplies to unregistered or
+        composition buyers (3B Table 3.2); `note` is 'credit' / 'debit', with
+        the amounts already signed."""
+        heads = _heads(tax, supply)
+        self.ledger.append({'kind': kind, 'txval': _d(txval), 'iamt': heads['iamt'], 'camt': heads['camt'],
+                            'samt': heads['samt'], 'pos': int(pos) if pos is not None else None,
+                            'buyer': buyer if supply == 'inter' else None, 'note': note})
 
     # ── issues ──
 
@@ -344,6 +392,16 @@ class Gstr1:
                     'in on these invoices.')
 
     def _add_invoice(self, inv):
+        errors_before = sum(1 for i in self.issues if i['level'] == 'error')
+        if self._classify_invoice(inv) is False:
+            self.skipped += 1
+        else:
+            self.counted += 1
+        if sum(1 for i in self.issues if i['level'] == 'error') > errors_before:
+            self.flagged += 1
+
+    def _classify_invoice(self, inv):
+        """Put one invoice in its tables. Returns False when an error leaves it out."""
         lines, problems = invoice_lines(inv)
         if any(ln.hsn_column for ln in lines):
             self._saw_hsn_column = True
@@ -351,7 +409,7 @@ class Gstr1:
         for code, msg in dict.fromkeys(problems):        # de-dupe, keep order
             self._issue('error' if code in blocking else 'warning', code, msg, invoice=inv)
         if any(ln.rate is None for ln in lines):
-            return
+            return False
 
         customer = inv.receiver
         ctin = (getattr(customer, 'gst_number', '') or '').strip().upper()
@@ -369,15 +427,15 @@ class Gstr1:
             if err:
                 self._issue('error', 'customer_gstin',
                             f'Customer {customer.name}: GST number {ctin} is not valid — {err}', invoice=inv)
-                return
+                return False
             if ctin == self.gstin:
                 self._issue('error', 'customer_gstin', 'Customer GST number is your own GST number.', invoice=inv)
-                return
+                return False
         elif treatment in GSTIN_TREATMENTS:
             self._issue('error', 'customer_gstin',
                         f'Customer {customer.name} is marked "{TREATMENT_LABEL.get(treatment, treatment)}" '
                         'but has no GST number.', invoice=inv)
-            return
+            return False
 
         exporting = treatment == 'overseas' or (pos is not None and int(pos) == FOREIGN_STATE_CODE)
         if exporting:
@@ -385,7 +443,7 @@ class Gstr1:
         if supply is None:
             self._issue('error', 'place_of_supply',
                         "Neither the invoice's place of supply nor the customer's state is set.", invoice=inv)
-            return
+            return False
 
         wrong_category = [ln for ln in lines if ln.category != 'taxable' and ln.rate != 0]
         if wrong_category:
@@ -393,12 +451,12 @@ class Gstr1:
             self._issue('error', 'category_rate',
                         f'A line is marked {CATEGORY_LABEL[ln.category]} but charges {ln.rate}% GST. '
                         'Set its GST to 0 or mark it taxable.', invoice=inv)
-            return
+            return False
         registered = treatment in GSTIN_TREATMENTS
         if rcm and (not registered or exporting):
             self._issue('error', 'rcm_unregistered',
                         'Reverse charge applies only to supplies to a registered business.', invoice=inv)
-            return
+            return False
 
         total_tax = sum((ln.tax for ln in lines), ZERO)
         if (exporting or treatment == 'sez') and total_tax == 0 and not has_valid_lut(self.company, inv.date):
@@ -406,7 +464,7 @@ class Gstr1:
                         ('Export' if exporting else 'SEZ') + ' invoice without IGST needs a Letter of '
                         'Undertaking (LUT) valid on the invoice date. Add it in your company details, '
                         'or charge IGST.', invoice=inv)
-            return
+            return False
 
         reportable = [ln for ln in lines if ln.category != 'non_gst']
 
@@ -417,6 +475,9 @@ class Gstr1:
             self.exp[typ].append({'inum': inv.invoice_number, 'idt': _gst_date(inv.date),
                                   'val': money(value), 'itms': items})
             self._tally('exp', sum((ln.txval for ln in reportable), ZERO), total_tax)
+            self._book('exp_wp' if total_tax > 0 else 'exp_wop',
+                       sum((ln.txval for ln in reportable), ZERO), total_tax, 'inter', pos=FOREIGN_STATE_CODE)
+            self._book_non_gst(lines, 'inter')
             self._hsn('b2c', reportable, 'inter')
             self._issue('warning', 'export_shipping_bill',
                         'Export invoice: add the shipping bill number, date and port code on the portal.',
@@ -429,6 +490,9 @@ class Gstr1:
                    'itms': _rate_items(reportable, 'inter')}
             self.b2b.setdefault(ctin, []).append(row)
             self._tally('b2b', sum((ln.txval for ln in reportable), ZERO), total_tax)
+            self._book('sez_wp' if total_tax > 0 else 'sez_wop',
+                       sum((ln.txval for ln in reportable), ZERO), total_tax, 'inter')
+            self._book_non_gst(lines, 'inter')
             self._hsn('b2b', reportable, 'inter')
             return
 
@@ -439,6 +503,7 @@ class Gstr1:
                 col = {'exempt': 'expt_amt', 'non_gst': 'ngsup_amt'}.get(ln.category, 'nil_amt')
                 self.nil[sply][col] += ln.txval
                 self._tally('nil', ln.txval, ZERO, count=0)
+                self._book({'exempt': 'exempt', 'non_gst': 'non_gst'}.get(ln.category, 'nil'), ln.txval, ZERO, supply)
 
         self._hsn('b2b' if registered else 'b2c', reportable, supply)
 
@@ -454,6 +519,8 @@ class Gstr1:
                    'itms': _rate_items(taxed, supply)}
             self.b2b.setdefault(ctin, []).append(row)
             self._tally('b2b', txval, tax)
+            self._book('rcm_out' if rcm else 'de' if treatment == 'deemed_export' else 'b2b', txval, tax, supply,
+                       pos=pos, buyer='comp' if treatment == 'composition' else None)
         elif supply == 'inter' and value > B2CL_LIMIT:
             row = {'inum': inv.invoice_number, 'idt': _gst_date(inv.date), 'val': money(value),
                    'itms': _rate_items(taxed, 'inter', igst_only=False)}
@@ -462,10 +529,18 @@ class Gstr1:
                 it['itm_det'].pop('samt', None)
             self.b2cl.setdefault(_pos(pos), []).append(row)
             self._tally('b2cl', txval, tax)
+            self._book('b2c', txval, tax, supply, pos=pos, buyer='unreg')
         else:
             for ln in taxed:
                 self._b2cs(supply, pos, ln.rate, ln.txval, ln.tax)
             self._tally('b2cs', txval, tax)
+            self._book('b2c', txval, tax, supply, pos=pos, buyer='unreg')
+
+    def _book_non_gst(self, lines, supply):
+        # exports / SEZ: non-GST lines are still non-GST supplies (3B 3.1(e))
+        for ln in lines:
+            if ln.category == 'non_gst':
+                self._book('non_gst', ln.txval, ZERO, supply)
 
     def _b2cs(self, supply, pos, rate, txval, tax):
         key = ('INTER' if supply == 'inter' else 'INTRA', _pos(pos), rate)
@@ -537,20 +612,26 @@ class Gstr1:
             self.cdnr.setdefault(ctin, []).append({**base, 'pos': _pos(pos), 'rchrg': 'N', 'inv_typ': 'R',
                                                    'itms': [{'num': 1, 'itm_det': det}]})
             self._tally('cdnr', sign * txval, sign * tax)
+            comp = getattr(customer, 'gst_treatment', '') == 'composition'
+            self._book('note', sign * txval, sign * tax, supply, pos=pos, buyer='comp' if comp else None,
+                       note=note.note_type)
         elif int(pos) == FOREIGN_STATE_CODE:
             det = {k: v for k, v in det.items() if k not in ('camt', 'samt')}
             det['iamt'] = money(tax)
             self.cdnur.append({**base, 'typ': 'EXPWP' if tax > 0 else 'EXPWOP',
                                'itms': [{'num': 1, 'itm_det': det}]})
             self._tally('cdnur', sign * txval, sign * tax)
+            self._book('note_zero', sign * txval, sign * tax, 'inter', pos=pos, note=note.note_type)
         elif supply == 'inter' and inv is not None and _d(inv.total_final_amount) > B2CL_LIMIT:
             det = {k: v for k, v in det.items() if k not in ('camt', 'samt')}
             self.cdnur.append({**base, 'typ': 'B2CL', 'pos': _pos(pos), 'itms': [{'num': 1, 'itm_det': det}]})
             self._tally('cdnur', sign * txval, sign * tax)
+            self._book('note', sign * txval, sign * tax, supply, pos=pos, buyer='unreg', note=note.note_type)
         else:
             # small B2C notes adjust Table 7 directly (negative for a credit note)
             self._b2cs(supply, pos, rate, sign * txval, sign * tax)
             self._tally('b2cs', sign * txval, sign * tax, count=0)
+            self._book('note', sign * txval, sign * tax, supply, pos=pos, buyer='unreg', note=note.note_type)
 
     # ── Table 13 ──
 
@@ -636,6 +717,8 @@ class Gstr1:
             ('hsn', hsn),
             ('doc_issue', {'doc_det': [{'doc_num': 1, 'docs': self.doc_issue}]} if self.doc_issue else {}),
         ])
+        if self.mode == 'iff':
+            out = OrderedDict((k, v) for k, v in out.items() if k in ('gstin', 'fp', 'b2b', 'cdnr'))
         # the offline tool rejects empty sections; leave them out
         return OrderedDict((k, v) for k, v in out.items()
                            if k in ('gstin', 'fp') or (v and (not isinstance(v, dict) or any(v.values()))))

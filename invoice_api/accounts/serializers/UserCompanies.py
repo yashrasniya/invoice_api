@@ -27,6 +27,12 @@ class UserCompaniesSerializer(serializers.ModelSerializer):
                 "Enter a valid UPI id in the form name@bank, e.g. acme@okaxis.")
         return value
 
+    def validate_pincode(self, value):
+        value = (value or '').strip()
+        if value and not (len(value) == 6 and value.isdigit() and value[0] != '0'):
+            raise serializers.ValidationError('A PIN code is 6 digits.')
+        return value
+
     def validate(self, attrs):
         attrs = self._resolve_gst_and_state(attrs)
         self._check_lut(attrs)

@@ -1,20 +1,24 @@
 import React, { useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import * as Sharing from 'expo-sharing';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Centered, StatusBadge } from '@/components/ui/bits';
 import { PLACE_OF_SUPPLY_STATES } from '@/constants/gst';
-import { Palette } from '@/constants/theme';
-import { useCan } from '@/hooks/use-access';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
+import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { summarizeLine } from '@/lib/line-display';
 import { errorMessage } from '@/services/api';
+import { fetchEway, formatEwayTime } from '@/services/eway';
 import { reportFirstShare } from '@/services/onboarding';
 import { deleteInvoice, downloadPdf, getInvoice, METHOD_LABEL, shareOnWhatsapp, updateInvoice } from '@/services/invoices';
 
 export default function InvoiceDetailScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { id: raw } = useLocalSearchParams<{ id: string }>();
   const id = Number(raw);
   const qc = useQueryClient();
@@ -26,6 +30,10 @@ export default function InvoiceDetailScreen() {
 
   const q = useQuery({ queryKey: ['invoice', id], queryFn: () => getInvoice(id) });
   const inv = q.data;
+  const hasEway = useFeature('eway_bill');
+  const ewayQ = useQuery({ queryKey: ['eway', id], queryFn: () => fetchEway(id),
+    enabled: hasEway && inv?.invoice_type === 'sales' });
+  const ew = ewayQ.data;
 
   const refreshLists = () => {
     qc.invalidateQueries({ queryKey: ['invoices'] });
@@ -70,7 +78,7 @@ export default function InvoiceDetailScreen() {
   };
 
   if (q.isLoading) return <Centered />;
-  if (!inv) return <Centered><Text style={{ color: Palette.danger }}>{errorMessage(q.error, 'Invoice not found')}</Text></Centered>;
+  if (!inv) return <Centered><Text style={{ color: theme.danger }}>{errorMessage(q.error, 'Invoice not found')}</Text></Centered>;
 
   const purchase = inv.invoice_type === 'purchase';
   const partyName = purchase ? inv.vendor_name : inv.receiver_name;
@@ -122,6 +130,21 @@ export default function InvoiceDetailScreen() {
           <View style={[styles.rowBetween, styles.totalRow]}><Text style={styles.totalLabel}>Total</Text><Text style={styles.total}>{money(inv.total_final_amount)}</Text></View>
         </View>
 
+        {!purchase && !!ew && (ew.verdict.code !== 'services' || ew.saved) && (
+          <TouchableOpacity style={[styles.card, styles.rowBetween]} onPress={() => router.push(`/invoice/eway/${id}`)}
+            accessibilityRole="button" accessibilityLabel="E-way bill">
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={styles.lineName}>E-way bill</Text>
+              <Text style={[styles.meta, ew.verdict.needed && ew.eway_bill.status !== 'generated' && { color: theme.warningText }]}>
+                {ew.eway_bill.status === 'generated'
+                  ? `${ew.eway_bill.ewb_number}${ew.eway_bill.valid_until ? ` · valid until ${formatEwayTime(ew.eway_bill.valid_until)}` : ''}`
+                  : ew.verdict.needed ? 'Needed: goods over ₹50,000. Tap to prepare it.' : 'Optional for this invoice'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={theme.textFaint} />
+          </TouchableOpacity>
+        )}
+
         {!!inv.customer_notes && (
           <>
             <Text style={styles.section}>Notes</Text>
@@ -150,20 +173,20 @@ export default function InvoiceDetailScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  card: { backgroundColor: Palette.white, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: Palette.border, gap: 6 },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  card: { backgroundColor: t.surface, borderRadius: 16, padding: 16, marginBottom: 12, borderWidth: 1, borderColor: t.border, gap: 6 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  customer: { fontSize: 20, fontWeight: '800', color: Palette.text, flex: 1, marginRight: 8 },
-  meta: { fontSize: 13, color: Palette.textMuted },
-  body: { fontSize: 14, color: Palette.text, lineHeight: 20 },
-  section: { fontSize: 13, fontWeight: '700', color: Palette.textMuted, textTransform: 'uppercase', marginVertical: 8, marginLeft: 4 },
+  customer: { fontSize: 20, fontWeight: '800', color: t.text, flex: 1, marginRight: 8 },
+  meta: { fontSize: 13, color: t.textMuted },
+  body: { fontSize: 14, color: t.text, lineHeight: 20 },
+  section: { fontSize: 13, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', marginVertical: 8, marginLeft: 4 },
   line: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
-  lineBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Palette.border },
-  lineName: { fontSize: 16, fontWeight: '600', color: Palette.text },
-  lineAmt: { fontSize: 15, fontWeight: '700', color: Palette.text },
-  val: { fontSize: 15, fontWeight: '600', color: Palette.text },
-  totalRow: { borderTopWidth: 1, borderTopColor: Palette.border, paddingTop: 10, marginTop: 4 },
-  totalLabel: { fontSize: 16, fontWeight: '800', color: Palette.text },
-  total: { fontSize: 22, fontWeight: '800', color: Palette.primary },
+  lineBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
+  lineName: { fontSize: 16, fontWeight: '600', color: t.text },
+  lineAmt: { fontSize: 15, fontWeight: '700', color: t.text },
+  val: { fontSize: 15, fontWeight: '600', color: t.text },
+  totalRow: { borderTopWidth: 1, borderTopColor: t.border, paddingTop: 10, marginTop: 4 },
+  totalLabel: { fontSize: 16, fontWeight: '800', color: t.text },
+  total: { fontSize: 22, fontWeight: '800', color: t.primary },
 });

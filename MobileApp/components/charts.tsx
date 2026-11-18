@@ -1,6 +1,6 @@
 import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { compactInr } from '@/lib/invoice-calc';
 
 export type Group = { label: string; values: number[] };
@@ -10,9 +10,12 @@ export type Group = { label: string; values: number[] };
  * there are many groups. Negative values are drawn as zero-height — callers that
  * care about sign (cash flow net) show it as text instead.
  */
-export function BarChart({ data, colors = [Palette.primary], height = 140, barWidth = 14 }: {
+export function BarChart({ data, colors: colorsProp, height = 140, barWidth = 14 }: {
   data: Group[]; colors?: string[]; height?: number; barWidth?: number;
 }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const colors = colorsProp ?? [theme.primary];
   const max = Math.max(1, ...data.flatMap((g) => g.values.map((v) => Math.max(0, v))));
   const every = Math.max(1, Math.ceil(data.length / 6));
   const groupWidth = barWidth * colors.length + 10;
@@ -38,7 +41,10 @@ export function BarChart({ data, colors = [Palette.primary], height = 140, barWi
   );
 }
 
-export function HBarList({ items, color = Palette.primary }: { items: { label: string; value: number }[]; color?: string }) {
+export function HBarList({ items, color: colorProp }: { items: { label: string; value: number }[]; color?: string }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
+  const color = colorProp ?? theme.primary;
   const max = Math.max(1, ...items.map((i) => i.value));
   return (
     <View style={{ gap: 10 }}>
@@ -58,6 +64,7 @@ export function HBarList({ items, color = Palette.primary }: { items: { label: s
 }
 
 export function Legend({ items }: { items: { label: string; color: string }[] }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.legend}>
       {items.map((i) => (
@@ -70,17 +77,17 @@ export function Legend({ items }: { items: { label: string; color: string }[] })
   );
 }
 
-const styles = StyleSheet.create({
-  axis: { fontSize: 11, color: Palette.textMuted, marginBottom: 4 },
-  plot: { flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1, borderBottomColor: Palette.border },
-  tick: { fontSize: 10, color: Palette.textMuted, marginTop: 4, height: 14 },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  axis: { fontSize: 11, color: t.textMuted, marginBottom: 4 },
+  plot: { flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1, borderBottomColor: t.border },
+  tick: { fontSize: 10, color: t.textMuted, marginTop: 4, height: 14 },
   hRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  hLabel: { fontSize: 14, color: Palette.text, flex: 1, marginRight: 8 },
-  hValue: { fontSize: 14, fontWeight: '700', color: Palette.text },
-  track: { height: 8, borderRadius: 4, backgroundColor: Palette.border, overflow: 'hidden' },
+  hLabel: { fontSize: 14, color: t.text, flex: 1, marginRight: 8 },
+  hValue: { fontSize: 14, fontWeight: '700', color: t.text },
+  track: { height: 8, borderRadius: 4, backgroundColor: t.border, overflow: 'hidden' },
   fill: { height: 8, borderRadius: 4 },
   legend: { flexDirection: 'row', gap: 16, marginTop: 10 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 10, height: 10, borderRadius: 5 },
-  legendText: { fontSize: 12, color: Palette.textMuted },
+  legendText: { fontSize: 12, color: t.textMuted },
 });

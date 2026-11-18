@@ -3,7 +3,7 @@ import { FlatList, Modal, StyleSheet, Text, TextInput, TouchableOpacity, View } 
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useInfiniteQuery } from '@tanstack/react-query';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { listParties, Party, PartyKind, PERMISSION } from '@/services/parties';
 import { Centered, EmptyState } from '@/components/ui/bits';
 import { useCan } from '@/hooks/use-access';
@@ -16,6 +16,8 @@ type Props = {
 };
 
 export function PartyPicker({ kind, visible, onClose, onPick }: Props) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [search, setSearch] = useState('');
   const canAdd = useCan(PERMISSION[kind]);
   const q = useInfiniteQuery({
@@ -32,13 +34,13 @@ export function PartyPicker({ kind, visible, onClose, onPick }: Props) {
       <View style={styles.screen}>
         <View style={styles.top}>
           <Text style={styles.title}>Select {kind}</Text>
-          <TouchableOpacity onPress={onClose} hitSlop={10}><Ionicons name="close" size={26} color={Palette.text} /></TouchableOpacity>
+          <TouchableOpacity onPress={onClose} hitSlop={10}><Ionicons name="close" size={26} color={theme.text} /></TouchableOpacity>
         </View>
-        <TextInput style={styles.search} placeholder={`Search ${kind}s`} placeholderTextColor={Palette.textFaint}
+        <TextInput style={styles.search} placeholder={`Search ${kind}s`} placeholderTextColor={theme.textFaint}
           value={search} onChangeText={setSearch} autoCapitalize="none" />
         {canAdd && (
           <TouchableOpacity style={styles.add} onPress={() => { onClose(); router.push(`/party/${kind}/new`); }}>
-            <Ionicons name="add-circle-outline" size={20} color={Palette.primary} />
+            <Ionicons name="add-circle-outline" size={20} color={theme.primary} />
             <Text style={styles.addText}>Add new {kind}</Text>
           </TouchableOpacity>
         )}
@@ -64,14 +66,14 @@ export function PartyPicker({ kind, visible, onClose, onPick }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.white, paddingTop: 56 },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.surface, paddingTop: 56 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, marginBottom: 12 },
-  title: { fontSize: 20, fontWeight: '800', color: Palette.text },
-  search: { marginHorizontal: 20, height: 46, borderRadius: 12, backgroundColor: Palette.surface, borderWidth: 1, borderColor: Palette.border, paddingHorizontal: 14, fontSize: 16, color: Palette.text },
+  title: { fontSize: 20, fontWeight: '800', color: t.text },
+  search: { marginHorizontal: 20, height: 46, borderRadius: 12, backgroundColor: t.isDark ? t.surfaceRaised : t.background, borderWidth: 1, borderColor: t.border, paddingHorizontal: 14, fontSize: 16, color: t.text },
   add: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 20, paddingVertical: 14 },
-  addText: { color: Palette.primary, fontWeight: '700', fontSize: 15 },
-  row: { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: Palette.border },
-  name: { fontSize: 16, fontWeight: '600', color: Palette.text },
-  sub: { fontSize: 13, color: Palette.textMuted, marginTop: 2 },
+  addText: { color: t.primary, fontWeight: '700', fontSize: 15 },
+  row: { paddingHorizontal: 20, paddingVertical: 14, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.border },
+  name: { fontSize: 16, fontWeight: '600', color: t.text },
+  sub: { fontSize: 13, color: t.textMuted, marginTop: 2 },
 });

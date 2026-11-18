@@ -2,7 +2,7 @@ import React from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 
 type Props = {
   title: string;
@@ -15,6 +15,8 @@ type Props = {
 };
 
 export function Button({ title, onPress, loading, disabled, variant = 'primary', icon, style }: Props) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const inactive = loading || disabled;
   const a11y = { accessibilityRole: 'button' as const, accessibilityLabel: title, accessibilityState: { disabled: !!inactive, busy: !!loading } };
   const label = (color: string) => (
@@ -29,25 +31,25 @@ export function Button({ title, onPress, loading, disabled, variant = 'primary',
   if (variant === 'primary') {
     return (
       <TouchableOpacity {...a11y} onPress={onPress} disabled={inactive} style={[styles.base, inactive && styles.inactive, style]}>
-        <LinearGradient colors={[Palette.primary, Palette.primaryAlt]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.fill}>
-          {label(Palette.white)}
+        <LinearGradient colors={[theme.primary, theme.accent]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.fill}>
+          {label(theme.onPrimary)}
         </LinearGradient>
       </TouchableOpacity>
     );
   }
-  const color = variant === 'danger' ? Palette.danger : Palette.primary;
+  const color = variant === 'danger' ? theme.danger : theme.primary;
   return (
     <TouchableOpacity
       {...a11y}
       onPress={onPress}
       disabled={inactive}
-      style={[styles.base, styles.center, { borderWidth: 1.5, borderColor: variant === 'danger' ? '#fecaca' : Palette.border }, inactive && styles.inactive, style]}>
+      style={[styles.base, styles.center, { borderWidth: 1.5, borderColor: variant === 'danger' ? theme.dangerBorder : theme.border }, inactive && styles.inactive, style]}>
       {label(color)}
     </TouchableOpacity>
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (t: Theme) => StyleSheet.create({
   base: { height: 56, borderRadius: 16, overflow: 'hidden' },
   // `fill` is for the gradient inside the primary button; the outline/danger touchables use `center`
   // because flex:1 on a fixed-height control collapses it to nothing inside an auto-height column

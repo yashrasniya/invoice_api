@@ -311,6 +311,52 @@ class GSTSummaryAPIView(APIView):
         })
 
 
+def _sales_scope(request, start, end):
+    """Sales, cancelled sales, FY numbers and outward notes for a range."""
+    from datetime import date as _date
+    from invoice.models import CreditDebitNote
+
+    scope = user_scope_q(request)
+    sales = Invoice.objects.filter(scope, invoice_type='sales', date__range=[start, end])
+    deleted = Invoice.all_objects.filter(scope, invoice_type='sales', is_deleted=True, date__range=[start, end])
+    fy_start = _date(start.year if start.month >= 4 else start.year - 1, 4, 1)
+    fy_numbers = Invoice.objects.filter(
+        scope, invoice_type='sales', date__range=[fy_start, _date(fy_start.year + 1, 3, 31)]
+    ).values_list('invoice_number', 'id')
+    # outward-supply notes only: vendor notes belong to the purchase side
+    notes = (CreditDebitNote.objects.filter(scope, date__range=[start, end], vendor__isnull=True)
+             .exclude(Q(invoice__isnull=False) & Q(invoice__invoice_type='purchase')))
+    return sales, deleted, fy_numbers, notes
+
+
+def _build_gstr1(request, start, end, mode='gstr1', skip_b2b_until=None):
+    from invoice_api.gstr1 import Gstr1
+    sales, deleted, fy_numbers, notes = _sales_scope(request, start, end)
+    return Gstr1(getattr(request, 'company', None), sales, notes, start, end, deleted_sales_qs=deleted,
+                 fy_numbers=fy_numbers, mode=mode, skip_b2b_until=skip_b2b_until)
+
+
+def _build_gstr3b(request, gstr1, start, end):
+    from invoice.models import CreditDebitNote
+    from invoice_api.gstr3b import Gstr3b
+    scope = user_scope_q(request)
+    purchases = Invoice.objects.filter(scope, invoice_type='purchase', date__range=[start, end])
+    vendor_notes = CreditDebitNote.objects.filter(scope, date__range=[start, end]).filter(
+        Q(vendor__isnull=False) | Q(invoice__invoice_type='purchase'))
+    return Gstr3b(getattr(request, 'company', None), gstr1, purchases, vendor_notes)
+
+
+def _quarter_months(start):
+    """For the month starting `start`: (end of its quarter's second month,
+    whether it is the quarter's third month). FY quarters are Apr-Jun,
+    Jul-Sep, Oct-Dec and Jan-Mar, so they line up with calendar quarters."""
+    import calendar
+    from datetime import date as _date
+    position = (start.month - 1) % 3
+    m2 = start.month - position + 1
+    return _date(start.year, m2, calendar.monthrange(start.year, m2)[1]), position == 2
+
+
 class GSTR1APIView(APIView):
     """GSTR-1 for a filing period.
 
@@ -319,50 +365,60 @@ class GSTR1APIView(APIView):
     issues) while any error-level issue remains, so a file with guessed or
     missing data is never produced.
 
-    Periods are a month or an Indian FY quarter (QRMP filers file quarterly);
-    `fp` in the file is the period's last month.
+    Periods are a month or an Indian FY quarter; `fp` in the file is the
+    period's last month. For a quarterly (QRMP) filer a month in the quarter's
+    first two months is the IFF (B2B only), the third month alone is refused,
+    and the quarter leaves out the B2B already sent in those IFFs unless
+    ?include_iff=1.
     """
     permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('advanced_reports')]
     required_permissions_map = {'GET': 'report.view'}
     PERIODS = ('this_month', 'last_month', 'this_quarter', 'last_quarter')
+    IFF_LIMIT = Decimal('5000000')          # ₹50 lakh of B2B value per month
 
     def get(self, request):
         import json
-        from datetime import date as _date
         from django.http import HttpResponse
-        from invoice.models import CreditDebitNote
         from invoice_api.gst import gst_period_bounds
-        from invoice_api.gstr1 import Gstr1
-        from django.db.models import Q
 
         period = request.query_params.get('period', 'last_month')
         if period not in self.PERIODS:
             return Response({'error': f"period must be one of {', '.join(self.PERIODS)}."}, status=400)
         start, end, label = gst_period_bounds(period)
-
-        scope = user_scope_q(request)
         company = getattr(request, 'company', None)
-        sales = Invoice.objects.filter(scope, invoice_type='sales', date__range=[start, end])
-        deleted = Invoice.all_objects.filter(scope, invoice_type='sales', is_deleted=True,
-                                             date__range=[start, end])
-        fy_start = _date(start.year if start.month >= 4 else start.year - 1, 4, 1)
-        fy_numbers = Invoice.objects.filter(
-            scope, invoice_type='sales', date__range=[fy_start, _date(fy_start.year + 1, 3, 31)]
-        ).values_list('invoice_number', 'id')
-        # outward-supply notes only: vendor notes belong to the purchase side
-        notes = (CreditDebitNote.objects.filter(scope, date__range=[start, end], vendor__isnull=True)
-                 .exclude(Q(invoice__isnull=False) & Q(invoice__invoice_type='purchase')))
+        quarterly = getattr(company, 'gst_filing_frequency', 'monthly') == 'quarterly'
+        is_month = period.endswith('_month')
 
-        ret = Gstr1(company, sales, notes, start, end, deleted_sales_qs=deleted, fy_numbers=fy_numbers)
+        mode, skip_until, return_type = 'gstr1', None, 'GSTR-1'
+        include_iff = request.query_params.get('include_iff') in ('1', 'true')
+        if quarterly and is_month:
+            m2_end, third = _quarter_months(start)
+            if third:
+                return Response({'error': f'You file GSTR-1 quarterly. {label} is the last month of its '
+                                          'quarter, so its invoices go in the quarterly return: pick the quarter.',
+                                 'code': 'quarterly_third_month'}, status=400)
+            mode, return_type = 'iff', 'IFF'
+        elif quarterly and not include_iff:
+            skip_until, _ = _quarter_months(start)
+            skip_until = skip_until if skip_until < end else None
+        ret = _build_gstr1(request, start, end, mode=mode, skip_b2b_until=skip_until)
+
+        if mode == 'iff':
+            b2b_value = sum((Decimal(str(r['val'])) for invs in ret.b2b.values() for r in invs), Decimal('0'))
+            if b2b_value > self.IFF_LIMIT:
+                ret._issue('warning', 'iff_limit',
+                           'The IFF takes up to ₹50 lakh of B2B invoices a month; upload the rest with the '
+                           'quarterly GSTR-1.')
 
         if request.query_params.get('download'):
             if ret.has_errors:
-                return Response({'error': 'Fix the errors before downloading the GSTR-1 file.',
+                return Response({'error': f'Fix the errors before downloading the {return_type} file.',
                                  'issues': ret.issues}, status=409)
             body = json.dumps(ret.portal_json(), indent=2)
             resp = HttpResponse(body, content_type='application/json')
             fp = f'{end.month:02d}{end.year}'
-            resp['Content-Disposition'] = f'attachment; filename="GSTR1_{ret.gstin or "NA"}_{fp}.json"'
+            resp['Content-Disposition'] = (f'attachment; filename="{return_type.replace("-", "")}_'
+                                           f'{ret.gstin or "NA"}_{fp}.json"')
             return resp
 
         errors = sum(1 for i in ret.issues if i['level'] == 'error')
@@ -370,9 +426,88 @@ class GSTR1APIView(APIView):
             'period': period, 'period_label': label,
             'start_date': start.isoformat(), 'end_date': end.isoformat(),
             'gstin': ret.gstin, 'fp': f'{end.month:02d}{end.year}',
+            'filing_frequency': 'quarterly' if quarterly else 'monthly',
+            'return_type': return_type,
+            # quarter of a quarterly filer: B2B of the first two months left out (sent in the IFF)
+            'iff_months_left_out': bool(skip_until),
             **ret.summary(),
             'issues': ret.issues,
             'error_count': errors,
             'warning_count': len(ret.issues) - errors,
             'ready_to_file': errors == 0,
+        })
+
+
+class GSTR3BAPIView(APIView):
+    """GSTR-3B figures for a period (month, or quarter for QRMP filers): what to
+    type into the portal. A report: nothing is filed or downloaded."""
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('advanced_reports')]
+    required_permissions_map = {'GET': 'report.view'}
+    PERIODS = GSTR1APIView.PERIODS
+
+    def get(self, request):
+        from invoice_api.gst import gst_period_bounds
+
+        period = request.query_params.get('period', 'last_month')
+        if period not in self.PERIODS:
+            return Response({'error': f"period must be one of {', '.join(self.PERIODS)}."}, status=400)
+        start, end, label = gst_period_bounds(period)
+        company = getattr(request, 'company', None)
+        gstr1 = _build_gstr1(request, start, end)
+        ret = _build_gstr3b(request, gstr1, start, end)
+        issues = ret.issues
+        quarterly = getattr(company, 'gst_filing_frequency', 'monthly') == 'quarterly'
+        if quarterly and period.endswith('_month'):
+            issues = issues + [{'level': 'warning', 'code': 'quarterly_filer', 'ref': None,
+                                'message': 'You file GSTR-3B quarterly; pick the quarter for the return. '
+                                           'This month is shown for reference (e.g. a PMT-06 payment).'}]
+        errors = sum(1 for i in issues if i['level'] == 'error')
+        return Response({
+            'period': period, 'period_label': label,
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            'gstin': gstr1.gstin,
+            'filing_frequency': 'quarterly' if quarterly else 'monthly',
+            **ret.summary(),
+            'issues': issues,
+            'error_count': errors,
+            'warning_count': len(issues) - errors,
+        })
+
+
+class GSTR9APIView(APIView):
+    """GSTR-9 (annual return) figures for a financial year, from the books.
+    ?fy=2025 is FY 2025-26; default is the last complete FY."""
+    permission_classes = [IsAuthenticated, HasMethodPermission, HasFeature.with_code('advanced_reports')]
+    required_permissions_map = {'GET': 'report.view'}
+
+    def get(self, request):
+        from datetime import date as _date
+        from invoice_api.gstr3b import gstr9
+
+        today = _date.today()
+        current = today.year if today.month >= 4 else today.year - 1
+        raw = request.query_params.get('fy')
+        try:
+            fy = int(raw) if raw else current - 1
+        except ValueError:
+            return Response({'error': 'fy must be the year the financial year starts, e.g. 2025.'}, status=400)
+        if not 2017 <= fy <= current:
+            return Response({'error': f'fy must be between 2017 and {current}.'}, status=400)
+        start, end = _date(fy, 4, 1), _date(fy + 1, 3, 31)
+        g1 = _build_gstr1(request, start, end)
+        g3 = _build_gstr3b(request, g1, start, end)
+        issues = list(g3.issues)
+        if fy == current:
+            issues.append({'level': 'warning', 'code': 'fy_in_progress', 'ref': None,
+                           'message': 'This financial year is not over: the figures are so far.'})
+        errors = sum(1 for i in issues if i['level'] == 'error')
+        return Response({
+            'fy': fy, 'fy_label': f'FY {fy}-{str(fy + 1)[2:]}',
+            'start_date': start.isoformat(), 'end_date': end.isoformat(),
+            'gstin': g1.gstin,
+            **gstr9(g1, g3),
+            'sales_counted': g1.counted, 'sales_left_out': g1.skipped, 'sales_with_errors': g1.flagged,
+            'issues': issues,
+            'error_count': errors,
+            'warning_count': len(issues) - errors,
         })

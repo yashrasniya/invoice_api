@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Centered } from '@/components/ui/bits';
 import { Field } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
@@ -36,15 +36,18 @@ const shortDate = (iso: string) => {
 };
 
 function Action({ icon, label, onPress }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity style={styles.action} onPress={onPress} accessibilityRole="button" accessibilityLabel={label}>
-      <Ionicons name={icon} size={22} color={Palette.primary} />
+      <Ionicons name={icon} size={22} color={theme.primary} />
       <Text style={styles.actionLabel}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 function Row({ label, value }: { label: string; value: string }) {
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={styles.detailRow}>
       <Text style={styles.detailLabel}>{label}</Text>
@@ -54,6 +57,8 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export default function PartyScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { kind: rawKind, id: rawId } = useLocalSearchParams<{ kind: string; id: string }>();
   const kind = (rawKind === 'vendor' ? 'vendor' : 'customer') as PartyKind;
   const isNew = rawId === 'new';
@@ -149,7 +154,7 @@ export default function PartyScreen() {
   const headerLeft = !isNew && editing
     ? () => (
       <TouchableOpacity onPress={cancelEdit} hitSlop={8} accessibilityRole="button" accessibilityLabel="Cancel">
-        <Text style={[styles.headerBtn, { color: Palette.textMuted }]}>Cancel</Text>
+        <Text style={[styles.headerBtn, { color: theme.textMuted }]}>Cancel</Text>
       </TouchableOpacity>
     )
     : undefined;
@@ -157,7 +162,7 @@ export default function PartyScreen() {
   return (
     <>
       <Stack.Screen options={{ title: isNew ? `New ${kind}` : LABEL[kind], headerRight, ...(headerLeft ? { headerLeft } : {}), gestureEnabled: !editing || isNew }} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: Palette.white }}>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, backgroundColor: theme.surface }}>
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
           {editing ? (
             <>
@@ -216,23 +221,23 @@ export default function PartyScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  treatLabel: { fontSize: 14, fontWeight: '700', color: Palette.label, marginBottom: 8, marginLeft: 4 },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  treatLabel: { fontSize: 14, fontWeight: '700', color: t.label, marginBottom: 8, marginLeft: 4 },
   treatChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 18 },
   scroll: { padding: 24 },
   row: { flexDirection: 'row', gap: 12 },
-  headerBtn: { fontSize: 16, fontWeight: '700', color: Palette.primary },
-  card: { backgroundColor: Palette.surface, borderWidth: 1, borderColor: Palette.border, borderRadius: 16, padding: 16, marginBottom: 16 },
-  name: { fontSize: 22, fontWeight: '800', color: Palette.text },
-  gstin: { fontSize: 13, color: Palette.textMuted, marginTop: 4, fontWeight: '600' },
+  headerBtn: { fontSize: 16, fontWeight: '700', color: t.primary },
+  card: { backgroundColor: t.background, borderWidth: 1, borderColor: t.border, borderRadius: 16, padding: 16, marginBottom: 16 },
+  name: { fontSize: 22, fontWeight: '800', color: t.text },
+  gstin: { fontSize: 13, color: t.textMuted, marginTop: 4, fontWeight: '600' },
   stats: { flexDirection: 'row', marginTop: 16, gap: 8 },
   stat: { flex: 1 },
-  statValue: { fontSize: 15, fontWeight: '800', color: Palette.text },
-  statLabel: { fontSize: 12, color: Palette.textMuted, marginTop: 2 },
+  statValue: { fontSize: 15, fontWeight: '800', color: t.text },
+  statLabel: { fontSize: 12, color: t.textMuted, marginTop: 2 },
   actions: { flexDirection: 'row', gap: 10, marginTop: 16 },
-  action: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10, borderRadius: 12, backgroundColor: Palette.white, borderWidth: 1, borderColor: Palette.border },
-  actionLabel: { fontSize: 12, fontWeight: '700', color: Palette.label },
+  action: { flex: 1, alignItems: 'center', gap: 4, paddingVertical: 10, borderRadius: 12, backgroundColor: t.surface, borderWidth: 1, borderColor: t.border },
+  actionLabel: { fontSize: 12, fontWeight: '700', color: t.label },
   detailRow: { paddingVertical: 8 },
-  detailLabel: { fontSize: 12, fontWeight: '700', color: Palette.textMuted, marginBottom: 2 },
-  detailValue: { fontSize: 16, color: Palette.text, fontWeight: '500' },
+  detailLabel: { fontSize: 12, fontWeight: '700', color: t.textMuted, marginBottom: 2 },
+  detailValue: { fontSize: 16, color: t.text, fontWeight: '500' },
 });

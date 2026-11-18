@@ -4,13 +4,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { Stack, router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { Centered, Chip, EmptyState, Fab } from '@/components/ui/bits';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
 import { isLowStock, listInventory } from '@/services/inventory';
 
 export default function InventoryScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const hasFeature = useFeature('inventory');
   const canManage = useCan('inventory.manage');
   const [search, setSearch] = useState('');
@@ -41,17 +43,17 @@ export default function InventoryScreen() {
           headerRight: () => (
             <View style={{ flexDirection: 'row', gap: 18 }}>
               <TouchableOpacity onPress={() => router.push('/inventory/scan')} hitSlop={8} accessibilityLabel="Scan barcode">
-                <Ionicons name="barcode-outline" size={24} color={Palette.primary} />
+                <Ionicons name="barcode-outline" size={24} color={theme.primary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => router.push('/inventory/categories')} hitSlop={8} accessibilityLabel="Categories">
-                <Ionicons name="pricetags-outline" size={22} color={Palette.primary} />
+                <Ionicons name="pricetags-outline" size={22} color={theme.primary} />
               </TouchableOpacity>
             </View>
           ),
         }}
       />
       <View style={styles.header}>
-        <TextInput style={styles.search} placeholder="Search name or SKU" placeholderTextColor={Palette.textFaint}
+        <TextInput style={styles.search} placeholder="Search name or SKU" placeholderTextColor={theme.textFaint}
           value={search} onChangeText={setSearch} autoCapitalize="none" />
         <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
           <Chip label="All" active={!lowOnly} onPress={() => setLowOnly(false)} />
@@ -78,8 +80,8 @@ export default function InventoryScreen() {
                   <Text style={styles.sub}>{money(item.price)} · GST {Number(item.gst_percentage)}%</Text>
                 </View>
                 <View style={[styles.stock, low && styles.stockLow]}>
-                  <Text style={[styles.stockNum, low && { color: Palette.danger }]}>{item.current_stock}</Text>
-                  <Text style={[styles.stockLabel, low && { color: Palette.danger }]}>{low ? 'low' : 'in stock'}</Text>
+                  <Text style={[styles.stockNum, low && { color: theme.danger }]}>{item.current_stock}</Text>
+                  <Text style={[styles.stockLabel, low && { color: theme.danger }]}>{low ? 'low' : 'in stock'}</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -91,15 +93,15 @@ export default function InventoryScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  header: { padding: 16, backgroundColor: Palette.white, borderBottomWidth: 1, borderBottomColor: Palette.border },
-  search: { height: 44, borderRadius: 12, backgroundColor: Palette.surface, borderWidth: 1, borderColor: Palette.border, paddingHorizontal: 14, fontSize: 16, color: Palette.text },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Palette.white, borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Palette.border },
-  name: { fontSize: 16, fontWeight: '700', color: Palette.text },
-  sub: { fontSize: 13, color: Palette.textMuted },
-  stock: { minWidth: 64, alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12, backgroundColor: '#f0fdf4' },
-  stockLow: { backgroundColor: '#fef2f2' },
-  stockNum: { fontSize: 18, fontWeight: '800', color: Palette.success },
-  stockLabel: { fontSize: 11, fontWeight: '600', color: Palette.success },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  header: { padding: 16, backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border },
+  search: { height: 44, borderRadius: 12, backgroundColor: t.isDark ? t.surfaceRaised : t.background, borderWidth: 1, borderColor: t.border, paddingHorizontal: 14, fontSize: 16, color: t.text },
+  card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: t.surface, borderRadius: 16, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: t.border },
+  name: { fontSize: 16, fontWeight: '700', color: t.text },
+  sub: { fontSize: 13, color: t.textMuted },
+  stock: { minWidth: 64, alignItems: 'center', paddingVertical: 8, paddingHorizontal: 10, borderRadius: 12, backgroundColor: t.successSoft },
+  stockLow: { backgroundColor: t.dangerSoft },
+  stockNum: { fontSize: 18, fontWeight: '800', color: t.success },
+  stockLabel: { fontSize: 11, fontWeight: '600', color: t.success },
 });

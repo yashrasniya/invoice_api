@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart, HBarList } from '@/components/charts';
 import { Kpi, KpiGrid, PeriodBar, ReportGate, Section } from '@/components/report-ui';
 import { Centered, EmptyState } from '@/components/ui/bits';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { compactInr, money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
 import { fetchSalesReport, rangeFor, RANGE_LABEL, RangePreset } from '@/services/reports';
@@ -14,6 +14,8 @@ const OPTIONS = (Object.keys(RANGE_LABEL) as RangePreset[]).map((v) => ({ value:
 const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
 export default function SalesReportScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [preset, setPreset] = useState<RangePreset>('this_month');
   const range = rangeFor(preset);
   const q = useQuery({ queryKey: ['report-sales', range], queryFn: () => fetchSalesReport(range) });
@@ -34,9 +36,9 @@ export default function SalesReportScreen() {
                 <Kpi wide label="Total sales" value={money(d.summary.total_sales)} />
                 <Kpi label="Invoices" value={String(d.summary.total_invoices)} />
                 <Kpi label="Avg. invoice" value={money(d.summary.average_invoice_value)} />
-                <Kpi label="Paid" value={money(d.summary.paid_amount)} tone={Palette.success} />
+                <Kpi label="Paid" value={money(d.summary.paid_amount)} tone={theme.success} />
                 <Kpi label="Unpaid" value={money(d.summary.unpaid_amount)} />
-                <Kpi label="Overdue" value={money(d.summary.overdue_amount)} tone={d.summary.overdue_amount > 0 ? Palette.danger : undefined} />
+                <Kpi label="Overdue" value={money(d.summary.overdue_amount)} tone={d.summary.overdue_amount > 0 ? theme.danger : undefined} />
                 <Kpi label="GST collected" value={money(d.summary.gst_collected)} />
               </KpiGrid>
 
@@ -53,12 +55,12 @@ export default function SalesReportScreen() {
               )}
               {d.charts.payment_status_distribution.length > 0 && (
                 <Section title="By payment status">
-                  <HBarList color={Palette.primaryAlt} items={d.charts.payment_status_distribution.map((c) => ({ label: titleCase(c.name), value: c.value }))} />
+                  <HBarList color={theme.accent} items={d.charts.payment_status_distribution.map((c) => ({ label: titleCase(c.name), value: c.value }))} />
                 </Section>
               )}
               {d.charts.payment_method_distribution.length > 0 && (
                 <Section title="By payment method">
-                  <HBarList color={Palette.success} items={d.charts.payment_method_distribution.map((c) => ({ label: titleCase(c.name), value: c.value }))} />
+                  <HBarList color={theme.success} items={d.charts.payment_method_distribution.map((c) => ({ label: titleCase(c.name), value: c.value }))} />
                 </Section>
               )}
               {d.charts.sales_by_state.length > 0 && (
@@ -83,10 +85,10 @@ export default function SalesReportScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  range: { fontSize: 12, color: Palette.textMuted, marginBottom: 10 },
-  empty: { color: Palette.textMuted },
-  line: { fontSize: 14, color: Palette.text, marginBottom: 6 },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  range: { fontSize: 12, color: t.textMuted, marginBottom: 10 },
+  empty: { color: t.textMuted },
+  line: { fontSize: 14, color: t.text, marginBottom: 6 },
   bold: { fontWeight: '700' },
 });

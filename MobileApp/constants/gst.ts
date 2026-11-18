@@ -87,6 +87,14 @@ export function treatmentFor(current: string | null | undefined, hasGstin: boole
   return ok ? (current as GstTreatment) : hasGstin ? 'registered' : 'unregistered';
 }
 
+/** Input tax credit on a purchase (GSTR-3B Table 4). Mirrors invoice.models.ITC_CHOICES. */
+export type ItcEligibility = 'eligible' | 'blocked' | 'reversal';
+export const ITC_OPTIONS: { value: ItcEligibility; label: string; hint: string }[] = [
+  { value: 'eligible', label: 'Claim credit', hint: 'The GST on this bill is claimed as input credit.' },
+  { value: 'blocked', label: 'Blocked', hint: 'Never claimable (s.17(5)): e.g. cars, food and drinks, personal use.' },
+  { value: 'reversal', label: 'Not yet', hint: 'Claim later, e.g. the supplier hasn\'t paid the tax yet.' },
+];
+
 /** What a 0% line is, for GSTR-1 Table 8. A 0% "taxable" line counts as nil-rated. */
 export type TaxCategory = 'taxable' | 'nil' | 'exempt' | 'non_gst';
 export const ZERO_RATE_CATEGORIES: { value: TaxCategory; label: string }[] = [

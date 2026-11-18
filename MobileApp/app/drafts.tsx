@@ -4,13 +4,14 @@ import { Stack } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { EmptyState } from '@/components/ui/bits';
-import { Palette } from '@/constants/theme';
+import { useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { money } from '@/lib/invoice-calc';
 import { errorMessage, isOfflineError } from '@/services/api';
 import { createInvoice, totalsFor } from '@/services/invoices';
 import { Draft, useDrafts, useMyDrafts } from '@/store/drafts';
 
 export default function DraftsScreen() {
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const drafts = useMyDrafts();
   const remove = useDrafts((s) => s.remove);
@@ -61,10 +62,10 @@ export default function DraftsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  card: { backgroundColor: Palette.white, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Palette.border, gap: 4 },
-  name: { fontSize: 16, fontWeight: '700', color: Palette.text },
-  meta: { fontSize: 13, color: Palette.textMuted },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  card: { backgroundColor: t.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: t.border, gap: 4 },
+  name: { fontSize: 16, fontWeight: '700', color: t.text },
+  meta: { fontSize: 13, color: t.textMuted },
   row: { flexDirection: 'row', gap: 10, marginTop: 10 },
 });

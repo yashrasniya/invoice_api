@@ -4,12 +4,15 @@ import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { ThemeModePicker } from '@/components/theme-mode-picker';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { errorMessage, mediaUrl } from '@/services/api';
 import { removeProfilePicture, requestAccountDeletion, updateProfile, uploadProfilePicture } from '@/services/auth';
 import { useSession } from '@/store/session';
 
 export default function ProfileScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const user = useSession((s) => s.user)!;
   const [mobile, setMobile] = useState(user.mobile_number ?? '');
   const [gender, setGender] = useState(user.gender ?? '');
@@ -112,7 +115,7 @@ export default function ProfileScreen() {
             )}
             {photoBusy && (
               <View style={[styles.avatar, styles.avatarBusy]}>
-                <ActivityIndicator color={Palette.white} />
+                <ActivityIndicator color={theme.onPrimary} />
               </View>
             )}
           </Pressable>
@@ -128,6 +131,8 @@ export default function ProfileScreen() {
         <Field label="Date of birth" placeholder="YYYY-MM-DD" value={dob} onChangeText={setDob} />
         <Button title="Save changes" onPress={save} loading={saving} />
         <Text style={styles.note}>Name and email can be changed from the web app.</Text>
+
+        <ThemeModePicker />
 
         <Text style={styles.dangerTitle}>Delete account</Text>
         {!showDelete ? (
@@ -146,15 +151,15 @@ export default function ProfileScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: Palette.white },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  flex: { flex: 1, backgroundColor: t.surface },
   scroll: { padding: 24 },
   avatarWrap: { alignItems: 'center', marginBottom: 20 },
   avatar: { width: 96, height: 96, borderRadius: 48 },
-  avatarEmpty: { backgroundColor: Palette.primary, alignItems: 'center', justifyContent: 'center' },
+  avatarEmpty: { backgroundColor: t.primary, alignItems: 'center', justifyContent: 'center' },
   avatarBusy: { position: 'absolute', backgroundColor: 'rgba(15,23,42,0.45)', alignItems: 'center', justifyContent: 'center' },
-  initials: { color: Palette.white, fontSize: 36, fontWeight: '700' },
-  changePhoto: { color: Palette.primary, fontSize: 14, fontWeight: '700', marginTop: 10 },
-  dangerTitle: { color: Palette.danger, fontSize: 14, fontWeight: '800', marginTop: 32, marginBottom: 8 },
-  note: { color: Palette.textMuted, fontSize: 13, textAlign: 'center', marginTop: 16 },
+  initials: { color: t.onPrimary, fontSize: 36, fontWeight: '700' },
+  changePhoto: { color: t.primary, fontSize: 14, fontWeight: '700', marginTop: 10 },
+  dangerTitle: { color: t.danger, fontSize: 14, fontWeight: '800', marginTop: 32, marginBottom: 8 },
+  note: { color: t.textMuted, fontSize: 13, textAlign: 'center', marginTop: 16 },
 });

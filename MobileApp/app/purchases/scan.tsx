@@ -6,31 +6,35 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Centered, EmptyState } from '@/components/ui/bits';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan, useFeature } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
 import { BillFile, fetchOcrJobs, OcrJob, refreshOcrJob, uploadBill } from '@/services/purchases';
 
-const STATE_STYLE = {
-  completed: { bg: '#dcfce7', fg: '#166534', label: 'Done' },
-  processing: { bg: '#fef3c7', fg: '#92400e', label: 'Reading…' },
-  failed: { bg: '#fee2e2', fg: '#991b1b', label: 'Failed' },
-} as const;
+const stateStyle = (theme: Theme) => ({
+  completed: { bg: theme.successSoft, fg: theme.successText, label: 'Done' },
+  processing: { bg: theme.warningSoft, fg: theme.warningText, label: 'Reading…' },
+  failed: { bg: theme.dangerSoft, fg: theme.dangerText, label: 'Failed' },
+}) as const;
 
 const stamp = () => new Date().toISOString().replace(/[-:T.Z]/g, '').slice(0, 14);
 
 function Action({ icon, label, onPress, disabled }: { icon: keyof typeof Ionicons.glyphMap; label: string; onPress: () => void; disabled: boolean }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   return (
     <TouchableOpacity style={[styles.action, disabled && { opacity: 0.5 }]} disabled={disabled} onPress={onPress}
       accessibilityRole="button" accessibilityLabel={label}>
-      <Ionicons name={icon} size={24} color={Palette.primary} />
+      <Ionicons name={icon} size={24} color={theme.primary} />
       <Text style={styles.actionText}>{label}</Text>
     </TouchableOpacity>
   );
 }
 
 export default function ScanBillScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const hasFeature = useFeature('purchases_invoice');
   const canCreate = useCan('invoice.create');
@@ -127,7 +131,7 @@ export default function ScanBillScreen() {
             ? <EmptyState icon="alert-circle-outline" title="Couldn't load scans" hint={errorMessage(q.error)} />
             : <EmptyState icon="scan-outline" title="No scans yet" hint="Photograph a supplier bill and we'll read the details for you." />}
           renderItem={({ item }) => {
-            const st = STATE_STYLE[item.state];
+            const st = stateStyle(theme)[item.state];
             const x = item.extracted;
             return (
               <View style={styles.card}>
@@ -162,19 +166,19 @@ export default function ScanBillScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
   actions: { flexDirection: 'row', gap: 10 },
-  action: { flex: 1, alignItems: 'center', gap: 6, backgroundColor: Palette.white, borderRadius: 14, paddingVertical: 16, borderWidth: 1, borderColor: Palette.border },
-  actionText: { fontSize: 13, fontWeight: '700', color: Palette.text },
-  uploading: { textAlign: 'center', color: Palette.primary, fontWeight: '600', marginTop: 10 },
-  usage: { fontSize: 12, color: Palette.textMuted, marginTop: 10, textAlign: 'center' },
-  section: { fontSize: 13, fontWeight: '700', color: Palette.textMuted, textTransform: 'uppercase', marginTop: 20, marginLeft: 4 },
-  card: { backgroundColor: Palette.white, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Palette.border, gap: 4 },
+  action: { flex: 1, alignItems: 'center', gap: 6, backgroundColor: t.surface, borderRadius: 14, paddingVertical: 16, borderWidth: 1, borderColor: t.border },
+  actionText: { fontSize: 13, fontWeight: '700', color: t.text },
+  uploading: { textAlign: 'center', color: t.primary, fontWeight: '600', marginTop: 10 },
+  usage: { fontSize: 12, color: t.textMuted, marginTop: 10, textAlign: 'center' },
+  section: { fontSize: 13, fontWeight: '700', color: t.textMuted, textTransform: 'uppercase', marginTop: 20, marginLeft: 4 },
+  card: { backgroundColor: t.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: t.border, gap: 4 },
   rowBetween: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  file: { fontSize: 15, fontWeight: '700', color: Palette.text, flex: 1 },
-  meta: { fontSize: 13, color: Palette.textMuted },
+  file: { fontSize: 15, fontWeight: '700', color: t.text, flex: 1 },
+  meta: { fontSize: 13, color: t.textMuted },
   badge: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 999 },
   badgeText: { fontSize: 12, fontWeight: '700' },
-  link: { color: Palette.primary, fontWeight: '700', fontSize: 14, marginTop: 4 },
+  link: { color: t.primary, fontWeight: '700', fontSize: 14, marginTop: 4 },
 });

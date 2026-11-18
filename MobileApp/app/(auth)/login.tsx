@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { Button } from '@/components/ui/button';
 import { Field, type FieldRef } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { errorMessage } from '@/services/api';
 import { login } from '@/services/auth';
 import { GoogleButton, googleSignInConfigured } from '@/components/google-button';
@@ -14,6 +14,8 @@ import { parseInviteToken } from '@/lib/invite-link';
 import { useSession } from '@/store/session';
 
 export default function LoginScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -67,7 +69,7 @@ export default function LoginScreen() {
 
         {!!errors.form && (
           <View style={styles.banner} accessibilityLiveRegion="polite">
-            <Ionicons name="alert-circle" size={18} color={Palette.danger} />
+            <Ionicons name="alert-circle" size={18} color={theme.danger} />
             <Text style={styles.bannerText}>{errors.form}</Text>
           </View>
         )}
@@ -87,7 +89,7 @@ export default function LoginScreen() {
             <TouchableOpacity
               onPress={() => setShowPassword((v) => !v)} hitSlop={12}
               accessibilityRole="button" accessibilityLabel={showPassword ? 'Hide password' : 'Show password'}>
-              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={Palette.textMuted} />
+              <Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={20} color={theme.textMuted} />
             </TouchableOpacity>
           }
         />
@@ -135,19 +137,19 @@ export default function LoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Palette.white },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.surface },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 48 },
   socialRow: { flexDirection: 'row', gap: 12 },
   socialCell: { flex: 1 },
   banner: {
-    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: '#fef2f2', borderColor: '#fecaca',
+    flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: t.dangerSoft, borderColor: t.dangerBorder,
     borderWidth: 1, borderRadius: 12, padding: 12, marginBottom: 16,
   },
-  bannerText: { flex: 1, color: Palette.danger, fontSize: 14 },
+  bannerText: { flex: 1, color: t.danger, fontSize: 14 },
   footer: { flexDirection: 'row', justifyContent: 'center', marginTop: 28 },
-  footerText: { color: Palette.textMuted, fontSize: 15 },
-  link: { color: Palette.primary, fontSize: 15, fontWeight: '700' },
+  footerText: { color: t.textMuted, fontSize: 15 },
+  link: { color: t.primary, fontSize: 15, fontWeight: '700' },
   invite: { alignItems: 'center', marginTop: 20, paddingVertical: 8 },
-  inviteText: { color: Palette.textMuted, fontSize: 14, fontWeight: '600' },
+  inviteText: { color: t.textMuted, fontSize: 14, fontWeight: '600' },
 });

@@ -5,11 +5,13 @@ import { Stack } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Centered, EmptyState } from '@/components/ui/bits';
 import { Button } from '@/components/ui/button';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { errorMessage } from '@/services/api';
 import { createCategory, deleteCategory, listCategories } from '@/services/inventory';
 
 export default function CategoriesScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const [name, setName] = useState('');
   const [busy, setBusy] = useState(false);
@@ -39,7 +41,7 @@ export default function CategoriesScreen() {
     <View style={styles.screen}>
       <Stack.Screen options={{ title: 'Categories' }} />
       <View style={styles.add}>
-        <TextInput style={styles.input} placeholder="New category name" placeholderTextColor={Palette.textFaint}
+        <TextInput style={styles.input} placeholder="New category name" placeholderTextColor={theme.textFaint}
           value={name} onChangeText={setName} onSubmitEditing={add} returnKeyType="done" />
         <Button title="Add" onPress={add} loading={busy} style={{ width: 90, height: 48 }} />
       </View>
@@ -53,7 +55,7 @@ export default function CategoriesScreen() {
             <View style={styles.row}>
               <Text style={styles.name}>{item.name}</Text>
               <TouchableOpacity hitSlop={10} onPress={() => remove(item.id, item.name)}>
-                <Ionicons name="trash-outline" size={20} color={Palette.danger} />
+                <Ionicons name="trash-outline" size={20} color={theme.danger} />
               </TouchableOpacity>
             </View>
           )}
@@ -63,10 +65,10 @@ export default function CategoriesScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  add: { flexDirection: 'row', gap: 10, padding: 16, backgroundColor: Palette.white, borderBottomWidth: 1, borderBottomColor: Palette.border },
-  input: { flex: 1, height: 48, borderRadius: 12, backgroundColor: Palette.surface, borderWidth: 1, borderColor: Palette.border, paddingHorizontal: 14, fontSize: 16, color: Palette.text },
-  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: Palette.white, borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: Palette.border },
-  name: { fontSize: 16, fontWeight: '600', color: Palette.text },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  add: { flexDirection: 'row', gap: 10, padding: 16, backgroundColor: t.surface, borderBottomWidth: 1, borderBottomColor: t.border },
+  input: { flex: 1, height: 48, borderRadius: 12, backgroundColor: t.isDark ? t.surfaceRaised : t.background, borderWidth: 1, borderColor: t.border, paddingHorizontal: 14, fontSize: 16, color: t.text },
+  row: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: t.surface, borderRadius: 14, padding: 16, marginBottom: 8, borderWidth: 1, borderColor: t.border },
+  name: { fontSize: 16, fontWeight: '600', color: t.text },
 });

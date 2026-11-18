@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { HBarList } from '@/components/charts';
 import { Kpi, KpiGrid, PeriodBar, ReportGate, Section } from '@/components/report-ui';
 import { Centered, EmptyState } from '@/components/ui/bits';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { money } from '@/lib/invoice-calc';
 import { errorMessage } from '@/services/api';
 import { fetchLedger, GST_PERIOD_LABEL, GstPeriod, LedgerPeriod } from '@/services/reports';
@@ -16,6 +16,8 @@ const OPTIONS: { value: LedgerPeriod; label: string }[] = [
 ];
 
 export default function LedgerScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const { kind: rawKind, id } = useLocalSearchParams<{ kind: string; id: string }>();
   const kind = rawKind === 'vendor' ? 'vendor' : 'customer';
   const [period, setPeriod] = useState<LedgerPeriod>('this_fy');
@@ -35,7 +37,7 @@ export default function LedgerScreen() {
             <ScrollView contentContainerStyle={{ padding: 16 }} refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => { void q.refetch(); }} />}>
               <KpiGrid>
                 <Kpi wide label={receivable ? 'Outstanding (they owe you)' : 'Outstanding (you owe)'} value={money(d.outstanding_total)}
-                  tone={d.outstanding_total > 0 ? Palette.danger : Palette.success} />
+                  tone={d.outstanding_total > 0 ? theme.danger : theme.success} />
                 <Kpi label="Opening balance" value={money(d.opening_balance)} />
                 <Kpi label="Closing balance" value={money(d.closing_balance)} />
                 <Kpi label="Lifetime billed" value={money(d.lifetime.billed)} />
@@ -44,7 +46,7 @@ export default function LedgerScreen() {
 
               {d.outstanding_count > 0 && (
                 <Section title={`Ageing · ${d.outstanding_count} open`}>
-                  <HBarList color={Palette.danger} items={d.ageing.filter((b) => b.amount > 0).map((b) => ({ label: `${b.label} (${b.count})`, value: b.amount }))} />
+                  <HBarList color={theme.danger} items={d.ageing.filter((b) => b.amount > 0).map((b) => ({ label: `${b.label} (${b.count})`, value: b.amount }))} />
                 </Section>
               )}
 
@@ -57,7 +59,7 @@ export default function LedgerScreen() {
                       <Text style={styles.txMeta}>{t.date} · {t.vch_type}</Text>
                     </View>
                     <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={[styles.txAmt, { color: t.credit > 0 ? Palette.success : Palette.text }]}>
+                      <Text style={[styles.txAmt, { color: t.credit > 0 ? theme.success : theme.text }]}>
                         {t.debit > 0 ? `Dr ${money(t.debit)}` : `Cr ${money(t.credit)}`}
                       </Text>
                       <Text style={styles.txMeta}>Bal {money(t.balance)}</Text>
@@ -73,12 +75,12 @@ export default function LedgerScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  empty: { color: Palette.textMuted },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  empty: { color: t.textMuted },
   tx: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
-  txBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: Palette.border },
-  txTitle: { fontSize: 14, fontWeight: '600', color: Palette.text },
-  txMeta: { fontSize: 12, color: Palette.textMuted, marginTop: 2 },
+  txBorder: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.border },
+  txTitle: { fontSize: 14, fontWeight: '600', color: t.text },
+  txMeta: { fontSize: 12, color: t.textMuted, marginTop: 2 },
   txAmt: { fontSize: 14, fontWeight: '700' },
 });

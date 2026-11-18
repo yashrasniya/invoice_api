@@ -15,6 +15,8 @@ registration, and what needs one first. Numbers (#) match the feature comparison
 - GST summary with data-quality warnings.
 - GSTR-1 summary, portal JSON and pre-filing errors (#13–15), in the app (Reports → GSTR-1) and on the
   web (Reports → GSTR-1, `/gstr1`). The JSON has not been test-uploaded to the portal yet.
+- GSTR-3B preparation and GSTR-9 figures (Reports → GSTR-3B / GSTR-9, app and web); ITC eligibility
+  on purchases; quarterly (QRMP) filing with the IFF (Phase 3).
 - Credit/debit notes that move the GST liability (#29).
 - Server-side tax recalculation.
 - Place of supply 96 for exports.
@@ -93,8 +95,7 @@ mobile typecheck + jest; web build.
 | 10 | Cess | Optional cess rate per item/line; carried through PDF, GSTR-1 (`csamt`) and 3B. | M |
 
 **Status: Phase 2 implemented 17 Nov 2026** (tests in `invoice/tests_gst_phase2.py`). #10 cess dropped,
-see below. Open gap: on the web, a bill line doesn't yet pick up an inventory item's 0% category
-(the app does).
+see below. Web bill lines pick up an inventory item's 0% category since 17 Nov 2026.
 
 #### Phase 2: detailed plan (approved 17 Nov 2026)
 
@@ -117,7 +118,8 @@ see below. Open gap: on the web, a bill line doesn't yet pick up an inventory it
   With tax → `WPAY` / `SEWP`.
 - PDF: a `lut_declaration` field ("Supply meant for export / to SEZ under LUT No. … without payment of
   IGST") for templates to print.
-- Web company form gets the LUT fields; the app has no company-settings screen, so it's web-only.
+- Web company form gets the LUT fields; the app gets them on its GST settings screen (More → GST settings,
+  `company/gst-settings/`).
 
 **#8: Nil-rated / exempt / non-GST lines**
 - `tax_category` on bill lines and inventory items: `taxable` (default), `nil`, `exempt`, `non_gst`.
@@ -158,19 +160,142 @@ and RCM rejected on B2C; RCM totals and GST-summary netting; app typecheck + jes
 | 28 | Ineligible input credit | Per-purchase-line "ITC eligible / blocked (17(5)) / reversal"; feeds 3B table 4. | M |
 | 19 | Quarterly filing + monthly invoice upload (IFF) | Mark the company as a monthly or quarterly filer; for the first two months of a quarter, produce a B2B-only JSON. | S |
 | 21 | Advances (11A/11B) | Record advance receipts that carry GST; adjust them against later invoices; report both tables. | L |
-| 20 | Amendments (9A/9C/10/11) | Editing an invoice from an already-filed period creates an amendment record instead of changing history; GSTR-1 reports it in the amendment tables. Depends on #23. | L |
+| 20 | Amendments (9A/9C/10/11) | *Moved to Phase 4, after #23.* | L |
 | 24 | Annual return (GSTR-9) data | Yearly roll-up of the monthly GSTR-1/3B figures, as a report only. | M |
+
+**Status: Phase 3 partly implemented 17 Nov 2026** (#17, #28, #19, #24; tests in
+`invoice/tests_gst_phase3.py`). #21 and #20 are not started, see below.
+
+#### Phase 3: detailed plan (17 Nov 2026)
+
+**One source for every return.** The GSTR-1 builder already classifies each invoice and note. It now
+also keeps a *ledger*: one entry per classified amount, with its kind (B2B, B2C, export with/without
+IGST, SEZ with/without IGST, deemed export, reverse charge, nil, exempt, non-GST, note), taxable value,
+IGST / CGST / SGST, place of supply and whether it is an inter-state supply to an unregistered or
+composition buyer. GSTR-3B and GSTR-9 add up that ledger, so the three returns can't disagree.
+An invoice GSTR-1 can't classify (an error there) is left out of all three, and 3B/9 say so.
+
+**#28: Input credit eligibility**
+- `itc_eligibility` on purchase invoices: `eligible` (default), `blocked` (s.17(5), e.g. motor cars,
+  food, personal use: never claimable) or `reversal` (claimable later, e.g. supplier hasn't paid tax).
+  A purchase line can override it (`Product.itc_eligibility`, blank = follow the invoice).
+- 3B Table 4: 4A holds all credit; blocked goes to 4B(1), reversal to 4B(2); 4C = net.
+- App and web: the purchase bill gets the choice, and each line can override it (line-item screen /
+  line popup).
+
+**#17: GSTR-3B preparation** (`GET /api/gstr3b/?period=`, a report: no file, no filing)
+- 3.1(a) taxable outward (B2B, B2C, deemed exports, notes), 3.1(b) zero-rated (exports, SEZ),
+  3.1(c) nil-rated + exempt, 3.1(d) inward reverse charge (purchases flagged RCM, and services bought
+  from overseas suppliers), 3.1(e) non-GST. Supplies where the *buyer* pays under reverse charge are
+  shown separately: they're not your liability.
+- 3.2 inter-state supplies to unregistered and composition buyers, by state.
+- 4 ITC: 4A(1) import of goods, 4A(2) import of services, 4A(3) inward reverse charge, 4A(5) all other
+  (purchases + vendor notes), 4B(1)/(2), 4C. A purchase with tax but no supplier GSTIN is left out of
+  ITC (credit needs a tax invoice from a registered supplier) and flagged; reverse-charge purchases
+  are exempt from that rule.
+- 5 inward exempt, nil and non-GST supplies (0% lines, composition suppliers), inter/intra.
+- 6.1 payment: liability per head, set off with credit in the legal order (IGST credit first: IGST, then
+  CGST/SGST; CGST and SGST credit only after that, never against each other; Rule 88A), the cash to
+  pay, and reverse-charge tax (always cash). Credit left over is carried forward.
+
+**#19: Quarterly filers (QRMP) and IFF**
+- Company setting `gst_filing_frequency`: monthly (default) or quarterly. Web company form; app GST settings
+  screen.
+- Quarterly filer, first or second month of a quarter: GSTR-1 becomes the **IFF** (B2B invoices, SEZ,
+  deemed exports and their notes only); the file has just `b2b` and `cdnr`. Warning above ₹50 lakh
+  of B2B value in the month (the IFF limit).
+- Quarterly filer, third month alone: refused ("filed in the quarterly return").
+- Quarterly filer, the quarter: by default leaves out the B2B invoices and notes of the first two months,
+  which were already uploaded in the IFF; a switch includes them (if the IFF wasn't used).
+
+**#24: GSTR-9 data** (`GET /api/gstr9/?fy=2025`, a report)
+- The FY's ledger in GSTR-9's tables: 4 (B2C, B2B, exports and SEZ with IGST, deemed exports, inward
+  reverse charge, credit/debit notes), 5 (exports and SEZ without IGST, buyer-paid reverse charge,
+  exempt, nil, non-GST), 6 (ITC: total, inward reverse charge, imports), 7 (blocked → 7E, reversal → 7H)
+  and 17 (HSN summary of outward supplies).
+- From your books, not from returns as filed: figures differ where returns were amended on the portal.
+  6B isn't split into inputs / capital goods / input services (not recorded).
+
+**Not in this phase**
+- **#21 Advances (11A/11B):** there's no way to record a payment yet. The `Payment` model exists, but
+  no API or screen creates one (only demo data does); credit/debit notes are the same. Recording
+  receipts comes first; then an advance is a receipt with a GST rate, reported in 11A until an invoice
+  adjusts it (11B). Advances for goods carry no GST (notification 66/2017), so it's services only.
+- **#20 Amendments:** needs #23 (filed-period lock) to know what was already filed. Moves to Phase 4,
+  after #23.
+
+**Tests:** ledger → 3B tables on a mixed month (B2B, B2C inter/intra, export, SEZ, nil/exempt/non-GST,
+RCM both ways, notes); ITC eligibility and line override; no-GSTIN supplier left out; import of
+services as RCM; set-off order cases; IFF month, refused third month, quarter with and without the
+IFF months; GSTR-9 table totals over a FY; app typecheck + jest; web build.
+
+### e-Way bill (#31), Phase A: offline bulk JSON
+
+#31 splits in two. **Phase A** needs no registration: the e-way bill portal (ewaybillgst.gov.in)
+accepts a bulk-upload JSON, so we build that file (as with GSTR-1), the user uploads it, and types the
+EWB number back in. **Phase B** (generate/cancel/extend/update Part B over the API) stays in the
+"Can't do now" table: it needs the GSP decision.
+
+**Status: Phase A implemented 17 Nov 2026** (tests in `invoice/tests_eway.py`; flow in
+`docs/invoice-generation.md` → "E-way bills"). Not yet test-uploaded on the portal. The ship-to block
+lives on `EwayBill`, not on the invoice. `INTRA_STATE_LIMITS` is shipped empty (₹50,000 everywhere)
+until each state's figure is checked.
+
+#### Phase A: detailed plan (approved 17 Nov 2026)
+
+**Data gaps filled**
+- `UserCompanies.pincode` (dispatch-from PIN). Optional ship-to block on the invoice (name, address,
+  state code, PIN) → transaction type "bill-to / ship-to" when used.
+- HSN / qty / unit per line reuse the GSTR-1 line extractor; a missing HSN or unit is an error.
+
+**Model: `EwayBill`** (one per invoice; `invoice/eway.py` holds the rules)
+- Part A: supply type (outward/inward), sub-type (supply, export, job work, SKD/CKD, …), document type
+  (tax invoice / bill of supply), transaction type, from/to PIN + state, distance (km).
+- Part B: mode (road/rail/air/ship), vehicle no., vehicle type (regular / over-dimensional),
+  transporter GSTIN or TRANSIN + name, transport doc no. + date.
+- Result: `ewb_number`, `ewb_date`, `valid_until`, `status` (draft/generated/cancelled), `source`
+  (manual/api), `raw`.
+
+**Rules**
+- "Needs an e-way bill": goods lines (HSN not `99…`) and consignment value (taxable + tax, without
+  exempt / non-GST lines) above ₹50,000; per-state intra-state overrides in a small table. A hint,
+  never a block. Reports list invoices that need one and don't have it.
+- Validity: 1 day per 200 km (20 km for over-dimensional cargo); a day ends at the next midnight.
+- Checks: vehicle number format, transporter GSTIN checksum, distance 1–4000 km, PIN matches state,
+  document not older than the portal's limit.
+
+**API**
+- `GET/PUT /api/eway/<invoice_id>/`: the invoice's e-way bill details + "needed" verdict; saving the
+  EWB number sets status `generated` and `valid_until`.
+- `GET /api/eway/json/?ids=…`: bulk-upload JSON, or the list of errors per invoice.
+- Gate: plan feature `eway_bill`; editing needs the invoice-edit permission; changes are audit-logged.
+
+**PDF:** EWB number, date, vehicle and validity in the invoice header block (both renderers).
+
+**Screens:** app invoice detail gets a "Transport / e-way bill" section, a "needs e-way bill" banner and
+a JSON share action; web invoice page the same, plus bulk export.
+
+**Not in this phase:** delivery challans (stock transfer, job work, on approval) — no challan document
+exists yet; inward EWBs for unregistered suppliers (the model allows it, screens come later).
+
+**Before relying on it:** one test upload of the JSON on the portal, as for GSTR-1 (#14).
+
+**Tests:** need-EWB verdict (goods vs services, ₹50k edge, exempt lines, state override); validity at
+day boundaries and ODC; each JSON error; bill-to/ship-to output; PDF block; gate and permission;
+app typecheck + jest; web build.
 
 ### Phase 4: Control and reconciliation
 
 | # | Feature | Summary of approach | Size |
 |---|---|---|---|
+| 20 | Amendments (9A/9C/10/11) | Editing an invoice from an already-filed period creates an amendment record instead of changing history; GSTR-1 reports it in the amendment tables. Needs #23 first. | L |
 | 23 | Lock filed periods | "Mark GSTR-1 filed for <period>" stores a lock; invoices and notes in it become read-only (admin override is logged in the audit log). | M |
 | 26 | Match purchases against GSTR-2B | The user downloads their GSTR-2B JSON from the portal and uploads it; we match by supplier GSTIN + invoice number + amount and show matched / mismatched / missing from books / missing from 2B. | L |
 | 34 | TDS/TCS under GST | Record GST TDS deducted by government customers (and TCS by e-commerce operators) and show it as a credit. | M |
 | 35 | Multiple GSTINs per company | A company has several registrations (branches); every invoice picks one; all GST reports run per GSTIN. Touches almost everything, so do it last. | L |
 
 **Suggested order:** Phase 1, then #3 and #8, then #17, then #23, then the rest by demand.
+Phases 1–2 and most of Phase 3 are done; next up is recording payments (unblocks #21), then #23 → #20.
 
 ---
 
@@ -183,7 +308,7 @@ and RCM rejected on B2C; RCM totals and GST-summary netting; app typecheck + jes
 | 16, 18 | File GSTR-1 / GSTR-3B directly | Filing is only possible through a GSP, with the taxpayer's OTP authorising API access. | GSP contract plus an OTP consent flow in the app. |
 | 27 | Invoice Management System (accept/reject supplier invoices) | Lives on the portal; API access is GSP-only. | Same GSP contract. Until then, users do it on the portal. |
 | 30 | e-Invoicing (IRN + signed QR) | IRNs are issued by the government e-invoice system (IRP) to registered API users or via GSPs. Mandatory only above the turnover limit. | Register as an API user on the IRP or go through a GSP; sandbox testing; build the IRP JSON. |
-| 31 | e-Way bill generation | The national e-way bill system (NIC) API needs registration as an API user or a GSP. | Register for EWB API access or use a GSP; capture transport details on the invoice. |
+| 31 (Phase B) | e-Way bill generation over the API | The national e-way bill system (NIC) API needs registration as an API user or a GSP. Phase A (transport details + bulk-upload JSON) is done. | Register for EWB API access or use a GSP; then generate / cancel / update Part B / extend from the app. |
 | 26 (automatic) | 2B fetched automatically | Same GSP limitation. | GSP contract. The manual-upload version is in Phase 4. |
 
 **One decision unlocks most of this table:** picking a GSP partner. One contract typically covers

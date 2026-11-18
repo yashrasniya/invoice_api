@@ -6,7 +6,7 @@ import { PeriodBar } from '@/components/report-ui';
 import { Button } from '@/components/ui/button';
 import { Centered, Chip, EmptyState } from '@/components/ui/bits';
 import { Field } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { useCan } from '@/hooks/use-access';
 import { errorMessage } from '@/services/api';
 import {
@@ -20,6 +20,7 @@ const when = (d: string) => new Date(d).toLocaleString();
 const title = (s: string) => s.replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
 
 export default function TeamScreen() {
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const isAdmin = useCan('role.manage');
   const canInvite = useCan('user.invite');
@@ -126,6 +127,8 @@ export default function TeamScreen() {
 }
 
 function InviteCard({ invite, onResend, onRevoke }: { invite: Invite; onResend: () => void; onRevoke: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const pending = invite.status === 'pending';
   return (
     <View style={styles.cardCol}>
@@ -137,7 +140,7 @@ function InviteCard({ invite, onResend, onRevoke }: { invite: Invite; onResend: 
           {!!invite.invite_link && (
             <TouchableOpacity onPress={() => Share.share({ message: `Join us on Orvine Invoice: ${invite.invite_link}` })}><Text style={styles.link}>Share link</Text></TouchableOpacity>
           )}
-          <TouchableOpacity onPress={onRevoke}><Text style={[styles.link, { color: Palette.danger }]}>Revoke</Text></TouchableOpacity>
+          <TouchableOpacity onPress={onRevoke}><Text style={[styles.link, { color: theme.danger }]}>Revoke</Text></TouchableOpacity>
         </View>
       )}
     </View>
@@ -145,6 +148,7 @@ function InviteCard({ invite, onResend, onRevoke }: { invite: Invite; onResend: 
 }
 
 function RoleEditor({ member, roles, onClose, onChanged }: { member: Member; roles: Role[]; onClose: () => void; onChanged: () => void }) {
+  const styles = useThemedStyles(makeStyles);
   const qc = useQueryClient();
   const [busy, setBusy] = useState<number | null>(null);
   const has = (r: Role) => r.user_names.some((u) => u.id === member.id);
@@ -179,6 +183,8 @@ function RoleEditor({ member, roles, onClose, onChanged }: { member: Member; rol
 }
 
 function InviteModal({ roles, onClose, onDone }: { roles: Role[]; onClose: () => void; onDone: () => void }) {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -212,30 +218,30 @@ function InviteModal({ roles, onClose, onDone }: { roles: Role[]; onClose: () =>
             </>
           )}
           <Button title="Send invitation" onPress={send} loading={busy} />
-          <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', padding: 14 }}><Text style={{ color: Palette.textMuted, fontWeight: '600' }}>Cancel</Text></TouchableOpacity>
+          <TouchableOpacity onPress={onClose} style={{ alignItems: 'center', padding: 14 }}><Text style={{ color: theme.textMuted, fontWeight: '600' }}>Cancel</Text></TouchableOpacity>
         </View>
       </View>
     </Modal>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: Palette.surface },
-  card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: Palette.white, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Palette.border },
-  cardCol: { backgroundColor: Palette.white, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: Palette.border, gap: 3 },
-  avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#eef2ff', alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: Palette.primary, fontWeight: '800', fontSize: 17 },
-  name: { fontSize: 15, fontWeight: '700', color: Palette.text },
-  meta: { fontSize: 13, color: Palette.textMuted },
-  roles: { fontSize: 13, color: Palette.primary, fontWeight: '600', marginTop: 2 },
-  perms: { fontSize: 12, color: Palette.textMuted, marginTop: 4, lineHeight: 17 },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  screen: { flex: 1, backgroundColor: t.background },
+  card: { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: t.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: t.border },
+  cardCol: { backgroundColor: t.surface, borderRadius: 14, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: t.border, gap: 3 },
+  avatar: { width: 42, height: 42, borderRadius: 21, backgroundColor: t.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: t.primary, fontWeight: '800', fontSize: 17 },
+  name: { fontSize: 15, fontWeight: '700', color: t.text },
+  meta: { fontSize: 13, color: t.textMuted },
+  roles: { fontSize: 13, color: t.primary, fontWeight: '600', marginTop: 2 },
+  perms: { fontSize: 12, color: t.textMuted, marginTop: 4, lineHeight: 17 },
   actions: { flexDirection: 'row', gap: 20, marginTop: 8 },
-  link: { color: Palette.primary, fontWeight: '700', fontSize: 14 },
-  footer: { padding: 16, paddingBottom: 28, backgroundColor: Palette.white, borderTopWidth: 1, borderTopColor: Palette.border },
-  foot: { fontSize: 12, color: Palette.textMuted, textAlign: 'center', marginVertical: 12 },
-  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' },
-  sheet: { backgroundColor: Palette.white, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 32 },
-  sheetTitle: { fontSize: 18, fontWeight: '800', color: Palette.text, marginBottom: 16 },
-  label: { fontSize: 14, fontWeight: '700', color: Palette.label, marginBottom: 8, marginLeft: 4 },
+  link: { color: t.primary, fontWeight: '700', fontSize: 14 },
+  footer: { padding: 16, paddingBottom: 28, backgroundColor: t.surface, borderTopWidth: 1, borderTopColor: t.border },
+  foot: { fontSize: 12, color: t.textMuted, textAlign: 'center', marginVertical: 12 },
+  backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: t.overlay },
+  sheet: { backgroundColor: t.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 24, paddingBottom: 32 },
+  sheetTitle: { fontSize: 18, fontWeight: '800', color: t.text, marginBottom: 16 },
+  label: { fontSize: 14, fontWeight: '700', color: t.label, marginBottom: 8, marginLeft: 4 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
 });

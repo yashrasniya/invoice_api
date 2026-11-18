@@ -1,5 +1,5 @@
 import * as FileSystem from 'expo-file-system/legacy';
-import type { TaxCategory } from '@/constants/gst';
+import type { ItcEligibility, TaxCategory } from '@/constants/gst';
 import api, { errorMessage } from './api';
 import { addMovement } from './inventory';
 import { getToken } from './token-storage';
@@ -21,7 +21,7 @@ export type Column = {
 };
 
 export type LineProperty = { id: number; value: string | null; new_product_in_frontend: Column };
-export type LineItem = { id: number; product_properties: LineProperty[]; gst_amount: string; total_amount: string; tax_category?: TaxCategory };
+export type LineItem = { id: number; product_properties: LineProperty[]; gst_amount: string; total_amount: string; tax_category?: TaxCategory; itc_eligibility?: ItcEligibility | '' };
 
 export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'overdue';
 export type PaymentMethod = 'cash' | 'upi' | 'bank_transfer' | 'cheque' | 'card' | 'other';
@@ -46,6 +46,7 @@ export type Invoice = {
   /** GST state code of the place of supply; null means "the customer's state" */
   place_of_supply: number | null;
   reverse_charge?: boolean;
+  itc_eligibility?: ItcEligibility;
   /** the customer's state code, when they have one */
   receiver_state_code: number | null;
   customer_notes: string;
@@ -94,6 +95,8 @@ export type NewLine = {
   inventoryProductId?: number;
   /** what a 0% line is (GSTR-1 Table 8); taxed lines are always 'taxable' */
   taxCategory?: TaxCategory;
+  /** purchase lines: overrides the bill's ITC eligibility ('' = same as the bill) */
+  itc?: ItcEligibility | '';
 };
 
 export type InvoiceInput = {
@@ -108,6 +111,8 @@ export type InvoiceInput = {
   place_of_supply?: number | null;
   /** the recipient pays the GST; the invoice total leaves it out */
   reverse_charge?: boolean;
+  /** purchases: whether the bill's GST is claimed as input credit */
+  itc_eligibility?: ItcEligibility;
   customer_notes?: string;
   terms?: string;
 };
@@ -145,7 +150,8 @@ export async function addLineItem(invoiceId: number, line: NewLine, columns: Col
   const amounts = { gst_amount: calc.gst_amount.toFixed(2), total_amount: calc.total_amount.toFixed(2) };
 
   const tax_category = line.taxCategory ?? 'taxable';
-  const { data: product } = await api.post<{ id: number }>('product/', { product_properties: '', tax_category, ...amounts });
+  const itc_eligibility = line.itc ?? '';
+  const { data: product } = await api.post<{ id: number }>('product/', { product_properties: '', tax_category, itc_eligibility, ...amounts });
   await api.post(`invoice/${invoiceId}/product/add/`, { product_id: product.id });
 
   const ids: number[] = [];
@@ -156,7 +162,7 @@ export async function addLineItem(invoiceId: number, line: NewLine, columns: Col
     });
     ids.push(data.id);
   }
-  await api.post(`product/${product.id}/update/`, { product_properties: ids.join(','), tax_category, ...amounts });
+  await api.post(`product/${product.id}/update/`, { product_properties: ids.join(','), tax_category, itc_eligibility, ...amounts });
   return product.id;
 }
 
@@ -195,7 +201,8 @@ export const lineValues = (line: LineItem): Record<number, string> =>
  * a column the line never had a value for (added to the company's config later) gets a new property
  * attached. The line's amounts are recomputed from the new values.
  */
-export async function updateLineItem(line: LineItem, values: Record<number, string>, columns: Column[], taxCategory?: TaxCategory) {
+export async function updateLineItem(line: LineItem, values: Record<number, string>, columns: Column[], taxCategory?: TaxCategory,
+  itc?: ItcEligibility | '') {
   const calc = calculateLine(columns.map((c) => ({ column: c, value: values[c.id] ?? '' })), columns);
   const amounts = { gst_amount: calc.gst_amount.toFixed(2), total_amount: calc.total_amount.toFixed(2) };
 
@@ -212,7 +219,8 @@ export async function updateLineItem(line: LineItem, values: Record<number, stri
   }
   await api.post(`product/${line.id}/update/`, {
     ...(attach.length ? { product_properties: attach.join(',') } : {}),
-    tax_category: taxCategory ?? line.tax_category ?? 'taxable', ...amounts,
+    tax_category: taxCategory ?? line.tax_category ?? 'taxable',
+    itc_eligibility: itc ?? line.itc_eligibility ?? '', ...amounts,
   });
 }
 

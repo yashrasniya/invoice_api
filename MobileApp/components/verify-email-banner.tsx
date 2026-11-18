@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Palette } from '@/constants/theme';
+import { useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { errorMessage } from '@/services/api';
 import { fetchProfile, resendVerification } from '@/services/auth';
 import { useSession } from '@/store/session';
@@ -10,6 +10,7 @@ import { useSession } from '@/store/session';
  * the banner disappears without restarting the app.
  */
 export function VerifyEmailBanner() {
+  const styles = useThemedStyles(makeStyles);
   const user = useSession((s) => s.user);
   const [busy, setBusy] = useState(false);
   // only a definite `false` counts: an older server that doesn't report the flag must not nag everyone
@@ -56,10 +57,10 @@ export function VerifyEmailBanner() {
   );
 }
 
-const styles = StyleSheet.create({
-  card: { backgroundColor: '#fffbeb', borderColor: '#fde68a', borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
-  title: { fontSize: 15, fontWeight: '800', color: '#92400e' },
-  body: { fontSize: 13, color: '#92400e', marginTop: 4, lineHeight: 18 },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  card: { backgroundColor: t.warningSoft, borderColor: t.warningBorder, borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
+  title: { fontSize: 15, fontWeight: '800', color: t.warningText },
+  body: { fontSize: 13, color: t.warningText, marginTop: 4, lineHeight: 18 },
   row: { flexDirection: 'row', gap: 20, marginTop: 10 },
-  link: { color: Palette.primary, fontSize: 14, fontWeight: '700' },
+  link: { color: t.primary, fontSize: 14, fontWeight: '700' },
 });

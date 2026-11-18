@@ -3,7 +3,7 @@ import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, To
 import { router } from 'expo-router';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
-import { Palette } from '@/constants/theme';
+import { useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { mobileDigits } from '@/lib/mobile';
 import { PhoneChallenge, startPhoneSignIn, toE164 } from '@/lib/phone-auth';
 import { errorMessage } from '@/services/api';
@@ -13,6 +13,7 @@ import { useSession } from '@/store/session';
 const RESEND_SECONDS = 30;
 
 export default function PhoneLoginScreen() {
+  const styles = useThemedStyles(makeStyles);
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [challenge, setChallenge] = useState<PhoneChallenge | null>(null);
@@ -103,11 +104,11 @@ export default function PhoneLoginScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Palette.white },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.surface },
   scroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 24, paddingVertical: 40 },
-  title: { fontSize: 26, fontWeight: '800', color: Palette.text, marginBottom: 8, textAlign: 'center' },
-  subtitle: { fontSize: 16, color: Palette.textMuted, textAlign: 'center', marginBottom: 28 },
+  title: { fontSize: 26, fontWeight: '800', color: t.text, marginBottom: 8, textAlign: 'center' },
+  subtitle: { fontSize: 16, color: t.textMuted, textAlign: 'center', marginBottom: 28 },
   row: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 20 },
-  link: { color: Palette.primary, fontSize: 15, fontWeight: '700' },
+  link: { color: t.primary, fontSize: 15, fontWeight: '700' },
 });

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { StatePicker } from '@/components/state-picker';
 import { GST_STATES, gstinError, isValidGstin, normalizeGstin, stateFromGstin } from '@/constants/gst';
-import { Palette } from '@/constants/theme';
+import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import api, { errorMessage } from '@/services/api';
 import { fetchProfile } from '@/services/auth';
 import { useSession } from '@/store/session';
@@ -12,6 +12,8 @@ import { useSession } from '@/store/session';
 type Form = { company_name: string; company_address: string; company_gst_number: string; company_email_id: string; company_phone: string };
 
 export default function CompanySetupScreen() {
+  const theme = useTheme();
+  const styles = useThemedStyles(makeStyles);
   const [form, setForm] = useState<Form>({
     company_name: '', company_address: '', company_gst_number: '', company_email_id: '', company_phone: '',
   });
@@ -73,7 +75,7 @@ export default function CompanySetupScreen() {
 
         <View style={styles.switchRow}>
           <Text style={styles.switchLabel}>I don&apos;t have a GST number</Text>
-          <Switch value={!hasGst} onValueChange={(v) => { setHasGst(!v); setErrors({}); }} trackColor={{ true: Palette.primary }} />
+          <Switch value={!hasGst} onValueChange={(v) => { setHasGst(!v); setErrors({}); }} trackColor={{ true: theme.primary }} />
         </View>
 
         {hasGst ? (
@@ -100,12 +102,12 @@ export default function CompanySetupScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: Palette.white },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  container: { flex: 1, backgroundColor: t.surface },
   scroll: { paddingHorizontal: 24, paddingVertical: 64 },
-  title: { fontSize: 26, fontWeight: '800', color: Palette.text, marginBottom: 8 },
-  subtitle: { fontSize: 15, color: Palette.textMuted, marginBottom: 24, lineHeight: 21 },
+  title: { fontSize: 26, fontWeight: '800', color: t.text, marginBottom: 8 },
+  subtitle: { fontSize: 15, color: t.textMuted, marginBottom: 24, lineHeight: 21 },
   switchRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, marginLeft: 4 },
-  switchLabel: { fontSize: 15, fontWeight: '600', color: Palette.label },
-  derived: { marginTop: -8, marginBottom: 18, marginLeft: 4, fontSize: 13, color: Palette.success, fontWeight: '600' },
+  switchLabel: { fontSize: 15, fontWeight: '600', color: t.label },
+  derived: { marginTop: -8, marginBottom: 18, marginLeft: 4, fontSize: 13, color: t.success, fontWeight: '600' },
 });

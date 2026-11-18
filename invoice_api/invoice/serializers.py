@@ -92,6 +92,7 @@ class ProductSerializer(serializers.ModelSerializer):
             'gst_amount',
             'total_amount',
             'tax_category',
+            'itc_eligibility',
             'image',
             'image_id',
         )
@@ -141,6 +142,7 @@ class InvoiceSerializer(serializers.ModelSerializer):
             'due_date',
             'place_of_supply',
             'reverse_charge',
+            'itc_eligibility',
             'customer_notes',
             'terms',
             'products',
@@ -310,6 +312,13 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
     payment_method = serializers.SerializerMethodField()
     notes = serializers.SerializerMethodField()
     terms = serializers.SerializerMethodField()
+    # e-way bill (invoice.eway): blank until a generated EWB number is saved;
+    # `eway_bill_line` is the whole thing as one printable line
+    eway_bill_number = serializers.SerializerMethodField()
+    eway_bill_date = serializers.SerializerMethodField()
+    eway_valid_until = serializers.SerializerMethodField()
+    eway_vehicle_number = serializers.SerializerMethodField()
+    eway_bill_line = serializers.SerializerMethodField()
     products = ProductSerializer(many=True,required=False)
 
     class Meta:
@@ -327,6 +336,11 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
             'reverse_charge',
             'rcm_tax_amount',
             'lut_declaration',
+            'eway_bill_number',
+            'eway_bill_date',
+            'eway_valid_until',
+            'eway_vehicle_number',
+            'eway_bill_line',
             'payment_status',
             'payment_method',
             'notes',
@@ -396,6 +410,45 @@ class InvoiceSerializerForPDF(serializers.ModelSerializer):
 
     def get_terms(self, obj):
         return obj.terms or ''
+
+    def _ewb(self, obj):
+        from invoice.eway import getattr_safe
+        ewb = getattr_safe(obj, 'eway_bill')
+        return ewb if ewb is not None and ewb.status == 'generated' and ewb.ewb_number else None
+
+    @staticmethod
+    def _local(dt, fmt):
+        from django.utils import timezone
+        return timezone.localtime(dt).strftime(fmt) if dt else ''
+
+    def get_eway_bill_number(self, obj):
+        ewb = self._ewb(obj)
+        return ewb.ewb_number if ewb else ''
+
+    def get_eway_bill_date(self, obj):
+        ewb = self._ewb(obj)
+        return self._local(ewb.ewb_date, '%d/%m/%Y') if ewb else ''
+
+    def get_eway_valid_until(self, obj):
+        ewb = self._ewb(obj)
+        return self._local(ewb.valid_until, '%d/%m/%Y %H:%M') if ewb else ''
+
+    def get_eway_vehicle_number(self, obj):
+        ewb = self._ewb(obj)
+        return ewb.vehicle_number if ewb else ''
+
+    def get_eway_bill_line(self, obj):
+        ewb = self._ewb(obj)
+        if not ewb:
+            return ''
+        parts = [f'E-way bill {ewb.ewb_number}']
+        if ewb.ewb_date:
+            parts[0] += f' dt. {self._local(ewb.ewb_date, "%d/%m/%Y")}'
+        if ewb.vehicle_number:
+            parts.append(f'Vehicle {ewb.vehicle_number}')
+        if ewb.valid_until:
+            parts.append(f'valid till {self._local(ewb.valid_until, "%d/%m/%Y")}')
+        return ' · '.join(parts)
 
 
 class InvoiceSerializerForCSV(serializers.ModelSerializer):

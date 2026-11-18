@@ -2,10 +2,11 @@ import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import NetInfo from '@react-native-community/netinfo';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Palette } from '@/constants/theme';
+import { useThemedStyles, type Theme } from '@/hooks/use-theme';
 
 /** Thin strip under the status bar while the phone has no connection. */
 export function OfflineBanner() {
+  const styles = useThemedStyles(makeStyles);
   const [offline, setOffline] = useState(false);
   const insets = useSafeAreaInsets();
 
@@ -23,7 +24,7 @@ export function OfflineBanner() {
   );
 }
 
-const styles = StyleSheet.create({
-  bar: { backgroundColor: '#92400e', paddingBottom: 6, alignItems: 'center' },
-  text: { color: Palette.white, fontSize: 12, fontWeight: '700' },
+const makeStyles = (t: Theme) => StyleSheet.create({
+  bar: { backgroundColor: t.warningText, paddingBottom: 6, alignItems: 'center' },
+  text: { color: t.onPrimary, fontSize: 12, fontWeight: '700' },
 });
