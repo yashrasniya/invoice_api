@@ -77,6 +77,8 @@ sequenceDiagram
 
 `bill_makeing_sof/src/pages/new_bill.jsx` → `comonant/new_bill_body.jsx`. Same endpoints, multipart `FormData`, and the invoice row is created lazily (`ensureInvoiceId`) when the first line is added. Inventory stock-out is fire-and-forget per line.
 
+The desktop items table renders one cell per visible column in `bill_body_items` (looking up each line's property by field id), so a line missing a property (e.g. a field added after the bill was created) shows an empty cell instead of shifting later columns left.
+
 ## Server-side steps on `POST /api/invoice/`
 
 `InvoiceView.post` (`invoice/api/views.py`):
