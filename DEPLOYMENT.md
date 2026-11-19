@@ -56,7 +56,8 @@ Verify: open https://invoice.orvine.in/app/login/ and hard-refresh.
 ### 3.1 Before you start
 1. Commit and push your changes to `feature/subscription-authz`.
 2. Make sure everything the code imports is **committed**, not just present locally (a missing file crashes gunicorn on start).
-3. **Migrations are git-ignored** (`.gitignore`: `**/migrations/*.py`, only each app's `0001_initial.py` is tracked), so local and server migration histories differ. See [3.3](#33-migrations-important).
+3. If you changed a model, the migration must be generated locally and **committed** (migrations are tracked in git). See [3.3](#33-migrations-important).
+4. Deploy the backend **before** the frontend when the UI uses new endpoints: `deploy.sh` ships every frontend commit since the last deploy, not just your change.
 
 ### 3.2 Deploy steps
 
