@@ -42,6 +42,7 @@ All routes are mounted under `/api/` in `invoice_api/invoice_api/urls.py` (inven
    - `HasFeature.with_code('x')` / `HasMethodFeature` + `required_features_map` — plan feature; failure is `UpgradeRequired` (403, `code: upgrade_required`).
    - `HasMethodPermission` + `required_permissions_map` — role permission such as `invoice.create`, `template.manage`, `whatsapp.send`, `inventory.manage`.
    - `enforce_limit()` / `get_limit()` in `invoice_api/limits.py` — numeric plan limits (`invoices_per_month`, `sends_per_day`, …). Missing key = unlimited.
+   - `is_free_plan(request)` in the same file — true on the Free plan or with no working subscription (not on a Pro trial); used to print the "Made with Orvine" footer on exported PDFs ([pdf-export.md](pdf-export.md)).
 4. **Scoping** — older models are keyed to the creating `user`, so reads use `user_scope_q(request)` (`invoice_api/scoping.py`) to widen to "any member of my company". Company-wide config (bill columns, custom fields) belongs to `company_config_owner(request)`, the company's first admin. Newer models (inventory, templates) carry a `company` FK directly.
 
 Both clients react to `upgrade_required` responses: mobile via `setApiHandlers({ onUpgradeRequired })` in `services/api.ts`, web via its axios interceptor.

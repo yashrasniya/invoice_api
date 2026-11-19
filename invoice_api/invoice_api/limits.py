@@ -17,6 +17,20 @@ class LimitExceeded(UpgradeRequired):
 FREE_PLAN_CODE = 'free'
 
 
+def is_free_plan(request):
+    """True when the company is on the Free plan (or has no working subscription).
+
+    A trialing Pro subscription has a non-free plan_code, so trial users are not free.
+    """
+    sub = getattr(request, 'subscription', None)
+    if sub is None:
+        from .middleware import get_active_subscription
+        company = getattr(getattr(request, 'user', None), 'user_company', None)
+        sub = get_active_subscription(company) if company else {}
+    plan_code = (sub or {}).get('plan_code')
+    return not plan_code or plan_code == FREE_PLAN_CODE
+
+
 def get_limit(request, feature_code, limit_key):
     """Read a numeric limit from the active plan; None = unlimited.
 

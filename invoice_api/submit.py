@@ -19,10 +19,12 @@ class Submit:
     font_size = 9
     font = 'Times-Roman'
 
-    def __init__(self, data, pdf_name="bill.pdf", bill_image=None):
+    def __init__(self, data, pdf_name="bill.pdf", bill_image=None, footer_text=None, footer_url=None):
         self.data = data
         self.pdf_name = pdf_name
         self.bill_image = bill_image
+        self.footer_text = footer_text
+        self.footer_url = footer_url
         self.add_fonts()
         self.canvas_obj = canvas.Canvas(pdf_name)
         self.canvas_obj.setTitle(pdf_name)
@@ -283,6 +285,21 @@ class Submit:
 
 
 
+    def draw_footer(self):
+        # Free-plan branding, bottom-right, drawn last so it sits above the template.
+        if not self.footer_text:
+            return
+        c = self.canvas_obj
+        c.saveState()
+        c.setFont('Helvetica', 7)
+        c.setFillColor(colors.HexColor('#6b7280'))
+        x, y = self.page_width - 8, 6
+        c.drawRightString(x, y, self.footer_text)
+        if self.footer_url:
+            w = c.stringWidth(self.footer_text, 'Helvetica', 7)
+            c.linkURL(self.footer_url, (x - w, y - 2, x, y + 8), relative=0)
+        c.restoreState()
+
     def draw_header_data(self):
         total_items = len(self.data)
 
@@ -300,6 +317,7 @@ class Submit:
                     self.draw_string(obj)
 
 
+            self.draw_footer()
             # Finish page and start a new one if more data exists
             self.canvas_obj.showPage()
 

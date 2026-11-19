@@ -18,6 +18,9 @@ from yaml_reader import num2words
 from invoice_api.gst import adapt_html_for_igst, is_gst_column, tax_heads
 from upi_qr import company_upi_link, make_qr_data_uri
 from pdf_fonts import inject_font_css
+from django.conf import settings
+from django.utils.html import escape
+from invoice_api.limits import is_free_plan
 import pandas as pd
 
 loger = logging.getLogger(__name__)
@@ -78,10 +81,22 @@ def pick_template(company, template_id=None):
     return templates.order_by('-is_default', 'id').first()
 
 
+def _brand_text():
+    return f"{settings.PDF_BRAND_TEXT} \u00b7 {settings.PDF_BRAND_URL.split('://', 1)[-1]}"
+
+
+def _brand_footer_html():
+    return (f'<a href="{escape(settings.PDF_BRAND_URL)}" style="position:absolute; right:8px; '
+            'bottom:5px; z-index:9999; font:7px Helvetica,Arial,sans-serif; color:#6b7280; '
+            f'text-decoration:none;">{escape(_brand_text())}</a>')
+
+
 def pdf_generator(qs, request, return_bytes=False,template_id=None):
     template_obj = pick_template(request.user.user_company, template_id)
     if template_obj is None:
         return Response({"message": "configuration not found"}, 404)
+
+    branding = is_free_plan(request)
 
     if template_obj.is_html:
         import re
@@ -94,6 +109,22 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
             body_match = re.search(r'<body[^>]*>(.*?)</body>', raw_html, re.IGNORECASE | re.DOTALL)
             if body_match:
                 inner_html = body_match.group(1)
+                # <head> styles used to be lost because only the body is kept.
+                # Carry them along; `body`/`html` selectors are retargeted to the
+                # per-invoice page box so they don't shift the whole document.
+                head_match = re.search(r'<head[^>]*>(.*?)</head>', raw_html, re.IGNORECASE | re.DOTALL)
+                if head_match:
+                    head_styles = re.findall(r'<style[^>]*>.*?</style>', head_match.group(1),
+                                             re.IGNORECASE | re.DOTALL)
+                    def _retarget(m):
+                        # margin on the page box would push it off the fixed
+                        # 595x842 page; padding (border-box) keeps the intent.
+                        return re.sub(r'(?<![\w-])margin(?=\s*:)', 'padding', m.group(0))
+                    head_styles = [re.sub(r'(?<![\w.#-])(?:body|html)\s*(?:,\s*(?:body|html)\s*)*\{[^}]*\}',
+                                          lambda m: re.sub(r'(?<![\w.#-])(?:body|html)(?=\s*[{,])', '.invoice-page',
+                                                           _retarget(m), flags=re.IGNORECASE),
+                                          st, flags=re.IGNORECASE) for st in head_styles]
+                    inner_html = '\n'.join(head_styles) + '\n' + inner_html
             else:
                 inner_html = raw_html
         except Exception as e:
@@ -348,7 +379,7 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
                 if adapted != inner_html:
                     page_template = Template(adapted)
             rendered_inner = page_template.render(context)
-            pages_html += f'<div style="position: relative; width: 595px; height: 842px; page-break-after: always; overflow: hidden; background: white;">\n{rendered_inner}\n</div>\n'
+            pages_html += f'<div class="invoice-page" style="position: relative; width: 595px; height: 842px; page-break-after: always; overflow: hidden; background: white;">\n{rendered_inner}\n{_brand_footer_html() if branding else ""}</div>\n'
 
         full_html = f"""<!DOCTYPE html>
 <html>
@@ -416,7 +447,10 @@ def pdf_generator(qs, request, return_bytes=False,template_id=None):
         bill_template = ''
         if template_obj.pdf_template:
             bill_template = str(template_obj.pdf_template.file)
-        pdf_data = Submit(file_data, bill_image=bill_template,pdf_name=pdf_name).draw_header_data()
+        pdf_data = Submit(
+            file_data, bill_image=bill_template, pdf_name=pdf_name,
+            footer_text=_brand_text() if branding else None,
+            footer_url=settings.PDF_BRAND_URL if branding else None).draw_header_data()
         loger.debug(f"{pdf_name} Done {len(pdf_data)}")
         pdf_file = io.BytesIO(pdf_data)
         pdf_file.seek(0)

@@ -47,6 +47,10 @@ RAZORPAY_WEBHOOK_SECRET = os.environ.get('RAZORPAY_WEBHOOK_SECRET', '')
 # Base URL of the React frontend, used in invite emails
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:5173')
 
+# Branding line printed bottom-right on Free-plan invoice PDFs
+PDF_BRAND_URL = os.environ.get('PDF_BRAND_URL', 'https://invoice.orvine.in')
+PDF_BRAND_TEXT = 'Made with Orvine'
+
 # ── Environment / security ─────────────────────────────────────────────
 #
 # Everything below is env-driven and defaults to the SAFE value, so a

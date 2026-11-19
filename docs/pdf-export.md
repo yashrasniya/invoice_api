@@ -12,6 +12,8 @@ How an invoice becomes a PDF, for download, sharing, bulk export and WhatsApp. C
 | `POST /api/weasyprint_preview/` | `yaml_manager/api/views.py` | Web template editor live preview (`WeasyprintPreview.jsx`) | PDF/PNG preview of unsaved HTML |
 | `GET /api/yaml/gallery/{id}/preview/` | `GlobalTemplatePreviewView` | Template gallery thumbnails | PNG |
 
+Free-plan companies get a small "Made with Orvine · invoice.orvine.in" link bottom-right on every page (see [Free-plan branding](#free-plan-branding)).
+
 Gates: `PdfMaker` only needs authentication (invoices are filtered by `user_scope_q`). `BulkExport` needs the `bulk_export` plan feature and `invoice.view`.
 
 ## Templates
@@ -72,6 +74,7 @@ Important details:
 - Images must be `data:` URIs. WeasyPrint renders from a string with no base URL, so it would fetch other `<img src>` over HTTP back to this server, which breaks behind the tunnel/proxy. Line images (`_product_image_data_uri`) and the UPI QR (`upi_qr.make_qr_data_uri`) are inlined for this reason. The company logo is still an absolute URL.
 - Fonts: `pdf_fonts.inject_font_css()` must put `@font-face` rules **in the HTML** for bundled Noto faces (`assets/fonts/`), otherwise Hindi/Devanagari renders blank on hosts without those fonts.
 - The UPI QR is only shown if the company has a valid UPI id and the payment block is enabled (`company_upi_link`); `upi_id` follows the same gate.
+- `<head>` `<style>` blocks are carried into each page (only the `<body>` inner HTML is otherwise kept). `body`/`html` selectors are retargeted to the per-invoice `.invoice-page` box and `margin` in those rules becomes `padding`, so a template's page margin can't push the fixed 595×842 box off the page.
 - A template with bad Django syntax returns 400 with the error instead of a broken PDF.
 
 ### YAML templates → ReportLab (legacy path)
@@ -79,6 +82,15 @@ Important details:
 For `is_html=False`: `yaml_reader.YamalReader` parses the coordinate layout, `FillValue` fills it with the serialized invoice and company data, and `submit.Submit(...).draw_header_data()` draws text/lines/polygons onto the `pdf_template` background image with ReportLab. Non-Latin text is split into script runs by `pdf_fonts.runs()`; ReportLab does no shaping, so complex scripts may be mis-ordered — use HTML templates for those.
 
 The starter template every new account gets (`invoice_api/static/default_template.yaml`) is a YAML template, so accounts that never pick a gallery template use this path.
+
+### Free-plan branding
+
+`pdf_generator` calls `invoice_api/limits.py:is_free_plan(request)` once. It is true when the company has no working subscription or its `plan_code` is `free`; a Pro trial (`trialing`) and paid plans are not free. When true:
+
+- HTML path: `_brand_footer_html()` appends an absolutely positioned `<a>` (bottom 5px, right 8px, 7px grey) inside each 595×842 page div, after the template output so a template can't cover it.
+- YAML/ReportLab path: `Submit(footer_text=, footer_url=)` draws it in `draw_footer()` before each `showPage()`, with a clickable link.
+
+The text and URL come from `settings.PDF_BRAND_TEXT` / `PDF_BRAND_URL` (env `PDF_BRAND_URL`, default `https://invoice.orvine.in`). Not applied to the summary-table PDF, template-editor previews or gallery thumbnails. Tests: `invoice/tests_pdf_branding.py`.
 
 ### Summary-table PDF and CSV
 
@@ -94,3 +106,5 @@ The starter template every new account gets (`invoice_api/static/default_templat
 - Render failures return HTTP 200 with a file named `error.pdf` instead of an error status.
 - The HTML renderer renders the context per invoice but re-parses the template on every page.
 - E-way bill details print only on templates that have one of the `eway_*` fields (HTML) or labels (YAML); no gallery or starter template has them yet.
+
+_Last reviewed against the code: 2026-11-19._
