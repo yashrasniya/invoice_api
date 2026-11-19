@@ -95,7 +95,9 @@ def get_active_subscription(company):
     if sub and sub.is_working():
         data = {'id': sub.id, 'plan_id': sub.subscription_plan_id,
                 'plan_code': sub.subscription_plan.code, 'status': sub.status,
-                'end_date': sub.end_date.isoformat()}
+                'end_date': sub.end_date.isoformat(),
+                # the app warns before a plan that won't renew runs out
+                'auto_renew': sub.auto_renew}
         # TTL must not outlive end_date
         seconds_left = max(60, int((sub.end_date - today).days * 86400))
         _cache_set(key, data, timeout=min(SUB_CACHE_TTL, seconds_left))

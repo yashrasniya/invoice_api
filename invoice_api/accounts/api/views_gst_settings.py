@@ -1,7 +1,7 @@
 """The company's GST filing settings, for clients without the full company form.
 
 GET   → GSTIN, state, filing frequency, LUT and the dispatch-from city / PIN
-        code of e-way bills; any member of the company (the reports need them).
+        code of e-way bills, and whether e-way bills show at all; any member of the company (the reports need them).
 PATCH → those settings only (not GSTIN or state); company admins only. Validation is the
         company serializer's (a LUT needs its number and both dates).
 """
@@ -13,8 +13,9 @@ from rest_framework.views import APIView
 from accounts.serializers.UserCompanies import UserCompaniesSerializer
 
 READ_FIELDS = ('company_gst_number', 'state', 'state_code', 'gst_filing_frequency',
-               'lut_number', 'lut_valid_from', 'lut_valid_to', 'city', 'pincode')
-EDIT_FIELDS = ('gst_filing_frequency', 'lut_number', 'lut_valid_from', 'lut_valid_to', 'city', 'pincode')
+               'lut_number', 'lut_valid_from', 'lut_valid_to', 'city', 'pincode', 'enable_eway_bill')
+EDIT_FIELDS = ('gst_filing_frequency', 'lut_number', 'lut_valid_from', 'lut_valid_to', 'city', 'pincode',
+               'enable_eway_bill')
 
 
 def _out(company):

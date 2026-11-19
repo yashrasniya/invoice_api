@@ -120,6 +120,18 @@ class UserAdmin(actions,UserAdmin):
 class UserCompaniesAdmin(admin.ModelAdmin):
     list_display = ['company_name','is_varified']
 
+    def get_deleted_objects(self, objs, request):
+        """Deleting a company cascades to its members. A company that contains a superuser is listed as protected,
+        so both the row's Delete button and the bulk "delete selected" action stop with Django's "cannot delete"
+        page instead of removing a platform admin (same rule as `deletion.purge_user_and_company`)."""
+        deleted, model_count, perms_needed, protected = super().get_deleted_objects(objs, request)
+        company_ids = [o.pk for o in objs]
+        superusers = User.objects.filter(user_company_id__in=company_ids, is_superuser=True)
+        protected = list(protected) + [
+            f"Superuser '{u.username}' (company: {u.user_company.company_name}). Move them to another company "
+            f"or remove superuser status first." for u in superusers.select_related('user_company')]
+        return deleted, model_count, perms_needed, protected
+
 
 @admin.register(ServiceToken)
 class ServiceTokenAdmin(admin.ModelAdmin):

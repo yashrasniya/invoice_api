@@ -27,6 +27,8 @@ export type Access = {
   is_tenant_admin: boolean;
   is_product_owner: boolean;
   line_item_images_enabled: boolean;
+  /** false when the company hid e-way bills in GST settings; older servers leave it out (= on) */
+  eway_bill_enabled?: boolean;
 };
 
 export type RegisterInput = {

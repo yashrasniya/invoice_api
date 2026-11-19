@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 import { Stack, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -10,7 +10,9 @@ import { Centered, Chip, EmptyState } from '@/components/ui/bits';
 import { Field } from '@/components/ui/field';
 import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
 import { parseYmd, ymd } from '@/lib/invoice-dates';
+import { useFeature } from '@/hooks/use-access';
 import { errorMessage } from '@/services/api';
+import { useSession } from '@/store/session';
 import { fetchGstSettings, GstSettingsInput, saveGstSettings } from '@/services/company';
 
 type DateKey = 'lut_valid_from' | 'lut_valid_to';
@@ -29,8 +31,9 @@ export default function GstSettingsScreen() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['gst-settings'], queryFn: fetchGstSettings });
   const [form, setForm] = useState<GstSettingsInput>({
-    gst_filing_frequency: 'monthly', lut_number: '', lut_valid_from: null, lut_valid_to: null, city: '', pincode: '',
+    gst_filing_frequency: 'monthly', lut_number: '', lut_valid_from: null, lut_valid_to: null, city: '', pincode: '', enable_eway_bill: true,
   });
+  const planHasEway = useFeature('eway_bill');
   const [picking, setPicking] = useState<DateKey | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +43,8 @@ export default function GstSettingsScreen() {
     if (!d) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync local form state from fetched server data / a prop change
     setForm({ gst_filing_frequency: d.gst_filing_frequency, lut_number: d.lut_number ?? '',
-      lut_valid_from: d.lut_valid_from, lut_valid_to: d.lut_valid_to, city: d.city ?? '', pincode: d.pincode ?? '' });
+      lut_valid_from: d.lut_valid_from, lut_valid_to: d.lut_valid_to, city: d.city ?? '', pincode: d.pincode ?? '',
+      enable_eway_bill: d.enable_eway_bill !== false });
   }, [q.data]);
 
   const canEdit = !!q.data?.can_edit;
@@ -68,6 +72,8 @@ export default function GstSettingsScreen() {
       void qc.invalidateQueries({ queryKey: ['report-gstr1'] });
       void qc.invalidateQueries({ queryKey: ['report-gstr3b'] });
       void qc.invalidateQueries({ queryKey: ['eway'] });
+      // the invoice screen reads the e-way bill switch from access
+      void useSession.getState().refreshAccess().catch(() => {});
       router.back();
     } catch (e) {
       Alert.alert('Could not save', errorMessage(e));
@@ -140,15 +146,33 @@ export default function GstSettingsScreen() {
               )}
             </Section>
 
-            <Section title="E-way bills: dispatch from">
-              <Text style={[styles.hint, { marginTop: 0, marginBottom: 10 }]}>
-                The place goods leave from. E-way bills need the PIN code.
-              </Text>
-              <Field label="City / place" value={form.city} editable={canEdit} maxLength={50}
-                onChangeText={(v) => setForm((f) => ({ ...f, city: v }))} />
-              <Field label="PIN code" value={form.pincode} editable={canEdit} keyboardType="number-pad" maxLength={6}
-                onChangeText={(v) => setForm((f) => ({ ...f, pincode: v.replace(/[^0-9]/g, '') }))} />
-            </Section>
+            {planHasEway && (
+              <Section title="E-way bills">
+                <View style={styles.switchRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.label}>Use e-way bills</Text>
+                    <Text style={[styles.hint, { marginTop: 0 }]}>
+                      Turn off to hide e-way bills from invoices. Saved e-way bills are kept.
+                    </Text>
+                  </View>
+                  <Switch value={form.enable_eway_bill} disabled={!canEdit} trackColor={{ true: theme.primary }}
+                    accessibilityLabel="Use e-way bills"
+                    onValueChange={(v) => setForm((f) => ({ ...f, enable_eway_bill: v }))} />
+                </View>
+              </Section>
+            )}
+
+            {(!planHasEway || form.enable_eway_bill) && (
+              <Section title="E-way bills: dispatch from">
+                <Text style={[styles.hint, { marginTop: 0, marginBottom: 10 }]}>
+                  The place goods leave from. E-way bills need the PIN code.
+                </Text>
+                <Field label="City / place" value={form.city} editable={canEdit} maxLength={50}
+                  onChangeText={(v) => setForm((f) => ({ ...f, city: v }))} />
+                <Field label="PIN code" value={form.pincode} editable={canEdit} keyboardType="number-pad" maxLength={6}
+                  onChangeText={(v) => setForm((f) => ({ ...f, pincode: v.replace(/[^0-9]/g, '') }))} />
+              </Section>
+            )}
 
             {picking && (
               <DateTimePicker
@@ -181,6 +205,7 @@ const makeStyles = (t: Theme) => StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   hint: { fontSize: 12, color: t.textMuted, marginTop: 8, lineHeight: 17 },
   row: { flexDirection: 'row', gap: 12 },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   label: { fontSize: 14, fontWeight: '700', color: t.label, marginBottom: 6 },
   select: { height: 50, borderRadius: 12, backgroundColor: t.isDark ? t.surfaceRaised : t.background, borderWidth: 1.5,
     borderColor: t.border, paddingHorizontal: 14, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },

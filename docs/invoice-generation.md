@@ -18,7 +18,7 @@ erDiagram
 | Model (`invoice/models.py`) | What it is |
 |---|---|
 | `Invoice` | Header: number, `receiver` (sales) or `vendor` (purchase), date, due date, `place_of_supply`, payment status/method, notes, terms, `custom_header_field` (JSON), `gst_final_amount`, `total_final_amount`, `invoice_type` (`sales`/`purchase`), `reverse_charge`, `itc_eligibility` (purchases: `eligible` / `blocked` / `reversal`) |
-| `Product` | One line item. Stores `total_amount`, `gst_amount`, optional `image`, `tax_category` (0% lines: `nil` / `exempt` / `non_gst`; else `taxable`) and `itc_eligibility` (purchase lines; blank = the invoice's). Not linked to inventory |
+| `Product` | One line item. Stores `total_amount`, `gst_amount`, optional `image`, `tax_category` (0% lines: `nil` / `exempt` / `non_gst`; else `taxable`) and `itc_eligibility` (purchase lines; blank = the invoice's). Not linked to inventory. `user` is the creator: line items are created before they are attached to an invoice, so company scoping goes through it (`user_scope_q`). Items never attached to an invoice before migration `0031` have no owner and are unreachable through the API |
 | `Product_properties` | One cell of a line: a `value` for one column |
 | `EwayBill` | Sales only, one per invoice: e-way bill Part A extras (sub-type, document type, optional ship-to address, distance) and Part B (mode, vehicle, transporter, transport doc), plus the EWB number, date, `valid_until` and `status` (`draft` / `generated` / `cancelled`) the user types back from the portal. See "E-way bills" below |
 | `new_product_in_frontend` | A **bill column** the company configured: `input_title`, `is_calculable`, `formula` (`+ - / %+ %-` or empty = multiply), `on_with_out_gst_amount`, `show_calculated_value`, presets, default |
@@ -96,7 +96,8 @@ The desktop items table renders one cell per visible column in `bill_body_items`
 |---|---|
 | `GET invoice/` | List (filters, search, ordering, `status_group=open|overdue`), company-scoped |
 | `GET invoice/summary/` | Totals for the list header |
-| `POST invoice/{id}/product/{add|delete}/` | Attach/detach a line |
+| `POST invoice/{id}/product/{add|delete}/` | Attach/detach a line (only your company's line items) |
+| `POST product/`, `POST`/`DELETE product/{id}/update/`, `POST`/`DELETE product/properties/{id}/update/` | Create, edit, delete a line item or its cell values. Scoped to the requester's company (items by `Product.user`, cell values by the company's column owner); a foreign id answers like a missing one (400). They still require login only, with no `invoice.update` check |
 | `custom-fields/`, `product-images/` | Custom header fields, line-item images |
 | `DELETE invoice/?id=` | Soft delete |
 
@@ -112,7 +113,9 @@ Rules and the file format are in `invoice/eway.py`; endpoints in `invoice/api/vi
 4. **Number back**: after uploading on ewaybillgst.gov.in, the user enters the 12-digit number. Status becomes `generated`; `valid_until` is worked out from the distance (one day per 200 km, 20 km for over-dimensional cargo, each day ending at the next midnight IST) unless sent. `status='cancelled'` records a cancellation made on the portal.
 5. **Reminders**: `GET eway/pending/?days=30` lists recent sales invoices that need one and have none generated.
 
-Screens: mobile `app/invoice/eway/[id].tsx` (opened from the e-way bill card on the invoice detail screen; `services/eway.ts`); web `comonant/Bill/EwayBillPanel.jsx` on the invoice page and `pages/EwayBills.jsx` (`/eway-bills`, bulk download). The PDF fields are in [pdf-export.md](pdf-export.md).
+Screens: mobile `app/invoice/eway/[id].tsx` (opened from the e-way bill card on the invoice detail screen; `services/eway.ts`); web `comonant/Bill/EwayBillPanel.jsx` on the invoice page and `pages/EwayBills.jsx` (`/eway-bills`, bulk download). The web panel is collapsible: the status line always shows, and the form starts open only when the invoice needs an e-way bill that isn't generated yet. The PDF fields are in [pdf-export.md](pdf-export.md).
+
+**Company switch.** Businesses that never move goods over the limit can hide e-way bills: `UserCompanies.enable_eway_bill` (default on, `accounts/migrations/0025`), changed in web My company (`pages/CompanyForm.jsx`, "E-way bills" section, shown only when the plan has `eway_bill`) or mobile GST settings (`app/gst-settings.tsx`), both admin-only through `PATCH company/gst-settings/` / `user-companies/`. `authz/me/` reports it as `eway_bill_enabled`; when off, web hides the invoice panel and the "E-way Bills" nav item (`navbar.jsx` `toggle`, `state.access.ewayBillEnabled`) and mobile hides the invoice card (`hooks/use-access.ts:useEwayEnabled`). It only hides the UI: the e-way endpoints stay open and saved rows are kept, so switching back on shows them again.
 
 How these fields feed GSTR-1, GSTR-3B and GSTR-9 (`invoice_api/gstr1.py`, `gstr3b.py`) is in [GST_ROADMAP.md](../GST_ROADMAP.md).
 
@@ -122,3 +125,4 @@ How these fields feed GSTR-1, GSTR-3B and GSTR-9 (`invoice_api/gstr1.py`, `gstr3
 - The three calculators must be changed together; the server one wins on save, so a mismatch shows up as totals changing after save.
 - E-way bills: the bulk JSON follows the portal's offline-tool format but has not been test-uploaded yet. Bill-from / dispatch-from (transaction types 3 and 4), delivery challans and inward e-way bills are not supported. Generating, cancelling and extending over the API needs a GSP (Phase B in GST_ROADMAP.md).
 - Editing an invoice after its e-way bill is generated doesn't warn that the e-way bill no longer matches.
+- With e-way bills switched off, `/eway-bills` still opens if typed in directly (only the menu item is hidden).

@@ -40,8 +40,18 @@ def audit_muted():
         _audit_muted.reset(token)
 
 
-def audit(company, action, resource_type, resource_id, previous=None, new=None):
-    if _audit_muted.get():
+def _company_delete_origin(origin):
+    """True when a delete was started on a company (admin delete, bulk "delete selected", `.delete()` in a shell).
+    Its roles, groups, permissions and subscriptions are then removed by the cascade, and an audit row written for
+    them would point at the company being deleted, failing the FK check at commit."""
+    from django.db.models import QuerySet
+    if isinstance(origin, UserCompanies):
+        return True
+    return isinstance(origin, QuerySet) and issubclass(origin.model, UserCompanies)
+
+
+def audit(company, action, resource_type, resource_id, previous=None, new=None, origin=None):
+    if _audit_muted.get() or _company_delete_origin(origin):
         return
     try:
         AuditLog.objects.create(
@@ -92,11 +102,11 @@ def on_permission_save(sender, instance, created, **kwargs):
 @receiver(post_delete, sender=CompanyRole)  # deletes must invalidate too
 @receiver(post_delete, sender=CompanyGroup)
 @receiver(post_delete, sender=CompanyPermission)
-def on_authz_delete(sender, instance, **kwargs):
+def on_authz_delete(sender, instance, origin=None, **kwargs):
     if getattr(instance, 'company_id', None):
         bump_perm_version(instance.company_id)
     audit(getattr(instance, 'company', None), 'DELETE', sender.__name__.upper(), instance.id,
-          previous={'name': getattr(instance, 'name', str(instance))})
+          previous={'name': getattr(instance, 'name', str(instance))}, origin=origin)
 
 
 # ---- M2M changes: THE main mutation path ----
@@ -118,13 +128,15 @@ for _field in (CompanyRole.permissions, CompanyRole.users,
 
 @receiver(post_save, sender=UserDirectPermission)
 @receiver(post_delete, sender=UserDirectPermission)
-def on_direct_permission_change(sender, instance, **kwargs):
+def on_direct_permission_change(sender, instance, origin=None, **kwargs):
     bump_perm_version(instance.company_id)
+    if _company_delete_origin(origin):
+        return
     created = kwargs.get('created', None)
     action = 'REVOKE' if created is None else ('ASSIGN' if instance.is_granted else 'DENY')
     audit(instance.company, action, 'PERMISSION', instance.permission_id,
           new={'user': instance.user.username, 'permission': instance.permission.code,
-               'is_granted': instance.is_granted})
+               'is_granted': instance.is_granted}, origin=origin)
 
 
 # ---- Bootstrap for companies/admins created after the seed migration ----
@@ -179,11 +191,11 @@ def register_company_signals():
 
     @receiver(post_save, sender=CompanySubscription)
     @receiver(post_delete, sender=CompanySubscription)
-    def on_subscription_change(sender, instance, **kwargs):
+    def on_subscription_change(sender, instance, origin=None, **kwargs):
         transaction.on_commit(
             lambda: cache.delete(f"company_sub:{instance.company_id}"))
         audit(instance.company, 'UPDATE', 'SUBSCRIPTION', instance.id,
-              new={'plan': instance.subscription_plan.code, 'status': instance.status})
+              new={'plan': instance.subscription_plan.code, 'status': instance.status}, origin=origin)
 
     @receiver(post_save, sender=PlanFeature)  # plan feature edits
     @receiver(post_delete, sender=PlanFeature)

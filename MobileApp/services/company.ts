@@ -7,10 +7,12 @@ export type GstSettings = {
   lut_number: string; lut_valid_from: string | null; lut_valid_to: string | null;
   /** dispatch-from place and PIN code on e-way bills */
   city: string; pincode: string;
+  /** off hides e-way bills in the apps; saved ones are kept */
+  enable_eway_bill: boolean;
   /** company admins only */
   can_edit: boolean;
 };
-export type GstSettingsInput = Pick<GstSettings, 'gst_filing_frequency' | 'lut_number' | 'lut_valid_from' | 'lut_valid_to' | 'city' | 'pincode'>;
+export type GstSettingsInput = Pick<GstSettings, 'gst_filing_frequency' | 'lut_number' | 'lut_valid_from' | 'lut_valid_to' | 'city' | 'pincode' | 'enable_eway_bill'>;
 
 export const fetchGstSettings = async () => (await api.get<GstSettings>('company/gst-settings/')).data;
 

@@ -1,4 +1,4 @@
-import { trialInfo } from '@/lib/trial';
+import { planEndingInfo, trialInfo } from '@/lib/trial';
 
 const sub = (status: string, end_date: string) => ({ status, end_date, plan_code: 'pro' });
 const at = (y: number, m: number, d: number, h = 12) => new Date(y, m - 1, d, h);
@@ -31,5 +31,30 @@ describe('trialInfo', () => {
 
   it('hides a lapsed trial instead of showing negative days', () => {
     expect(trialInfo(sub('trialing', '2026-11-03'), at(2026, 11, 4))).toBeNull();
+  });
+});
+
+describe('planEndingInfo', () => {
+  const paid = (status: string, end_date: string, auto_renew?: boolean) => ({ status, end_date, plan_code: 'pro', auto_renew });
+
+  it('is null for trials, Free, renewing plans, and plans far from their end', () => {
+    expect(planEndingInfo(null)).toBeNull();
+    expect(planEndingInfo(paid('trialing', '2026-11-25', false), at(2026, 11, 20))).toBeNull();
+    expect(planEndingInfo({ ...paid('active', '2026-11-25', false), plan_code: 'free' }, at(2026, 11, 20))).toBeNull();
+    expect(planEndingInfo(paid('active', '2026-11-25', true), at(2026, 11, 20))).toBeNull();
+    expect(planEndingInfo(paid('active', '2026-11-25'), at(2026, 11, 20))).toBeNull(); // older server: no auto_renew
+    expect(planEndingInfo(paid('active', '2026-12-31', false), at(2026, 11, 20))).toBeNull();
+  });
+
+  it('warns in the last week of a plan that will not renew', () => {
+    expect(planEndingInfo(paid('active', '2026-11-27', false), at(2026, 11, 20))).toMatchObject({ kind: 'ending', daysLeft: 7, tone: 'calm', title: 'Your plan ends in 7 days' });
+    expect(planEndingInfo(paid('active', '2026-11-21', false), at(2026, 11, 20))).toMatchObject({ daysLeft: 1, tone: 'soon', title: 'Your plan ends in 1 day' });
+    expect(planEndingInfo(paid('active', '2026-11-20', false), at(2026, 11, 20))).toMatchObject({ daysLeft: 0, tone: 'last', title: 'Your plan ends today' });
+  });
+
+  it('counts a failed renewal down to the end of the grace period', () => {
+    expect(planEndingInfo(paid('past_due', '2026-11-18', true), at(2026, 11, 20))).toMatchObject({ kind: 'past_due', daysLeft: 5, tone: 'soon' });
+    expect(planEndingInfo(paid('past_due', '2026-11-13', true), at(2026, 11, 20))).toMatchObject({ daysLeft: 0, tone: 'last', title: 'Payment failed: your plan stops today' });
+    expect(planEndingInfo(paid('past_due', '2026-11-12', true), at(2026, 11, 20))).toBeNull();
   });
 });

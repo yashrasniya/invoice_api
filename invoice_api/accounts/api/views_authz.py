@@ -212,4 +212,6 @@ class MyAccessView(APIView):
             # invoices can tell whether a toggle is on.
             'line_item_images_enabled': bool(
                 request.company and request.company.enable_line_item_images),
+            'eway_bill_enabled': bool(
+                request.company and request.company.enable_eway_bill),
         })

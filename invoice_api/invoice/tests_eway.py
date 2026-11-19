@@ -297,3 +297,17 @@ class DispatchSettingsTests(EwayBase):
         self.assertEqual((r.data['pincode'], r.data['city']), ('560002', 'Bangalore'))
         r = self.c.patch('/api/company/gst-settings/', {'pincode': '05600'}, format='json')
         self.assertEqual(r.status_code, 400)
+
+
+class EwayToggleTests(EwayBase):
+    """`enable_eway_bill` only hides e-way bills from the apps; it defaults on and saved rows are kept."""
+
+    def test_on_by_default_and_reported_in_access(self):
+        self.assertTrue(self.c.get('/api/company/gst-settings/').data['enable_eway_bill'])
+        self.assertTrue(self.c.get('/api/authz/me/').data['eway_bill_enabled'])
+
+    def test_switch_off_through_gst_settings(self):
+        r = self.c.patch('/api/company/gst-settings/', {'enable_eway_bill': False}, format='json')
+        self.assertEqual(r.status_code, 200, r.data)
+        self.assertFalse(r.data['enable_eway_bill'])
+        self.assertFalse(self.c.get('/api/authz/me/').data['eway_bill_enabled'])

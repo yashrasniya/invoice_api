@@ -37,7 +37,7 @@ All routes are mounted under `/api/` in `invoice_api/invoice_api/urls.py` (inven
 ## Request pipeline
 
 1. **Authentication** — `accounts.authenticate.CustomAuthentication` (JWT). Web sends the token in an http-only cookie (`SIMPLE_JWT['AUTH_COOKIE']`) plus CSRF; mobile sends `Authorization: Bearer …`. Login-type endpoints return the access token in the body only when the request carries `X-Client: mobile`.
-2. **Tenant context** — `invoice_api/middleware.py` attaches lazy `request.company`, `request.subscription`, `request.features` (plan feature codes) and `request.permissions` (permission codes, cached per company and invalidated by `accounts/signals.py`).
+2. **Tenant context** — `invoice_api/middleware.py` attaches lazy `request.company`, `request.subscription` (`plan_code`, `status`, `end_date`, `auto_renew`; returned as-is by `authz/me/`), `request.features` (plan feature codes) and `request.permissions` (permission codes, cached per company and invalidated by `accounts/signals.py`).
 3. **Gates** on each view (`invoice_api/permissions.py`):
    - `HasFeature.with_code('x')` / `HasMethodFeature` + `required_features_map` — plan feature; failure is `UpgradeRequired` (403, `code: upgrade_required`).
    - `HasMethodPermission` + `required_permissions_map` — role permission such as `invoice.create`, `template.manage`, `whatsapp.send`, `inventory.manage`.
@@ -71,8 +71,26 @@ On phones (≤ 640px, `platform-admin.css`) tables become stacked cards: the sha
 - Company list filters (`plan`, `status`, `ending_within`) look at working subscriptions only; there is no filter on cancelled/expired history.
 - CSV export covers the current page only.
 
+## Tenant isolation of records
+
+Records are scoped to the requester's company with `invoice_api/scoping.py:user_scope_q` (rows whose creator belongs to the company). Edit and delete endpoints must look the record up through that filter, not by bare id, so another company's id is indistinguishable from a missing one (customers, vendors and line items do this; tests in `accounts/tests_tenant_isolation.py`). An edit never changes a record's creator.
+
+Invites: `POST invites/{token}/accept/` creates the user (username and password required) or, for an email that already has an account, requires that account's password. The link alone never logs anyone in and never re-enables a disabled account.
+
 ## Soft delete
 
 Most business models extend `invoice_api/softdelete.py:SoftDeleteModel` — `delete()` sets `is_deleted`, default managers hide deleted rows, unique constraints are conditional on `is_deleted=False`.
+
+## Deleting a company (hard delete)
+
+`UserCompanies` is not soft-deleted. Deleting one (Django admin row delete or bulk "delete selected", `accounts/deletion.py` purge helpers, or `.delete()` in a shell) cascades to everything with a `company` FK, including its members (`User.user_company` is `CASCADE`), roles, permissions, subscriptions and `AuditLog` rows.
+
+- **Audit rows are skipped during the cascade.** The `post_delete` handlers in `accounts/signals.py` would otherwise write new `AuditLog` rows pointing at the company being deleted, and SQLite's deferred FK check then fails at commit (`IntegrityError: FOREIGN KEY constraint failed`). `audit()` returns early when the signal's `origin` is a `UserCompanies` instance or queryset (`_company_delete_origin`), or inside `audit_muted()`, which the purge helpers use. Other deletes are still audited.
+- **Companies with a superuser are protected in the admin.** `UserCompaniesAdmin.get_deleted_objects` (`accounts/admin.py`) lists each superuser member as protected, so both delete paths stop on Django's "cannot delete" page. Same rule as `deletion.purge_user_and_company`.
+- Tests: `accounts/tests_company_admin_delete.py` (run `connection.check_constraints()`, because `TestCase` never commits).
+
+### Known gaps
+
+- Admin deletion leaves the company logo and members' profile pictures on disk. The `accounts/deletion.py` helpers remove them.
 
 _Last reviewed against the code: 2026-11-19._

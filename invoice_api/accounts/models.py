@@ -139,6 +139,12 @@ class UserCompanies(models.Model):
         default=False,
         help_text="Let line items carry an attached photo on invoices (Pro plans only)")
 
+    # On by default: the plan's `eway_bill` feature says it is allowed, this lets a company that never moves
+    # goods over the limit hide the e-way bill card, page and menu item. Saved e-way bills are kept.
+    enable_eway_bill = models.BooleanField(
+        default=True,
+        help_text="Show e-way bills on invoices and in the menu (plans with the eway_bill feature)")
+
     subscriptions_plan = models.ForeignKey('Subscriptions',on_delete=models.CASCADE,null=True,blank=True)
 
     # First-run checklist on the app's Home screen. It hides itself once every step is done; these two record what

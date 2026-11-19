@@ -4,6 +4,10 @@ import { useSession } from '@/store/session';
 export const useFeature = (code: string) =>
   useSession((s) => !!s.access?.features.includes(code));
 
+/** Plan includes e-way bills and the company hasn't switched them off in GST settings. */
+export const useEwayEnabled = () =>
+  useSession((s) => !!s.access?.features.includes('eway_bill') && s.access?.eway_bill_enabled !== false);
+
 /** True if the user holds this permission (e.g. 'invoice.view'). Company admins hold role.manage. */
 export const useCan = (permission: string) =>
   useSession((s) => !!s.access?.permissions.includes(permission));

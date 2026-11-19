@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Centered, StatusBadge } from '@/components/ui/bits';
 import { PLACE_OF_SUPPLY_STATES } from '@/constants/gst';
 import { useTheme, useThemedStyles, type Theme } from '@/hooks/use-theme';
-import { useCan, useFeature } from '@/hooks/use-access';
+import { useCan, useEwayEnabled } from '@/hooks/use-access';
 import { money } from '@/lib/invoice-calc';
 import { summarizeLine } from '@/lib/line-display';
 import { errorMessage } from '@/services/api';
@@ -30,7 +30,7 @@ export default function InvoiceDetailScreen() {
 
   const q = useQuery({ queryKey: ['invoice', id], queryFn: () => getInvoice(id) });
   const inv = q.data;
-  const hasEway = useFeature('eway_bill');
+  const hasEway = useEwayEnabled();
   const ewayQ = useQuery({ queryKey: ['eway', id], queryFn: () => fetchEway(id),
     enabled: hasEway && inv?.invoice_type === 'sales' });
   const ew = ewayQ.data;
