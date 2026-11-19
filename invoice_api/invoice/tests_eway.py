@@ -60,7 +60,10 @@ class EwayBase(Base):
 
     def setUp(self):
         super().setUp()
-        plan = CompanySubscription.objects.get(company=self.company).subscription_plan
+        sub = CompanySubscription.objects.get(company=self.company)
+        # Tests below mock timezone.now to fixed dates; keep the plan active on them.
+        CompanySubscription.objects.filter(pk=sub.pk).update(start_date=datetime.date(2026, 1, 1))
+        plan = sub.subscription_plan
         feat, _ = Feature.objects.get_or_create(code='eway_bill', defaults={'name': 'E-way Bills'})
         PlanFeature.objects.get_or_create(subscription_plan=plan, feature=feat)
         self.company.pincode, self.company.city = '560001', 'Bengaluru'

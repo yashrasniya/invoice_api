@@ -13,7 +13,9 @@ urlpatterns = [
     path('admin/', include(admin_router.urls)),
     path('admin/companies/', views_admin.CompanyListView.as_view()),
     path('admin/companies/<int:company_id>/subscription/', views_admin.CompanySubscriptionAdminView.as_view()),
+    path('admin/overview/', views_admin.PlatformOverviewView.as_view()),
     path('admin/audit-log/', views_admin.PlatformAuditLogView.as_view()),
+    path('admin/audit-log/facets/', views_admin.PlatformAuditFacetsView.as_view()),
     path('admin/whatsapp-account/', views_admin.PlatformWhatsAppAccountView.as_view()),
 
     path('companies/', CompaniesView.as_view()),

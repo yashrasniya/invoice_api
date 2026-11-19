@@ -46,6 +46,30 @@ All routes are mounted under `/api/` in `invoice_api/invoice_api/urls.py` (inven
 
 Both clients react to `upgrade_required` responses: mobile via `setApiHandlers({ onUpgradeRequired })` in `services/api.ts`, web via its axios interceptor.
 
+## Platform Admin (product owner)
+
+Web route `/platform-admin` (`bill_makeing_sof/src/pages/PlatformAdmin.jsx`, tabs in `src/pages/platform-admin/`). The page shows a "no access" card unless `state.access.isProductOwner`; every API behind it is gated by `IsProductOwner` (`is_superuser`, or the global `Product Owner` role) in `invoice_api/permissions.py`. The active tab and its filter presets live in the URL (`?tab=companies&status=trialing`), so the Overview links straight into a filtered list.
+
+| Tab | API (all under `/api/admin/`) | Notes |
+|---|---|---|
+| Overview | `overview/` | Company/user counts, companies by subscription status (incl. `none`), trials ending in 7 days, paid subs ending in 30 days, MRR estimate (active + past_due at the plan's monthly price), companies per plan, and `billing` (same dict as `billing/health/`, from `billing.api.views_admin.billing_health`). |
+| Companies | `companies/` (paginated: `?search=` name/email/phone/GSTIN/#id, `?plan=<code>`, `?status=active\|trialing\|past_due\|none`, `?ending_within=<days>`, `?ordering=`), `companies/{id}/subscription/` GET history · POST assign · PUT extend/status/auto-renew | Drawer per company. POST/PUT write an `AuditLog` row (`resource_type=SUBSCRIPTION`, action `ASSIGN`/`UPDATE`, actor, `previous_data`), in addition to the actor-less row from the `CompanySubscription` post_save signal. PUT rejects `end_date` before `start_date`. |
+| Plans | `plans/` (+ `subscriber_count`), `plans/{id}/features/`, `plans/{id}/features/{pf}/` | Limits edited as key/value rows (or raw JSON); limits must be a JSON object. Delete is blocked while the plan has working subscriptions. "Duplicate" creates an inactive copy with the same features and limits. |
+| Features | `features/` (+ `plans` list) | Code is immutable after create. DELETE returns 400 with `plans` when the feature is attached; the UI confirms and resends with `?force=1`. |
+| Billing | `billing/*` (see `BILLING.md`) | Subscriptions, payments, webhook events and scheduled changes are paginated. Sync plans / Apply scheduled / Reconcile ask for confirmation. |
+| WhatsApp | `whatsapp-account/` | Shared platform account (see `whatsapp-messaging.md`). |
+| Audit log | `audit-log/` (paginated, 50/page: `?company=`, `?resource_type=`, `?action=`, `?user=` username contains, `?date_from=`/`?date_to=` YYYY-MM-DD), `audit-log/facets/` | Row expands to a before/after diff; "Export page" downloads the current page as CSV. |
+
+Admin list endpoints use `invoice_api/pagination.py:AdminPagination` (`{count, next, previous, results}`, `?page=`, `?page_size=` ≤ 200). The global DRF pagination is still off.
+
+### Known gaps
+
+- MRR is an estimate: it doesn't know whether a company pays monthly or yearly, and ignores discounts.
+- Company list filters (`plan`, `status`, `ending_within`) look at working subscriptions only; there is no filter on cancelled/expired history.
+- CSV export covers the current page only.
+
 ## Soft delete
 
 Most business models extend `invoice_api/softdelete.py:SoftDeleteModel` — `delete()` sets `is_deleted`, default managers hide deleted rows, unique constraints are conditional on `is_deleted=False`.
+
+_Last reviewed against the code: 2026-11-19._

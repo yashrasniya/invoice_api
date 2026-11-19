@@ -24,7 +24,7 @@ Blocked requests return **403 with code `upgrade_required`** so the frontend can
 
 ## Management
 
-- **Product Owner** (`is_superuser` or global `Product Owner` role): `/platform-admin` UI or `/api/admin/…` — plan/feature CRUD, per-plan limits, assign/cancel tenant subscriptions, cross-tenant audit log.
+- **Product Owner** (`is_superuser` or global `Product Owner` role): `/platform-admin` UI or `/api/admin/…` — platform overview, plan/feature CRUD, per-plan limits, assign/extend/cancel tenant subscriptions, Razorpay billing tools, cross-tenant audit log. Endpoint list and filters: `docs/architecture.md` → Platform Admin.
 - **Tenant Admin** (`role.manage` permission): `/access-control` UI or `/api/authz/…` — roles, groups, per-user grant/deny, email invites, company audit log.
 
 ## Required cron job

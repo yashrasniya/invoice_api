@@ -162,12 +162,14 @@ Every one of these resolves the company from `request.company`. **No endpoint ac
 | GET | `/api/admin/billing/health/` | Config check, stale plans, failed webhooks |
 | POST | `/api/admin/billing/sync-plans/` | Push plans to Razorpay |
 | GET | `/api/admin/billing/razorpay-plans/` | Plan mappings + staleness |
-| GET | `/api/admin/billing/subscriptions/` | All mandates (`?status=`, `?company_id=`) |
+| GET | `/api/admin/billing/subscriptions/` | All mandates (`?status=`, `?company_id=`; paginated) |
 | POST | `/api/admin/billing/subscriptions/<id>/reconcile/` | Re-fetch from Razorpay and re-apply |
-| GET | `/api/admin/billing/payments/` | All payments |
-| GET | `/api/admin/billing/webhook-events/` | Delivery log (`?status=failed`) |
-| GET | `/api/admin/billing/scheduled-changes/` | Queued downgrades |
+| GET | `/api/admin/billing/payments/` | All payments (`?status=`, `?company_id=`; paginated) |
+| GET | `/api/admin/billing/webhook-events/` | Delivery log (`?status=failed`; paginated) |
+| GET | `/api/admin/billing/scheduled-changes/` | Queued downgrades (paginated) |
 | POST | `/api/admin/billing/apply-scheduled/` | Run the downgrade job now |
+
+Paginated lists return `{count, next, previous, results}` (`?page=`, `?page_size=`). All of these are surfaced in the **Billing** tab of `/platform-admin` (see `docs/architecture.md`).
 
 ### Webhook — unauthenticated, signature is the authentication
 

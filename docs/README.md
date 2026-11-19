@@ -27,7 +27,8 @@ These docs describe the code as it is. **Any change to one of the features above
 | `invoice_api/inventory/`, `MobileApp/services/inventory.ts`, `MobileApp/app/inventory/*`, `inventory-picker.tsx`, `line-item-modal.tsx`, web `inventory.jsx` / `comonant/inventory/` | inventory.md |
 | `MobileApp/constants/theme.ts`, `hooks/use-theme.ts`, `store/prefs.ts`, `theme-mode-picker.tsx`, `app/_layout.tsx` (theme parts), `bill_makeing_sof/src/style/tokens.css`, `src/index.css` | theming.md |
 | Auth classes, middleware, `invoice_api/permissions.py`, `scoping.py`, `limits.py`, root `urls.py` | architecture.md |
+| Platform Admin: `companies/api/views_admin.py`, `billing/api/views_admin.py`, `invoice_api/pagination.py`, web `pages/PlatformAdmin.jsx`, `pages/platform-admin/*` | architecture.md |
 
 When a flow gains a new step, endpoint or gate, add it. When a "Known gaps" item is fixed, remove it.
 
-_Last reviewed against the code: 2026-11-17._
+_Last reviewed against the code: 2026-11-19._

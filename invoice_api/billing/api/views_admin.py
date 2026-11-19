@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from invoice_api.pagination import AdminPagination
 from invoice_api.permissions import IsProductOwner
 
 from .. import services
@@ -49,6 +50,7 @@ class AdminRazorpayPlanListView(ListAPIView):
 class AdminSubscriptionListView(ListAPIView):
     serializer_class = BillingSubscriptionSerializer
     permission_classes = [IsAuthenticated, IsProductOwner]
+    pagination_class = AdminPagination
 
     def get_queryset(self):
         qs = (BillingSubscription.objects
@@ -94,6 +96,7 @@ class AdminReconcileView(APIView):
 class AdminPaymentListView(ListAPIView):
     serializer_class = PaymentRecordSerializer
     permission_classes = [IsAuthenticated, IsProductOwner]
+    pagination_class = AdminPagination
 
     def get_queryset(self):
         qs = (PaymentRecord.objects
@@ -111,6 +114,7 @@ class AdminPaymentListView(ListAPIView):
 class AdminWebhookEventListView(ListAPIView):
     serializer_class = WebhookEventSerializer
     permission_classes = [IsAuthenticated, IsProductOwner]
+    pagination_class = AdminPagination
 
     def get_queryset(self):
         qs = WebhookEvent.objects.order_by('-received_at')
@@ -123,6 +127,7 @@ class AdminWebhookEventListView(ListAPIView):
 class AdminScheduledChangeListView(ListAPIView):
     serializer_class = ScheduledPlanChangeSerializer
     permission_classes = [IsAuthenticated, IsProductOwner]
+    pagination_class = AdminPagination
     queryset = (ScheduledPlanChange.objects
                 .select_related('from_plan', 'to_plan', 'company')
                 .order_by('-created_at'))
@@ -143,20 +148,25 @@ class AdminBillingHealthView(APIView):
     permission_classes = [IsAuthenticated, IsProductOwner]
 
     def get(self, request):
-        from django.conf import settings
-        stale = [p.razorpay_plan_id for p in RazorpayPlan.objects.filter(
-            is_active=True).select_related('subscription_plan') if p.is_stale]
-        return Response({
-            'key_id_configured': bool(getattr(settings, 'RAZORPAY_KEY_ID', '')),
-            'key_secret_configured': bool(getattr(settings, 'RAZORPAY_KEY_SECRET', '')),
-            'webhook_secret_configured': bool(
-                getattr(settings, 'RAZORPAY_WEBHOOK_SECRET', '')),
-            'test_mode': is_test_mode(),
-            'razorpay_plans': RazorpayPlan.objects.filter(is_active=True).count(),
-            'stale_plans': stale,
-            'live_subscriptions': BillingSubscription.objects.filter(
-                status__in=BillingSubscription.LIVE_STATUSES).count(),
-            'failed_webhooks': WebhookEvent.objects.filter(status='failed').count(),
-            'pending_scheduled_changes': ScheduledPlanChange.objects.filter(
-                status='pending').count(),
-        })
+        return Response(billing_health())
+
+
+def billing_health():
+    """Billing wiring summary; shared by the health view and admin overview."""
+    from django.conf import settings
+    stale = [p.razorpay_plan_id for p in RazorpayPlan.objects.filter(
+        is_active=True).select_related('subscription_plan') if p.is_stale]
+    return {
+        'key_id_configured': bool(getattr(settings, 'RAZORPAY_KEY_ID', '')),
+        'key_secret_configured': bool(getattr(settings, 'RAZORPAY_KEY_SECRET', '')),
+        'webhook_secret_configured': bool(
+            getattr(settings, 'RAZORPAY_WEBHOOK_SECRET', '')),
+        'test_mode': is_test_mode(),
+        'razorpay_plans': RazorpayPlan.objects.filter(is_active=True).count(),
+        'stale_plans': stale,
+        'live_subscriptions': BillingSubscription.objects.filter(
+            status__in=BillingSubscription.LIVE_STATUSES).count(),
+        'failed_webhooks': WebhookEvent.objects.filter(status='failed').count(),
+        'pending_scheduled_changes': ScheduledPlanChange.objects.filter(
+            status='pending').count(),
+    }
