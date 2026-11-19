@@ -62,6 +62,8 @@ Web route `/platform-admin` (`bill_makeing_sof/src/pages/PlatformAdmin.jsx`, tab
 
 Admin list endpoints use `invoice_api/pagination.py:AdminPagination` (`{count, next, previous, results}`, `?page=`, `?page_size=` ≤ 200). The global DRF pagination is still off.
 
+On phones (≤ 640px, `platform-admin.css`) tables become stacked cards: the shared `<Table>` in `shared.jsx` copies each column header onto its cells as `data-label` (walking into Fragments, skipping `colSpan` cells), and CSS shows it as the row label. Cells with an empty header (actions) span the card; the audit expand arrow is hidden because the whole row is tappable. Filters go two per row, the drawer is full width, confirm dialogs become bottom sheets, inputs are 16px so iOS doesn't zoom, and the page leaves room for the fixed mobile bottom bar.
+
 ### Known gaps
 
 - MRR is an estimate: it doesn't know whether a company pays monthly or yearly, and ignores discounts.
